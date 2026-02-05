@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Реклама канала - Отслеживание подписчиков</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --tg-theme-bg-color: #ffffff;
+            --tg-theme-text-color: #000000;
+            --tg-theme-hint-color: #999999;
+            --tg-theme-link-color: #2481cc;
+            --tg-theme-button-color: #2481cc;
+            --tg-theme-button-text-color: #ffffff;
+            --tg-theme-secondary-bg-color: #f0f0f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background-color: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            min-height: 100vh;
+            padding: 16px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Навигация */
+        .nav-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+            padding-bottom: 12px;
+        }
+
+        .nav-tab {
+            padding: 8px 16px;
+            border: none;
+            background: none;
+            color: var(--tg-theme-hint-color);
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .nav-tab.active {
+            background: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+        }
+
+        /* Страницы */
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        /* Карточки */
+        .card {
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .card-subtitle {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color);
+        }
+
+        /* Статистика */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--tg-theme-button-color);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--tg-theme-hint-color);
+            margin-top: 4px;
+        }
+
+        /* Формы */
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            color: var(--tg-theme-hint-color);
+            margin-bottom: 6px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--tg-theme-secondary-bg-color);
+            border-radius: 8px;
+            font-size: 15px;
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--tg-theme-button-color);
+        }
+
+        /* Кнопки */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            width: 100%;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+        }
+
+        .btn-secondary {
+            background: var(--tg-theme-secondary-bg-color);
+            color: var(--tg-theme-text-color);
+        }
+
+        /* Таблица */
+        .table-wrapper {
+            overflow-x: auto;
+            margin: 16px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th, td {
+            padding: 10px 8px;
+            text-align: left;
+            border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+        }
+
+        th {
+            font-weight: 600;
+            color: var(--tg-theme-hint-color);
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        /* Списки */
+        .list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .list-item-content {
+            flex: 1;
+        }
+
+        .list-item-title {
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .list-item-subtitle {
+            font-size: 12px;
+            color: var(--tg-theme-hint-color);
+        }
+
+        .list-item-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: var(--tg-theme-bg-color);
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--tg-theme-hint-color);
+        }
+
+        .icon-btn:hover {
+            color: var(--tg-theme-button-color);
+        }
+
+        /* Пустое состояние */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--tg-theme-hint-color);
+        }
+
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Модалка */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--tg-theme-bg-color);
+            border-radius: 16px;
+            padding: 24px;
+            width: 100%;
+            max-width: 400px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        /* Алерты */
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        /* Лоадер */
+        .loader {
+            display: flex;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--tg-theme-secondary-bg-color);
+            border-top-color: var(--tg-theme-button-color);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Навигация -->
+        <nav class="nav-tabs">
+            <button class="nav-tab active" data-page="channels">
+                <i class="fas fa-broadcast-tower"></i> Каналы
+            </button>
+            <button class="nav-tab" data-page="stats">
+                <i class="fas fa-chart-bar"></i> Статистика
+            </button>
+            <button class="nav-tab" data-page="links">
+                <i class="fas fa-link"></i> Ссылки
+            </button>
+        </nav>
+
+        <!-- Страница: Каналы -->
+        <div class="page active" id="page-channels">
+            <div id="channels-list">
+                <div class="loader"><div class="spinner"></div></div>
+            </div>
+        </div>
+
+        <!-- Страница: Статистика -->
+        <div class="page" id="page-stats">
+            <div id="channel-selector" style="margin-bottom: 16px;">
+                <select class="form-input" id="stats-channel-select">
+                    <option value="">Выберите канал</option>
+                </select>
+            </div>
+
+            <div id="stats-content" style="display: none;">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-visits">0</div>
+                        <div class="stat-label">Визиты</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-subscribers">0</div>
+                        <div class="stat-label">Подписки</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-conversion">0%</div>
+                        <div class="stat-label">Конверсия</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">По источникам (UTM)</div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Source</th>
+                                    <th>Campaign</th>
+                                    <th>Визиты</th>
+                                    <th>Подп.</th>
+                                    <th>CR</th>
+                                </tr>
+                            </thead>
+                            <tbody id="utm-stats-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Страница: Ссылки -->
+        <div class="page" id="page-links">
+            <div id="links-channel-selector" style="margin-bottom: 16px;">
+                <select class="form-input" id="links-channel-select">
+                    <option value="">Выберите канал</option>
+                </select>
+            </div>
+
+            <button class="btn btn-primary" id="create-link-btn" style="margin-bottom: 16px; display: none;">
+                <i class="fas fa-plus"></i> Создать ссылку
+            </button>
+
+            <div id="links-list"></div>
+        </div>
+    </div>
+
+    <!-- Модалка: Настройки канала -->
+    <div class="modal" id="channel-settings-modal">
+        <div class="modal-content">
+            <div class="modal-title">Настройки канала</div>
+            <input type="hidden" id="settings-channel-code">
+
+            <div class="form-group">
+                <label class="form-label">ID Яндекс Метрики</label>
+                <input type="text" class="form-input" id="settings-ym-id" placeholder="12345678">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">ID VK Pixel</label>
+                <input type="text" class="form-input" id="settings-vk-pixel" placeholder="VK-RTRG-123456-xxxxx">
+            </div>
+
+            <div style="display: flex; gap: 12px;">
+                <button class="btn btn-secondary" onclick="closeModal('channel-settings-modal')">Отмена</button>
+                <button class="btn btn-primary" id="save-channel-settings">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модалка: Создание ссылки -->
+    <div class="modal" id="create-link-modal">
+        <div class="modal-content">
+            <div class="modal-title">Новая ссылка</div>
+
+            <div class="form-group">
+                <label class="form-label">Название *</label>
+                <input type="text" class="form-input" id="link-name" placeholder="Реклама в ВК">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">UTM Source *</label>
+                <input type="text" class="form-input" id="link-utm-source" placeholder="vk, instagram, google">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">UTM Medium</label>
+                <input type="text" class="form-input" id="link-utm-medium" placeholder="cpc, banner, post">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">UTM Campaign</label>
+                <input type="text" class="form-input" id="link-utm-campaign" placeholder="winter_sale">
+            </div>
+
+            <div style="display: flex; gap: 12px;">
+                <button class="btn btn-secondary" onclick="closeModal('create-link-modal')">Отмена</button>
+                <button class="btn btn-primary" id="save-link-btn">Создать</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Telegram Web App
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // Применяем тему Telegram
+        if (tg.themeParams) {
+            const root = document.documentElement;
+            if (tg.themeParams.bg_color) root.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color);
+            if (tg.themeParams.text_color) root.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color);
+            if (tg.themeParams.hint_color) root.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color);
+            if (tg.themeParams.button_color) root.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color);
+            if (tg.themeParams.button_text_color) root.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color);
+            if (tg.themeParams.secondary_bg_color) root.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color);
+        }
+
+        // API
+        const API_BASE = '/api';
+        let channels = [];
+        let currentChannel = null;
+
+        async function apiRequest(endpoint, options = {}) {
+            const headers = {
+                'Content-Type': 'application/json',
+                'X-Telegram-Init-Data': tg.initData
+            };
+
+            const response = await fetch(API_BASE + endpoint, {
+                ...options,
+                headers: { ...headers, ...options.headers }
+            });
+
+            return response.json();
+        }
+
+        // Навигация
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+
+                tab.classList.add('active');
+                document.getElementById('page-' + tab.dataset.page).classList.add('active');
+            });
+        });
+
+        // Загрузка каналов
+        async function loadChannels() {
+            const result = await apiRequest('/channels');
+
+            if (result.success) {
+                channels = result.channels;
+                renderChannels();
+                updateChannelSelects();
+            }
+        }
+
+        function renderChannels() {
+            const container = document.getElementById('channels-list');
+
+            if (channels.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-broadcast-tower"></i>
+                        <p>Нет подключенных каналов</p>
+                        <p style="font-size: 13px; margin-top: 8px;">Добавьте бота администратором в ваш канал</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = channels.map(ch => `
+                <div class="list-item">
+                    <div class="list-item-content">
+                        <div class="list-item-title">${escapeHtml(ch.title)}</div>
+                        <div class="list-item-subtitle">
+                            ${ch.subscribers_count} подписчиков • ${ch.visits_count} визитов
+                            ${ch.yandex_metrika_id ? '<i class="fas fa-chart-line" title="Яндекс Метрика"></i>' : ''}
+                            ${ch.vk_pixel_id ? '<i class="fab fa-vk" title="VK Pixel"></i>' : ''}
+                        </div>
+                    </div>
+                    <div class="list-item-actions">
+                        <button class="icon-btn" onclick="openChannelSettings('${ch.tracking_code}')" title="Настройки">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateChannelSelects() {
+            const options = '<option value="">Выберите канал</option>' +
+                channels.map(ch => `<option value="${ch.tracking_code}">${escapeHtml(ch.title)}</option>`).join('');
+
+            document.getElementById('stats-channel-select').innerHTML = options;
+            document.getElementById('links-channel-select').innerHTML = options;
+        }
+
+        // Настройки канала
+        function openChannelSettings(trackingCode) {
+            const channel = channels.find(c => c.tracking_code === trackingCode);
+            if (!channel) return;
+
+            document.getElementById('settings-channel-code').value = trackingCode;
+            document.getElementById('settings-ym-id').value = channel.yandex_metrika_id || '';
+            document.getElementById('settings-vk-pixel').value = channel.vk_pixel_id || '';
+
+            document.getElementById('channel-settings-modal').classList.add('active');
+        }
+
+        document.getElementById('save-channel-settings').addEventListener('click', async () => {
+            const trackingCode = document.getElementById('settings-channel-code').value;
+            const yandex_metrika_id = document.getElementById('settings-ym-id').value.trim();
+            const vk_pixel_id = document.getElementById('settings-vk-pixel').value.trim();
+
+            const result = await apiRequest('/channels/' + trackingCode, {
+                method: 'PUT',
+                body: JSON.stringify({ yandex_metrika_id, vk_pixel_id })
+            });
+
+            if (result.success) {
+                closeModal('channel-settings-modal');
+                loadChannels();
+                tg.showAlert('Настройки сохранены');
+            } else {
+                tg.showAlert(result.error || 'Ошибка сохранения');
+            }
+        });
+
+        // Статистика
+        document.getElementById('stats-channel-select').addEventListener('change', async (e) => {
+            const trackingCode = e.target.value;
+
+            if (!trackingCode) {
+                document.getElementById('stats-content').style.display = 'none';
+                return;
+            }
+
+            const result = await apiRequest('/channels/' + trackingCode + '/stats');
+
+            if (result.success) {
+                document.getElementById('stats-content').style.display = 'block';
+
+                document.getElementById('stat-visits').textContent = result.totals.total_visits || 0;
+                document.getElementById('stat-subscribers').textContent = result.totals.total_subscribers || 0;
+
+                const cr = result.totals.total_visits > 0
+                    ? Math.round(result.totals.total_subscribers / result.totals.total_visits * 100)
+                    : 0;
+                document.getElementById('stat-conversion').textContent = cr + '%';
+
+                // UTM таблица
+                const utmTable = document.getElementById('utm-stats-table');
+                utmTable.innerHTML = result.utmStats.map(row => `
+                    <tr>
+                        <td>${escapeHtml(row.utm_source || '(direct)')}</td>
+                        <td>${escapeHtml(row.utm_campaign || '-')}</td>
+                        <td>${row.visits}</td>
+                        <td>${row.subscribers}</td>
+                        <td>${row.conversion || 0}%</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="5" style="text-align:center">Нет данных</td></tr>';
+            }
+        });
+
+        // Ссылки
+        document.getElementById('links-channel-select').addEventListener('change', async (e) => {
+            currentChannel = e.target.value;
+
+            if (!currentChannel) {
+                document.getElementById('create-link-btn').style.display = 'none';
+                document.getElementById('links-list').innerHTML = '';
+                return;
+            }
+
+            document.getElementById('create-link-btn').style.display = 'block';
+            loadLinks();
+        });
+
+        async function loadLinks() {
+            if (!currentChannel) return;
+
+            const result = await apiRequest('/links/' + currentChannel);
+
+            if (result.success) {
+                const container = document.getElementById('links-list');
+
+                if (result.links.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-link"></i>
+                            <p>Нет ссылок</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = result.links.map(link => `
+                    <div class="list-item">
+                        <div class="list-item-content">
+                            <div class="list-item-title">${escapeHtml(link.name)}</div>
+                            <div class="list-item-subtitle">
+                                ${link.utm_source}${link.utm_campaign ? ' / ' + link.utm_campaign : ''} •
+                                ${link.visits_count} визитов • ${link.subscribers_count} подписок
+                            </div>
+                        </div>
+                        <div class="list-item-actions">
+                            <button class="icon-btn" onclick="copyLink('${link.short_code}')" title="Копировать">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                            <button class="icon-btn" onclick="deleteLink('${link.id}')" title="Удалить">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        document.getElementById('create-link-btn').addEventListener('click', () => {
+            document.getElementById('link-name').value = '';
+            document.getElementById('link-utm-source').value = '';
+            document.getElementById('link-utm-medium').value = '';
+            document.getElementById('link-utm-campaign').value = '';
+            document.getElementById('create-link-modal').classList.add('active');
+        });
+
+        document.getElementById('save-link-btn').addEventListener('click', async () => {
+            const name = document.getElementById('link-name').value.trim();
+            const utm_source = document.getElementById('link-utm-source').value.trim();
+            const utm_medium = document.getElementById('link-utm-medium').value.trim();
+            const utm_campaign = document.getElementById('link-utm-campaign').value.trim();
+
+            if (!name || !utm_source) {
+                tg.showAlert('Заполните название и UTM Source');
+                return;
+            }
+
+            const result = await apiRequest('/links/' + currentChannel, {
+                method: 'POST',
+                body: JSON.stringify({ name, utm_source, utm_medium, utm_campaign })
+            });
+
+            if (result.success) {
+                closeModal('create-link-modal');
+                loadLinks();
+
+                // Показываем ссылку
+                tg.showAlert('Ссылка создана!\n\n' + result.link.full_url);
+            } else {
+                tg.showAlert(result.error || 'Ошибка создания');
+            }
+        });
+
+        function copyLink(shortCode) {
+            // Формируем ссылку (нужно знать имя бота)
+            const link = `https://t.me/PKmarketingBot/subscribe?startapp=${shortCode}`;
+            navigator.clipboard.writeText(link).then(() => {
+                tg.showAlert('Ссылка скопирована');
+            });
+        }
+
+        async function deleteLink(linkId) {
+            if (!confirm('Удалить ссылку?')) return;
+
+            const result = await apiRequest('/links/' + currentChannel + '/' + linkId, {
+                method: 'DELETE'
+            });
+
+            if (result.success) {
+                loadLinks();
+            }
+        }
+
+        // Утилиты
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Клик вне модалки закрывает её
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('active');
+                }
+            });
+        });
+
+        // Инициализация
+        loadChannels();
+    </script>
+</body>
+</html>
