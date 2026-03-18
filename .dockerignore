@@ -1,0 +1,7 @@
+frontend-react/node_modules
+frontend-react/dist
+backend-python/__pycache__
+backend-python/.env
+**/__pycache__
+*.pyc
+.git

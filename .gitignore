@@ -3,3 +3,7 @@ node_modules/
 data/
 *.db
 .DS_Store
+__pycache__/
+*.pyc
+frontend-react/dist/
+*.backup
