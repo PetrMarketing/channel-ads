@@ -1,0 +1,354 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useChannels } from '../contexts/ChannelContext';
+import { api } from '../services/api';
+import { useToast } from '../components/Toast';
+import Loading from '../components/Loading';
+
+const DURATION_OPTIONS = [
+  { months: 1, label: '1 месяц', price: 490 },
+  { months: 3, label: '3 месяца', price: 1290 },
+  { months: 6, label: '6 месяцев', price: 2290 },
+  { months: 12, label: '12 месяцев', price: 4990 },
+];
+const CHANNEL_DISCOUNT_PERCENT = 10;
+
+export default function BillingPage() {
+  const { channels } = useChannels();
+  const { showToast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [buying, setBuying] = useState(false);
+  const [selectedMonths, setSelectedMonths] = useState(1);
+  // Per-channel config: { [tracking_code]: { selected: bool, users: number } }
+  const [channelConfigs, setChannelConfigs] = useState({});
+  // Billing status per channel
+  const [billingStatuses, setBillingStatuses] = useState({});
+
+  // Init channel configs when channels load
+  useEffect(() => {
+    if (!channels?.length) return;
+    setChannelConfigs(prev => {
+      const next = { ...prev };
+      for (const ch of channels) {
+        if (!next[ch.tracking_code]) {
+          next[ch.tracking_code] = { selected: true, users: 1 };
+        }
+      }
+      return next;
+    });
+  }, [channels]);
+
+  // Load billing status for all channels
+  const loadStatuses = useCallback(async () => {
+    if (!channels?.length) return;
+    setLoading(true);
+    try {
+      const data = await api.get('/billing/overview');
+      if (data.success && data.overview) {
+        const statuses = {};
+        for (const ch of data.overview) {
+          statuses[ch.tracking_code] = ch;
+        }
+        setBillingStatuses(statuses);
+        // Set user counts from existing billing
+        setChannelConfigs(prev => {
+          const next = { ...prev };
+          for (const ch of data.overview) {
+            if (next[ch.tracking_code] && ch.max_users > 1) {
+              next[ch.tracking_code].users = ch.max_users;
+            }
+          }
+          return next;
+        });
+      }
+    } catch {
+      // ok
+    } finally {
+      setLoading(false);
+    }
+  }, [channels]);
+
+  useEffect(() => { loadStatuses(); }, [loadStatuses]);
+
+  const toggleChannel = (tc) => {
+    setChannelConfigs(prev => ({
+      ...prev,
+      [tc]: { ...prev[tc], selected: !prev[tc]?.selected },
+    }));
+  };
+
+  const setChannelUsers = (tc, count) => {
+    setChannelConfigs(prev => ({
+      ...prev,
+      [tc]: { ...prev[tc], users: Math.max(1, Math.min(50, count)) },
+    }));
+  };
+
+  const selectedChannels = channels?.filter(ch => channelConfigs[ch.tracking_code]?.selected) || [];
+  const selectedCount = selectedChannels.length;
+
+  const calcPrice = () => {
+    const dur = DURATION_OPTIONS.find(d => d.months === selectedMonths) || DURATION_OPTIONS[0];
+    const basePrice = dur.price;
+    const extraChannels = Math.max(0, selectedCount - 1);
+    const channelDiscountPct = Math.min(extraChannels * CHANNEL_DISCOUNT_PERCENT, 90);
+    const pricePerUser = Math.round(basePrice * (1 - channelDiscountPct / 100));
+    const totalUsers = selectedChannels.reduce((sum, ch) => sum + (channelConfigs[ch.tracking_code]?.users || 1), 0);
+    const total = pricePerUser * totalUsers;
+    const fullPrice = basePrice * totalUsers;
+    return { basePrice, pricePerUser, total, fullPrice, savings: fullPrice - total, channelDiscountPct, totalUsers };
+  };
+
+  const handleBuy = async () => {
+    if (!selectedCount) {
+      showToast('Выберите хотя бы один канал', 'error');
+      return;
+    }
+    setBuying(true);
+    try {
+      const payload = {
+        months: selectedMonths,
+        channels: selectedChannels.map(ch => ({
+          tracking_code: ch.tracking_code,
+          users: channelConfigs[ch.tracking_code]?.users || 1,
+        })),
+      };
+      const data = await api.post('/billing/pay-multi', payload);
+      if (data.success && (data.payment_url || data.paymentUrl)) {
+        window.location.href = data.payment_url || data.paymentUrl;
+      } else {
+        showToast(data.error || 'Ошибка создания платежа', 'error');
+      }
+    } catch {
+      showToast('Ошибка оплаты', 'error');
+    } finally {
+      setBuying(false);
+    }
+  };
+
+  const price = calcPrice();
+
+  if (loading) return <Loading />;
+
+  if (!channels?.length) {
+    return (
+      <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+        Нет каналов. Добавьте канал для оформления подписки.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 style={{ marginBottom: '20px' }}>Подписка и оплата</h2>
+
+      {/* Channel selection with per-channel users */}
+      <div style={{
+        background: 'var(--bg-glass)', border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)', padding: '20px', marginBottom: '24px',
+      }}>
+        <h3 style={{ fontSize: '1rem', marginBottom: '6px' }}>Каналы и пользователи</h3>
+        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+          Выберите каналы и укажите количество пользователей для каждого.
+          {selectedCount > 1 && ` Скидка ${Math.min((selectedCount - 1) * CHANNEL_DISCOUNT_PERCENT, 90)}% за ${selectedCount} каналов.`}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {channels.map(ch => {
+            const tc = ch.tracking_code;
+            const cfg = channelConfigs[tc] || { selected: false, users: 1 };
+            const bs = billingStatuses[tc];
+            const isActive = bs?.billing_active;
+            const daysLeft = bs?.billing_days_left;
+
+            return (
+              <div key={tc} style={{
+                background: cfg.selected ? 'var(--bg-glass)' : 'transparent',
+                border: cfg.selected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                borderRadius: 'var(--radius)', padding: '14px',
+                opacity: cfg.selected ? 1 : 0.6,
+                transition: 'all 0.2s',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  {/* Checkbox + title */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1, minWidth: '200px' }}>
+                    <input
+                      type="checkbox"
+                      checked={cfg.selected}
+                      onChange={() => toggleChannel(tc)}
+                      style={{ width: '18px', height: '18px', accentColor: 'var(--primary)' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.92rem', fontWeight: 600 }}>{ch.title || ch.username || tc}</div>
+                      {isActive ? (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--success)' }}>
+                          Активна — {daysLeft} дн.
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                          Нет подписки
+                        </div>
+                      )}
+                    </div>
+                  </label>
+
+                  {/* User count for this channel */}
+                  {cfg.selected && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Польз.:</span>
+                      <button
+                        onClick={() => setChannelUsers(tc, cfg.users - 1)}
+                        style={{
+                          width: '30px', height: '30px', borderRadius: '50%',
+                          border: '1px solid var(--border)', background: 'var(--bg-glass)',
+                          fontSize: '1rem', cursor: 'pointer', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >-</button>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 700, minWidth: '30px', textAlign: 'center' }}>
+                        {cfg.users}
+                      </div>
+                      <button
+                        onClick={() => setChannelUsers(tc, cfg.users + 1)}
+                        style={{
+                          width: '30px', height: '30px', borderRadius: '50%',
+                          border: '1px solid var(--border)', background: 'var(--bg-glass)',
+                          fontSize: '1rem', cursor: 'pointer', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >+</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Duration */}
+      <h3 style={{ fontSize: '1rem', marginBottom: '14px' }}>Срок подписки</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '24px' }}>
+        {DURATION_OPTIONS.map(dur => {
+          const isSelected = selectedMonths === dur.months;
+          const perMonth = Math.round(dur.price / dur.months);
+          const isBestValue = dur.months === 12;
+          return (
+            <div
+              key={dur.months}
+              onClick={() => setSelectedMonths(dur.months)}
+              style={{
+                background: 'var(--bg-glass)',
+                border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                borderRadius: 'var(--radius)', padding: '16px', textAlign: 'center',
+                cursor: 'pointer', transition: 'border-color 0.2s',
+                opacity: isSelected ? 1 : 0.75,
+                position: 'relative',
+              }}
+            >
+              {isBestValue && (
+                <div style={{
+                  position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)',
+                  background: 'var(--primary)',
+                  color: '#fff', padding: '2px 10px',
+                  borderRadius: '10px', fontSize: '0.7rem', fontWeight: 600, whiteSpace: 'nowrap',
+                }}>
+                  Выгодно
+                </div>
+              )}
+              <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                {dur.label}
+              </div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>
+                {dur.price.toLocaleString('ru-RU')} <span style={{ fontSize: '0.8rem', fontWeight: 400 }}>₽/польз.</span>
+              </div>
+              {dur.months > 1 && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  ~{perMonth} ₽/мес.
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Price summary */}
+      <div style={{
+        background: 'var(--bg-glass)', border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)', padding: '20px', marginBottom: '24px',
+      }}>
+        <h3 style={{ fontSize: '1rem', marginBottom: '12px' }}>Расчёт стоимости</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Каналов</span>
+            <span style={{ fontWeight: 500 }}>{selectedCount}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Пользователей всего</span>
+            <span style={{ fontWeight: 500 }}>{price.totalUsers}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Срок</span>
+            <span style={{ fontWeight: 500 }}>{DURATION_OPTIONS.find(d => d.months === selectedMonths)?.label}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Цена за пользователя</span>
+            <span style={{ fontWeight: 500 }}>
+              {price.channelDiscountPct > 0 && (
+                <span style={{ textDecoration: 'line-through', color: 'var(--text-secondary)', marginRight: '6px', fontSize: '0.82rem' }}>
+                  {price.basePrice.toLocaleString('ru-RU')} ₽
+                </span>
+              )}
+              {price.pricePerUser.toLocaleString('ru-RU')} ₽
+            </span>
+          </div>
+          {price.channelDiscountPct > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+              <span style={{ color: 'var(--success)' }}>Скидка за {selectedCount} каналов</span>
+              <span style={{ fontWeight: 500, color: 'var(--success)' }}>-{price.channelDiscountPct}%</span>
+            </div>
+          )}
+          {/* Per-channel breakdown */}
+          {selectedCount > 1 && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '8px', marginTop: '4px' }}>
+              {selectedChannels.map(ch => {
+                const cfg = channelConfigs[ch.tracking_code];
+                return (
+                  <div key={ch.tracking_code} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>{ch.title || ch.username} ({cfg?.users || 1} польз.)</span>
+                    <span>{(price.pricePerUser * (cfg?.users || 1)).toLocaleString('ru-RU')} ₽</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          borderTop: '1px solid var(--border)', paddingTop: '12px',
+        }}>
+          <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>Итого:</span>
+          <span style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--primary)' }}>
+            {price.total.toLocaleString('ru-RU')} ₽
+          </span>
+        </div>
+        {price.savings > 0 && (
+          <div style={{ fontSize: '0.78rem', color: 'var(--success)', marginTop: '6px', textAlign: 'right' }}>
+            Экономия: {price.savings.toLocaleString('ru-RU')} ₽
+          </div>
+        )}
+      </div>
+
+      {/* Pay button */}
+      <button
+        className="btn btn-primary"
+        style={{ width: '100%', padding: '14px', fontSize: '1rem', fontWeight: 600 }}
+        onClick={handleBuy}
+        disabled={buying || !selectedCount}
+      >
+        {buying ? 'Перенаправление на оплату...' :
+          !selectedCount ? 'Выберите каналы' :
+          `Оплатить ${price.total.toLocaleString('ru-RU')} ₽`}
+      </button>
+    </div>
+  );
+}
