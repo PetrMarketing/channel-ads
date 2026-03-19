@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: channel-ads
+    runtime: python
+    region: frankfurt
+    buildCommand: |
+      cd channel-ads/backend-python && pip install -r requirements.txt &&
+      cd ../frontend-react && npm install && npx vite build
+    startCommand: cd channel-ads/backend-python && python run.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.3"
+      - key: NODE_ENV
+        value: production
+      - key: BOT_TOKEN
+        sync: false
+      - key: BOT_USERNAME
+        sync: false
+      - key: MINIAPP_NAME
+        value: subscribe
+      - key: MAX_BOT_TOKEN
+        sync: false
+      - key: MAX_BOT_ID
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: TINKOFF_TERMINAL_KEY
+        sync: false
+      - key: TINKOFF_SECRET_KEY
+        sync: false
+      - key: PORT
+        value: "8000"
+    disk:
+      name: channel-ads-data
+      mountPath: /opt/render/project/data
+      sizeGB: 1

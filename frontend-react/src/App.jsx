@@ -1,0 +1,78 @@
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useAuth } from './contexts/AuthContext';
+import { useAdminAuth } from './contexts/AdminAuthContext';
+import Layout from './components/Layout';
+import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
+import LinksPage from './pages/LinksPage';
+import PinsPage from './pages/PinsPage';
+import BroadcastsPage from './pages/BroadcastsPage';
+import FunnelsPage from './pages/FunnelsPage';
+import ContentPage from './pages/ContentPage';
+import GiveawaysPage from './pages/GiveawaysPage';
+import BillingPage from './pages/BillingPage';
+import StaffPage from './pages/StaffPage';
+
+// Public pages (standalone, no layout)
+import SubscribePage from './pages/public/SubscribePage';
+import PaymentSuccessPage from './pages/public/PaymentSuccessPage';
+
+// Admin pages
+import AdminLoginPage from './pages/admin/AdminLoginPage';
+import AdminLayout from './components/admin/AdminLayout';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import AdminUsersPage from './pages/admin/AdminUsersPage';
+import AdminUserProfilePage from './pages/admin/AdminUserProfilePage';
+import AdminChannelsPage from './pages/admin/AdminChannelsPage';
+import AdminChannelProfilePage from './pages/admin/AdminChannelProfilePage';
+import AdminSubscribersPage from './pages/admin/AdminSubscribersPage';
+import AdminSubscriberDetailPage from './pages/admin/AdminSubscriberDetailPage';
+import AdminAdminsPage from './pages/admin/AdminAdminsPage';
+
+function PrivateRoute({ children }) {
+  const { token } = useAuth();
+  return token ? children : <Navigate to="/login" replace />;
+}
+
+function AdminPrivateRoute({ children }) {
+  const { adminToken } = useAdminAuth();
+  return adminToken ? children : <Navigate to="/admin/login" replace />;
+}
+
+export default function App() {
+  return (
+    <Routes>
+      {/* Public pages */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/subscribe/:shortCode" element={<SubscribePage />} />
+      <Route path="/payment-success" element={<PaymentSuccessPage />} />
+      {/* /go/:code handled by backend directly — instant 302 redirect */}
+
+      {/* Admin panel */}
+      <Route path="/admin/login" element={<AdminLoginPage />} />
+      <Route path="/admin" element={<AdminPrivateRoute><AdminLayout /></AdminPrivateRoute>}>
+        <Route index element={<AdminDashboardPage />} />
+        <Route path="users" element={<AdminUsersPage />} />
+        <Route path="users/:userId" element={<AdminUserProfilePage />} />
+        <Route path="channels" element={<AdminChannelsPage />} />
+        <Route path="channels/:channelId" element={<AdminChannelProfilePage />} />
+        <Route path="subscribers" element={<AdminSubscribersPage />} />
+        <Route path="subscribers/:identifier" element={<AdminSubscriberDetailPage />} />
+        <Route path="admins" element={<AdminAdminsPage />} />
+      </Route>
+
+      {/* Dashboard (protected) */}
+      <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+        <Route index element={<DashboardPage />} />
+        <Route path="links" element={<LinksPage />} />
+        <Route path="pins" element={<PinsPage />} />
+        <Route path="broadcasts" element={<BroadcastsPage />} />
+        <Route path="funnels" element={<FunnelsPage />} />
+        <Route path="content" element={<ContentPage />} />
+        <Route path="giveaways" element={<GiveawaysPage />} />
+        <Route path="billing" element={<BillingPage />} />
+        <Route path="staff" element={<StaffPage />} />
+      </Route>
+    </Routes>
+  );
+}

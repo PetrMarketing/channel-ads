@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:18
+    container_name: channel-ads-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: channel_ads
+      POSTGRES_USER: channel_ads
+      POSTGRES_PASSWORD: ChAds2026Secure!
+    volumes:
+      - pg_data:/var/lib/postgresql
+    networks:
+      - internal
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U channel_ads -d channel_ads"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: channel-ads
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8010:8000"
+    env_file:
+      - ./backend-python/.env
+    environment:
+      - NODE_ENV=production
+      - PORT=8000
+      - UPLOAD_DIR=/app/uploads
+      - DATABASE_URL=postgresql://channel_ads:ChAds2026Secure!@db:5432/channel_ads
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - internal
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  internal:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1400"
+
+volumes:
+  uploads_data:
+  pg_data:
