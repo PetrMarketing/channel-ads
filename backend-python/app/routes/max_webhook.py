@@ -1280,7 +1280,7 @@ async def process_max_update(body: dict):
                 await execute("""
                     INSERT INTO channels (channel_id, title, username, max_chat_id, max_connected, tracking_code, platform, is_active, user_id, owner_id, join_link)
                     VALUES ($1, $2, $3, $4, 1, $5, 'max', $6, $7, $8, $9)
-                """, chat_id_str, chat_title, chat_link, chat_id_str, tracking_code, active_status, bind_user_id, bind_user_id, _join_link)
+                """, chat_id_int, chat_title, chat_link, chat_id_str, tracking_code, active_status, bind_user_id, bind_user_id, _join_link)
 
                 # Activate trial
                 new_channel = await fetch_one("SELECT id FROM channels WHERE max_chat_id = $1", chat_id_str)
