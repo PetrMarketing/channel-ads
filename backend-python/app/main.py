@@ -28,8 +28,8 @@ from .middleware.auth import get_current_user
 from .routes import (
     auth, channels, links, tracking, billing, pins, broadcasts,
     funnels, content, giveaways, notifications, payments,
-    offline_conversions, max_routes, telegram_bot, max_webhook,
-    admin,
+    max_routes, telegram_bot, max_webhook,
+    admin, paid_chats, paid_chat_payments,
 )
 
 
@@ -47,6 +47,12 @@ async def lifespan(app: FastAPI):
     from .services.funnel_processor import start_processors
     start_billing_checker()
     start_processors()
+
+    from .services.paid_chat_checker import start_paid_chat_checker
+    start_paid_chat_checker()
+
+    from .services.channel_activator import start_channel_activator
+    start_channel_activator()
 
     # Start bot polling
     from .routes.telegram_bot import start_telegram_polling
@@ -114,10 +120,10 @@ app.include_router(content.router, prefix="/api/content", tags=["content"])
 app.include_router(giveaways.router, prefix="/api/giveaways", tags=["giveaways"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(payments.router, prefix="/api/payments", tags=["payments"])
-app.include_router(offline_conversions.router, prefix="/api/conversions", tags=["conversions"])
 app.include_router(max_routes.router, prefix="/api/max", tags=["max"])
 app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(paid_chats.router, prefix="/api/paid-chats", tags=["paid-chats"])
 app.include_router(telegram_bot.router, prefix="/api/telegram", tags=["telegram-bot"])
 
 # ========================
@@ -126,7 +132,8 @@ app.include_router(telegram_bot.router, prefix="/api/telegram", tags=["telegram-
 app.include_router(tracking.router, prefix="/api/track", tags=["tracking"])
 app.include_router(max_webhook.router, prefix="/webhook/max", tags=["max-webhook"])
 app.include_router(billing.public_router, prefix="/api/billing/public", tags=["billing-public"])
-app.include_router(offline_conversions.public_router, prefix="/api/conversions/public", tags=["conversions-public"])
+app.include_router(billing.staff_invite_router, prefix="/api/staff", tags=["staff-invites"])
+app.include_router(paid_chat_payments.router, prefix="/api/paid-chat-pay", tags=["paid-chat-pay"])
 
 
 # ========================
@@ -153,25 +160,30 @@ async def health_check():
 
 
 @app.get("/api/dashboard")
-async def dashboard_stats(user=Depends(get_current_user)):
-    """Dashboard overview stats."""
+async def dashboard_stats(request: Request, user=Depends(get_current_user)):
+    """Dashboard overview stats. Optional ?tc= to filter by channel."""
     try:
-        visits = await fetch_one(
-            "SELECT COUNT(*) as count FROM visits v JOIN channels c ON c.id = v.channel_id WHERE c.user_id = $1",
-            user["id"],
-        )
-        subs = await fetch_one(
-            "SELECT COUNT(*) as count FROM subscriptions s JOIN channels c ON c.id = s.channel_id WHERE c.user_id = $1",
-            user["id"],
-        )
-        leads = await fetch_one(
-            "SELECT COUNT(*) as count FROM leads l JOIN lead_magnets lm ON lm.id = l.lead_magnet_id JOIN channels c ON c.id = lm.channel_id WHERE c.user_id = $1",
-            user["id"],
-        )
-        posts = await fetch_one(
-            "SELECT COUNT(*) as count FROM content_posts cp JOIN channels c ON c.id = cp.channel_id WHERE c.user_id = $1 AND cp.status = 'scheduled'",
-            user["id"],
-        )
+        tc = request.query_params.get("tc")
+        if tc:
+            channel = await fetch_one("SELECT id FROM channels WHERE tracking_code = $1 AND user_id = $2", tc, user["id"])
+            if not channel:
+                return {"success": True, "visits": 0, "subscribers": 0, "leads": 0, "scheduledPosts": 0}
+            cid = channel["id"]
+            visits = await fetch_one("SELECT COUNT(*) as count FROM visits WHERE channel_id = $1", cid)
+            subs = await fetch_one("SELECT COUNT(*) as count FROM subscriptions WHERE channel_id = $1", cid)
+            leads = await fetch_one(
+                "SELECT COUNT(*) as count FROM leads WHERE lead_magnet_id IN (SELECT id FROM lead_magnets WHERE channel_id = $1)", cid)
+            posts = await fetch_one(
+                "SELECT COUNT(*) as count FROM content_posts WHERE channel_id = $1 AND status = 'scheduled'", cid)
+        else:
+            visits = await fetch_one(
+                "SELECT COUNT(*) as count FROM visits v JOIN channels c ON c.id = v.channel_id WHERE c.user_id = $1", user["id"])
+            subs = await fetch_one(
+                "SELECT COUNT(*) as count FROM subscriptions s JOIN channels c ON c.id = s.channel_id WHERE c.user_id = $1", user["id"])
+            leads = await fetch_one(
+                "SELECT COUNT(*) as count FROM leads l JOIN lead_magnets lm ON lm.id = l.lead_magnet_id JOIN channels c ON c.id = lm.channel_id WHERE c.user_id = $1", user["id"])
+            posts = await fetch_one(
+                "SELECT COUNT(*) as count FROM content_posts cp JOIN channels c ON c.id = cp.channel_id WHERE c.user_id = $1 AND cp.status = 'scheduled'", user["id"])
         return {
             "success": True,
             "visits": visits["count"] if visits else 0,
@@ -241,6 +253,162 @@ async def bot_info():
     return result
 
 
+@app.get("/miniapp")
+@app.get("/miniapp/{code}")
+async def miniapp_page(request: Request, code: str = ""):
+    """MAX Mini App — seamless redirect to channel with tracking."""
+    from fastapi.responses import HTMLResponse
+    # Also check query param
+    if not code:
+        code = request.query_params.get("WebAppStartParam", "") or request.query_params.get("code", "")
+    clean_code = code.replace("go_", "") if code.startswith("go_") else code
+    # Meta refresh fallback: if JS fails completely, redirect via /go/ after 6 seconds
+    meta_refresh = f'<meta http-equiv="refresh" content="6;url=/go/{clean_code}">' if clean_code else ''
+    html = """<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+__META_REFRESH__
+<script src="https://st.max.ru/js/max-web-app.js"></script>
+<style>
+body{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f5f5f5}
+.c{text-align:center;padding:24px}
+.s{width:36px;height:36px;border:3px solid #7B68EE;border-top-color:transparent;border-radius:50%;animation:s .7s linear infinite;margin:0 auto 16px}
+@keyframes s{to{transform:rotate(360deg)}}
+p{color:#666;font-size:15px}
+</style>
+</head><body>
+<div class="c"><div class="s"></div><p>Переход в канал...</p></div>
+<script>
+async function doRedirect() {
+  try {
+    // Get start_param from multiple sources
+    let startParam = '';
+    // 1. Server-side code from URL path (most reliable)
+    const pathCode = '__SERVER_CODE__';
+    if (pathCode) startParam = pathCode;
+    // 2. WebApp bridge
+    if (!startParam && window.WebApp && window.WebApp.initDataUnsafe) {
+      startParam = window.WebApp.initDataUnsafe.start_param || '';
+    }
+    // 3. URL query params
+    if (!startParam) {
+      const url = new URL(window.location.href);
+      startParam = url.searchParams.get('WebAppStartParam') || url.searchParams.get('startapp') || url.searchParams.get('start_param') || '';
+    }
+
+    if (!startParam) {
+      document.querySelector('p').textContent = 'Загрузка...';
+      return false;
+    }
+
+    const code = startParam.startsWith('go_') ? startParam.slice(3) : startParam;
+
+    const resp = await fetch('/api/track/miniapp-visit', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code: code})
+    });
+    const data = await resp.json();
+    const channelUrl = data.channel_url;
+
+    if (channelUrl) {
+      // Show clickable button
+      document.querySelector('.c').innerHTML =
+        '<a id="go-btn" href="' + channelUrl + '" style="display:inline-block;padding:16px 40px;background:#7B68EE;color:#fff;border-radius:12px;text-decoration:none;font-size:17px;font-weight:600;margin-top:8px">Перейти в канал</a>';
+      document.getElementById('go-btn').addEventListener('click', function(e) {
+        e.preventDefault();
+        // openMaxLink for max.ru links (opens natively), openLink for others
+        var url = this.href;
+        try {
+          if (url.includes('max.ru') && window.WebApp && window.WebApp.openMaxLink) {
+            window.WebApp.openMaxLink(url);
+          } else if (window.WebApp && window.WebApp.openLink) {
+            window.WebApp.openLink(url);
+          } else {
+            window.location.href = url;
+          }
+        } catch(err) { window.location.href = url; }
+        setTimeout(function(){ try { window.WebApp.close(); } catch(e){} }, 1000);
+      });
+      return true;
+    } else {
+      document.querySelector('p').textContent = 'Ссылка не найдена';
+      setTimeout(() => { try { window.WebApp?.close(); } catch(e){} }, 2000);
+      return true;
+    }
+  } catch(e) {
+    document.querySelector('p').textContent = 'Ошибка: ' + e.message;
+    setTimeout(() => { try { window.WebApp?.close(); } catch(e){} }, 3000);
+    return true;
+  }
+  return false;
+}
+
+// Fallback: if miniapp doesn't load in 5 sec, use direct link
+let done = false;
+const fallbackTimer = setTimeout(() => {
+  if (done) return;
+  // Get code from any available source
+  const url = new URL(window.location.href);
+  let sp = url.searchParams.get('WebAppStartParam') || url.searchParams.get('startapp') || '';
+  // Also try path: /miniapp/CODE
+  if (!sp) {
+    const pathParts = url.pathname.split('/');
+    if (pathParts.length >= 3 && pathParts[1] === 'miniapp') sp = pathParts[2];
+  }
+  const c = sp.startsWith('go_') ? sp.slice(3) : sp;
+  if (c) {
+    // Use /go/ redirect (works without JS/bridge)
+    window.location.href = '/go/' + c;
+  } else {
+    document.querySelector('p').textContent = 'Не удалось загрузить. Попробуйте ещё раз.';
+  }
+}, 5000);
+
+(async function() {
+  if (window.WebApp) {
+    try { window.WebApp.ready(); } catch(e) {}
+  }
+  let ok = await doRedirect();
+  if (!ok) {
+    for (let i = 0; i < 5 && !ok; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      if (window.WebApp) {
+        try { window.WebApp.ready(); } catch(e) {}
+      }
+      ok = await doRedirect();
+    }
+  }
+  if (ok) { done = true; clearTimeout(fallbackTimer); }
+})();
+</script>
+</body></html>"""
+    html = html.replace('__META_REFRESH__', meta_refresh).replace('__SERVER_CODE__', code)
+    return HTMLResponse(html)
+
+
+@app.get("/join/{token}")
+async def one_time_invite(token: str):
+    """One-time invite link for paid chat members."""
+    from fastapi.responses import HTMLResponse
+    row = await fetch_one(
+        "SELECT * FROM paid_chat_invite_tokens WHERE token = $1", token
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Ссылка не найдена")
+    if row["used"]:
+        return HTMLResponse("""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5}
+.c{text-align:center;padding:40px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);max-width:400px}</style>
+</head><body><div class="c"><h2>⚠️ Ссылка уже использована</h2><p>Эта пригласительная ссылка была использована ранее.</p></div></body></html>""")
+
+    # Mark as used
+    await execute("UPDATE paid_chat_invite_tokens SET used = TRUE, used_at = NOW() WHERE id = $1", row["id"])
+    # Redirect to actual chat invite link
+    return RedirectResponse(url=row["target_url"], status_code=302)
+
+
 @app.get("/go/{code}")
 async def redirect_tracking_link(code: str, request: Request):
     """Short link redirect handler."""
@@ -308,6 +476,20 @@ async def redirect_tracking_link(code: str, request: Request):
             print(f"[direct-link] No channel URL available for code={code}, falling back to landing")
             channel_url = f"{settings.APP_URL}/subscribe/{code}"
         print(f"[direct-link] Redirecting to: {channel_url}")
+
+        # For MAX links opened in MAX internal browser — use instant JS redirect
+        # This ensures max.ru links are handled natively by the MAX app
+        if "max.ru" in channel_url:
+            from fastapi.responses import HTMLResponse
+            return HTMLResponse(f"""<!DOCTYPE html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="0;url={channel_url}">
+<style>body{{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;background:#f5f5f5}}
+.c{{text-align:center;padding:20px}}.s{{width:32px;height:32px;border:3px solid #7B68EE;border-top-color:transparent;border-radius:50%;animation:s .8s linear infinite;margin:0 auto 16px}}
+@keyframes s{{to{{transform:rotate(360deg)}}}}</style>
+</head><body><div class="c"><div class="s"></div><p>Переход в канал...</p></div>
+<script>window.location.replace("{channel_url}");</script></body></html>""")
+
         return RedirectResponse(url=channel_url, status_code=302)
 
     # Landing type: redirect to subscribe page

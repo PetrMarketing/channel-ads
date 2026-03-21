@@ -1,13 +1,88 @@
 import { useAuth } from '../contexts/AuthContext';
 import { useChannels } from '../contexts/ChannelContext';
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { api } from '../services/api';
+import { useToast } from './Toast';
+import Modal from './Modal';
 import ThemeToggle from './ThemeToggle';
+
+function PlatformBadge({ platform, user, channels, onUnlink }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  const isTG = platform === 'telegram';
+  const isLinked = isTG ? !!user.telegram_id : !!user.max_user_id;
+  const color = isTG ? '#2AABEE' : '#7B68EE';
+  const label = isTG ? 'TG' : 'MAX';
+  const name = isTG
+    ? (user.username ? `@${user.username}` : `ID ${user.telegram_id}`)
+    : (user.max_user_id ? `MAX ID ${user.max_user_id}` : '');
+  const platformChannels = channels.filter(c => isTG ? c.platform !== 'max' : c.platform === 'max');
+
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  if (!isLinked) return null;
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          background: color, color: '#fff', border: 'none', padding: '3px 8px',
+          borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer',
+          transition: 'opacity 0.15s',
+        }}
+        title={`${label} аккаунт`}
+      >
+        {label}
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, marginTop: '6px',
+          background: 'var(--bg-primary, #fff)', border: '1px solid var(--border, #ddd)',
+          borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+          padding: '12px 16px', minWidth: '200px', zIndex: 1000,
+          fontSize: '0.82rem',
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ background: color, color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem' }}>{label}</span>
+            <span>{isTG ? 'Telegram' : 'MAX'}</span>
+          </div>
+          <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>
+            {name}
+          </div>
+          <div style={{ color: 'var(--text-secondary)', marginBottom: '10px' }}>
+            Каналов: {platformChannels.length}
+          </div>
+          <button
+            onClick={() => { setOpen(false); onUnlink(platform); }}
+            style={{
+              width: '100%', padding: '6px 0', fontSize: '0.78rem', fontWeight: 500,
+              border: '1px solid var(--error, #e63946)', borderRadius: '6px',
+              background: 'transparent', color: 'var(--error, #e63946)', cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { e.target.style.background = 'var(--error, #e63946)'; e.target.style.color = '#fff'; }}
+            onMouseLeave={e => { e.target.style.background = 'transparent'; e.target.style.color = 'var(--error, #e63946)'; }}
+          >
+            Отвязать
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Header({ onToggleSidebar }) {
   const { user, logout } = useAuth();
   const { channels, currentChannel, selectChannel } = useChannels();
   const navigate = useNavigate();
+  const { showToast } = useToast();
 
   const handleLogout = () => {
     logout();
@@ -17,6 +92,27 @@ export default function Header({ onToggleSidebar }) {
   const handleChannelChange = (e) => {
     const ch = channels.find(c => c.tracking_code === e.target.value);
     if (ch) selectChannel(ch);
+  };
+
+  const [unlinkModal, setUnlinkModal] = useState(false);
+  const [unlinkCode, setUnlinkCode] = useState('');
+  const [unlinkPlatform, setUnlinkPlatform] = useState('');
+  const tgBot = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
+  const maxBot = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
+
+  const handleUnlink = async (platform) => {
+    try {
+      const data = await api.post('/auth/unlink', { platform });
+      if (data.success) {
+        setUnlinkCode(data.code);
+        setUnlinkPlatform(platform);
+        setUnlinkModal(true);
+      } else {
+        showToast(data.error || 'Ошибка', 'error');
+      }
+    } catch {
+      showToast('Нельзя отвязать единственную платформу', 'error');
+    }
   };
 
   return (
@@ -40,18 +136,14 @@ export default function Header({ onToggleSidebar }) {
           </div>
         )}
         {user && (
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginRight: '4px' }}>
             {user.first_name || user.username || ''}
           </span>
         )}
         {user && (
-          <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>
-            {user.telegram_id && (
-              <span style={{ background: '#2AABEE', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600, marginRight: '4px' }}>TG</span>
-            )}
-            {user.max_user_id && (
-              <span style={{ background: '#7B68EE', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600 }}>MAX</span>
-            )}
+          <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+            <PlatformBadge platform="telegram" user={user} channels={channels} onUnlink={handleUnlink} />
+            <PlatformBadge platform="max" user={user} channels={channels} onUnlink={handleUnlink} />
           </span>
         )}
       </div>
@@ -64,6 +156,35 @@ export default function Header({ onToggleSidebar }) {
           &#128682; Выйти
         </button>
       </div>
+
+      {/* Unlink code modal */}
+      <Modal isOpen={unlinkModal} onClose={() => setUnlinkModal(false)} title={`Отвязка ${unlinkPlatform === 'telegram' ? 'Telegram' : 'MAX'}`}>
+        <div style={{ textAlign: 'center', padding: '16px 0' }}>
+          <p style={{ marginBottom: '16px', fontSize: '0.9rem' }}>
+            Отправьте этот код боту <strong>{unlinkPlatform === 'telegram' ? `@${tgBot}` : '@PKMarketing'}</strong>
+            {unlinkPlatform === 'telegram' ? ' в Telegram' : ' в MAX'} для подтверждения отвязки:
+          </p>
+          <div style={{
+            fontSize: '2rem', fontWeight: 700, letterSpacing: '8px', padding: '16px 24px',
+            background: 'var(--bg-glass)', borderRadius: '12px', border: '2px dashed var(--error, #e63946)',
+            display: 'inline-block', fontFamily: 'monospace', marginBottom: '16px',
+          }}>
+            {unlinkCode}
+          </div>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+            Код действителен 5 минут
+          </p>
+          <button
+            onClick={() => {
+              window.open(unlinkPlatform === 'telegram' ? `https://t.me/${tgBot}` : `https://max.ru/${maxBot}`, '_blank');
+            }}
+            className="btn btn-primary"
+            style={{ display: 'inline-block' }}
+          >
+            Открыть {unlinkPlatform === 'telegram' ? 'Telegram' : 'MAX'}
+          </button>
+        </div>
+      </Modal>
     </header>
   );
 }

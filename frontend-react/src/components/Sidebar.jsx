@@ -81,6 +81,13 @@ const icons = {
       <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
     </svg>
   ),
+  paidChats: (
+    <svg className="sidebar-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
+      <path d="M12 8v8"/>
+      <path d="M8 12h8"/>
+    </svg>
+  ),
 };
 
 const menuItems = [
@@ -101,8 +108,14 @@ const menuItems = [
       { path: '/giveaways', label: 'Розыгрыши', icon: icons.giveaways },
     ],
   },
-  { path: '/billing', label: 'Подписка', icon: icons.billing, standalone: true },
+  {
+    category: 'monetization', label: 'Монетизация', icon: icons.paidChats,
+    items: [
+      { path: '/paid-chats', label: 'Платные чаты', icon: icons.paidChats },
+    ],
+  },
   { path: '/staff', label: 'Сотрудники', icon: icons.staff, standalone: true },
+  { path: '/billing', label: 'Подписка', icon: icons.billing, standalone: true },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {

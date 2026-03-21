@@ -30,13 +30,33 @@ async def schedule_funnel_for_lead(lead_id: int, lead_magnet_id: int, telegram_i
         "SELECT * FROM funnel_steps WHERE lead_magnet_id = $1 AND is_active = 1 ORDER BY step_number",
         lead_magnet_id,
     )
+    cumulative_seconds = 0
     for step in steps:
-        delay = step.get("delay_minutes", 60)
+        # Calculate delay from delay_config (preferred) or delay_minutes (legacy)
+        step_delay = step.get("delay_minutes", 60) * 60
+        delay_config = step.get("delay_config")
+        if delay_config:
+            import json as _json
+            try:
+                cfg = _json.loads(delay_config) if isinstance(delay_config, str) else delay_config
+                val = int(cfg.get("value", 60))
+                unit = cfg.get("unit", "minutes")
+                if unit == "seconds":
+                    step_delay = val
+                elif unit == "minutes":
+                    step_delay = val * 60
+                elif unit == "hours":
+                    step_delay = val * 3600
+                elif unit == "days":
+                    step_delay = val * 86400
+            except Exception:
+                pass
+        cumulative_seconds += step_delay
         await execute(
             """INSERT INTO funnel_progress (lead_id, funnel_step_id, telegram_id, max_user_id, platform, scheduled_at)
-               VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '1 minute' * $6)
+               VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '1 second' * $6)
                ON CONFLICT DO NOTHING""",
-            lead_id, step["id"], telegram_id, max_user_id, platform, delay,
+            lead_id, step["id"], telegram_id, max_user_id, platform, cumulative_seconds,
         )
 
 

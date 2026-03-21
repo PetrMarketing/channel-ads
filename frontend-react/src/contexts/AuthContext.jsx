@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { api } from '../services/api';
 
 const AuthContext = createContext(null);
@@ -33,6 +33,14 @@ export function AuthProvider({ children }) {
       }
     } catch {}
   }, []);
+
+  // Auto-refresh user data every 15 seconds (catches link/unlink changes)
+  useEffect(() => {
+    if (!token) return;
+    refreshUser();
+    const interval = setInterval(refreshUser, 15000);
+    return () => clearInterval(interval);
+  }, [token, refreshUser]);
 
   return (
     <AuthContext.Provider value={{ token, user, login, logout, refreshUser }}>

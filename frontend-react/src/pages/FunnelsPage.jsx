@@ -150,6 +150,8 @@ export default function FunnelsPage() {
   const [stepFile, setStepFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  const [showPreview, setShowPreview] = useState(false);
+  const [openDropdownId, setOpenDropdownId] = useState(null);
 
   const messageRef = useRef(null);
 
@@ -198,6 +200,7 @@ export default function FunnelsPage() {
     resetDelayState();
     setStepFile(null);
     setErrors({});
+    setShowPreview(false);
     setShowModal(true);
   };
 
@@ -225,6 +228,7 @@ export default function FunnelsPage() {
     setDelayDatetime(parsed.delayDatetime);
     setStepFile(null);
     setErrors({});
+    setShowPreview(false);
     setShowModal(true);
   };
 
@@ -309,6 +313,15 @@ export default function FunnelsPage() {
     } catch { showToast('Ошибка удаления', 'error'); }
   };
 
+  const handleCopyStep = async (lm, step) => {
+    try {
+      const data = await api.post(`/funnels/${tc}/${lm.id}/steps/${step.id}/copy`);
+      if (data.success) { showToast('Шаг скопирован'); loadFunnels(); }
+      else showToast(data.error || 'Ошибка копирования', 'error');
+    } catch { showToast('Ошибка копирования', 'error'); }
+    setOpenDropdownId(null);
+  };
+
   const formatDelay = (minutes, delayCfg) => {
     if (delayCfg) {
       const cfg = typeof delayCfg === 'string' ? (() => { try { return JSON.parse(delayCfg); } catch { return null; } })() : delayCfg;
@@ -390,9 +403,10 @@ export default function FunnelsPage() {
                           {step.step_number}
                         </div>
                         <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: '0.88rem', marginBottom: '4px', whiteSpace: 'pre-wrap', maxHeight: '50px', overflow: 'hidden' }}>
-                            {step.message_text}
-                          </p>
+                          <div
+                            style={{ fontSize: '0.88rem', marginBottom: '4px', maxHeight: '60px', overflowY: 'auto', lineHeight: 1.5 }}
+                            dangerouslySetInnerHTML={{ __html: step.message_text || '' }}
+                          />
                           <div style={{ display: 'flex', gap: '12px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                             <span>Задержка: {formatDelay(step.delay_minutes, step.delay_config)}</span>
                             {step.inline_buttons && <span>Кнопки: есть</span>}
@@ -400,9 +414,34 @@ export default function FunnelsPage() {
                             {step.is_active === false && <span style={{ color: 'var(--error)' }}>Неактивен</span>}
                           </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
                           <button className="btn btn-outline" style={btnSmall} onClick={() => openEditStep(lm, step)}>Ред.</button>
-                          <button className="btn btn-danger" style={btnSmall} onClick={() => handleDeleteStep(lm, step)}>Удалить</button>
+                          <div style={{ position: 'relative' }}>
+                            <button className="btn btn-outline" style={btnSmall} onClick={() => setOpenDropdownId(openDropdownId === step.id ? null : step.id)}>
+                              Ещё ⋮
+                            </button>
+                            {openDropdownId === step.id && (
+                              <div style={{
+                                position: 'absolute', right: 0, top: '100%', marginTop: '4px',
+                                background: 'var(--bg)', border: '1px solid var(--border)',
+                                borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                zIndex: 100, minWidth: '180px', overflow: 'hidden',
+                              }}>
+                                <button
+                                  style={dropdownItem}
+                                  onClick={() => handleCopyStep(lm, step)}
+                                >
+                                  📋 Копировать шаг
+                                </button>
+                                <button
+                                  style={{ ...dropdownItem, color: 'var(--error)' }}
+                                  onClick={() => { setOpenDropdownId(null); handleDeleteStep(lm, step); }}
+                                >
+                                  🗑️ Удалить
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -429,7 +468,29 @@ export default function FunnelsPage() {
                 />
               </div>
               {errors.message_text && <div className="field-error-text">{errors.message_text}</div>}
-              <div className="form-hint">Это сообщение будет отправлено подписчику после задержки. Поддерживается HTML.</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                <div className="form-hint" style={{ margin: 0 }}>Это сообщение будет отправлено подписчику после задержки. Поддерживается HTML.</div>
+                <button
+                  type="button"
+                  className={`btn ${showPreview ? 'btn-primary' : 'btn-outline'}`}
+                  style={btnSmall}
+                  onClick={() => setShowPreview(p => !p)}
+                >
+                  Предпросмотр
+                </button>
+              </div>
+              {showPreview && (
+                <div style={{
+                  background: '#1e1e2e', color: '#e0e0e0', borderRadius: '12px',
+                  padding: '16px', maxWidth: '400px', marginTop: '8px',
+                  fontSize: '0.9rem', lineHeight: 1.6, wordBreak: 'break-word',
+                }}>
+                  {form.message_text.trim()
+                    ? <div dangerouslySetInnerHTML={{ __html: form.message_text }} />
+                    : <span style={{ color: '#888' }}>Введите текст для предпросмотра</span>
+                  }
+                </div>
+              )}
             </div>
 
             {/* File attachment */}
@@ -559,3 +620,8 @@ export default function FunnelsPage() {
 
 const btnSmall = { padding: '4px 10px', fontSize: '0.8rem' };
 const radioLabel = { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' };
+const dropdownItem = {
+  display: 'block', width: '100%', padding: '10px 14px', border: 'none',
+  background: 'none', textAlign: 'left', fontSize: '0.85rem', cursor: 'pointer',
+  color: 'inherit', whiteSpace: 'nowrap',
+};

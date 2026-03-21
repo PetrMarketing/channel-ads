@@ -94,17 +94,15 @@ export default function PinsPage() {
   };
 
   const handleSavePin = async () => {
-    if (!pinForm.title.trim()) {
-      showToast('Введите название', 'error');
-      return;
-    }
+    const title = pinForm.title.trim() || `Закреп от ${new Date().toLocaleDateString('ru-RU')}`;
+    const formToSave = { ...pinForm, title };
     setSaving(true);
     setUploadProgress(0);
     try {
       let parsedButtons = null;
-      if (pinForm.inline_buttons.trim()) {
+      if (formToSave.inline_buttons.trim()) {
         try {
-          parsedButtons = JSON.parse(pinForm.inline_buttons);
+          parsedButtons = JSON.parse(formToSave.inline_buttons);
         } catch {
           showToast('Неверный формат JSON для кнопок', 'error');
           setSaving(false);
@@ -114,15 +112,14 @@ export default function PinsPage() {
 
       let data;
       if (pinFile) {
-        // Use FormData with file upload — separate /upload endpoints
         const formData = new FormData();
-        formData.append('title', pinForm.title);
-        formData.append('message_text', pinForm.message_text);
-        formData.append('lead_magnet_id', pinForm.lead_magnet_id || '');
+        formData.append('title', formToSave.title);
+        formData.append('message_text', formToSave.message_text);
+        formData.append('lead_magnet_id', formToSave.lead_magnet_id || '');
         if (parsedButtons) {
           formData.append('inline_buttons', JSON.stringify(parsedButtons));
         }
-        if (pinForm.attach_type) formData.append('attach_type', pinForm.attach_type);
+        if (formToSave.attach_type) formData.append('attach_type', formToSave.attach_type);
         formData.append('file', pinFile);
 
         const progressCb = (p) => setUploadProgress(p);
@@ -132,16 +129,15 @@ export default function PinsPage() {
           data = await api.upload(`/pins/${tc}/upload`, formData, 'POST', progressCb);
         }
       } else {
-        // Regular JSON request
         const payload = {
-          title: pinForm.title,
-          message_text: pinForm.message_text,
-          lead_magnet_id: pinForm.lead_magnet_id || null,
+          title: formToSave.title,
+          message_text: formToSave.message_text,
+          lead_magnet_id: formToSave.lead_magnet_id || null,
         };
         if (parsedButtons) {
           payload.inline_buttons = parsedButtons;
         }
-        if (pinForm.attach_type) payload.attach_type = pinForm.attach_type;
+        if (formToSave.attach_type) payload.attach_type = formToSave.attach_type;
         if (editingPin) {
           data = await api.put(`/pins/${tc}/${editingPin.id}`, payload);
         } else {
@@ -205,15 +201,12 @@ export default function PinsPage() {
   };
 
   const handleSaveLm = async () => {
-    if (!lmForm.title.trim()) {
-      showToast('Введите название лид-магнита', 'error');
-      return;
-    }
+    const lmTitle = lmForm.title.trim() || `Лид-магнит от ${new Date().toLocaleDateString('ru-RU')}`;
     setSaving(true);
     setUploadProgress(0);
     try {
       const formData = new FormData();
-      formData.append('title', lmForm.title);
+      formData.append('title', lmTitle);
       formData.append('message_text', lmForm.message_text);
       if (lmForm.attach_type) formData.append('attach_type', lmForm.attach_type);
       if (lmFile) formData.append('file', lmFile);
@@ -253,15 +246,12 @@ export default function PinsPage() {
 
   // Inline lead magnet creation (from pin modal)
   const handleCreateInlineLm = async () => {
-    if (!inlineLmForm.title.trim()) {
-      showToast('Введите название лид-магнита', 'error');
-      return;
-    }
+    const inlineTitle = inlineLmForm.title.trim() || `Лид-магнит от ${new Date().toLocaleDateString('ru-RU')}`;
     setSaving(true);
     setUploadProgress(0);
     try {
       const formData = new FormData();
-      formData.append('title', inlineLmForm.title);
+      formData.append('title', inlineTitle);
       formData.append('message_text', inlineLmForm.message_text);
       if (inlineLmForm.attach_type) formData.append('attach_type', inlineLmForm.attach_type);
       if (inlineLmFile) formData.append('file', inlineLmFile);
@@ -353,9 +343,10 @@ export default function PinsPage() {
                             {STATUS_LABELS[pin.status] || pin.status || 'Черновик'}
                           </span>
                         </div>
-                        <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '6px', maxHeight: '60px', overflow: 'hidden', whiteSpace: 'pre-wrap' }}>
-                          {pin.message_text}
-                        </p>
+                        <div
+                          style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '6px', maxHeight: '80px', overflowY: 'auto', lineHeight: 1.5 }}
+                          dangerouslySetInnerHTML={{ __html: pin.message_text || '' }}
+                        />
                         <div style={{ display: 'flex', gap: '12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                           {pin.lm_title && <span>Лид-магнит: {pin.lm_title}</span>}
                           {pin.published_at && <span>Опубликован: {new Date(pin.published_at).toLocaleString('ru-RU')}</span>}
@@ -410,9 +401,10 @@ export default function PinsPage() {
                           {lm.file_type && <span>Файл: {lm.file_type}</span>}
                         </div>
                         {lm.message_text && (
-                          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '6px', maxHeight: '40px', overflow: 'hidden' }}>
-                            {lm.message_text}
-                          </p>
+                          <div
+                            style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '6px', maxHeight: '60px', overflowY: 'auto', lineHeight: 1.5 }}
+                            dangerouslySetInnerHTML={{ __html: lm.message_text }}
+                          />
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: '6px' }}>
@@ -483,8 +475,13 @@ export default function PinsPage() {
                   </div>
                   <div>
                     <label className="form-label">Сообщение (текст при выдаче)</label>
-                    <textarea className="form-input" rows={3} placeholder="Вот ваш гайд! Скачайте файл ниже."
-                      value={inlineLmForm.message_text} onChange={e => setInlineLmForm(p => ({ ...p, message_text: e.target.value }))} />
+                    <RichTextEditor
+                      value={inlineLmForm.message_text}
+                      onChange={v => setInlineLmForm(p => ({ ...p, message_text: v }))}
+                      placeholder="Вот ваш гайд! Скачайте файл ниже."
+                      rows={3}
+                      showEmoji={true}
+                    />
                   </div>
                   <div>
                     <label className="form-label">Вложение</label>

@@ -17,7 +17,7 @@ const DEFAULT_FORM = {
   erid: '',
   legal_info: '',
   prizes: [''],
-  conditions: { subscribe: true, invite_friends: 0 },
+  conditions: { subscribe: true },
   ends_at: '',
   winner_count: 1,
 };
@@ -75,12 +75,12 @@ export default function GiveawaysPage() {
   };
 
   const parseConditions = (raw) => {
-    if (!raw) return { subscribe: true, invite_friends: 0 };
+    if (!raw) return { subscribe: true };
     if (typeof raw === 'object') return raw;
     try {
       return JSON.parse(raw);
     } catch {
-      return { subscribe: true, invite_friends: 0 };
+      return { subscribe: true };
     }
   };
 
@@ -110,8 +110,12 @@ export default function GiveawaysPage() {
   };
 
   const validate = () => {
+    if (!form.title.trim()) {
+      const defaultTitle = `Розыгрыш от ${new Date().toLocaleDateString('ru-RU')}`;
+      setForm(p => ({ ...p, title: defaultTitle }));
+      form.title = defaultTitle;
+    }
     const newErrors = {};
-    if (!form.title.trim()) newErrors.title = 'Название розыгрыша обязательно';
     if (!form.message_text.replace(/<[^>]*>/g, '').trim()) newErrors.message_text = 'Текст поста обязателен — он будет опубликован в канале';
     setErrors(newErrors);
     if (newErrors.title) { scrollToRef(titleRef); }
@@ -359,12 +363,6 @@ export default function GiveawaysPage() {
                     onChange={e => setForm(p => ({ ...p, conditions: { ...p.conditions, subscribe: e.target.checked } }))} />
                   Подписка на канал
                 </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <label style={{ fontWeight: 'normal' }}>Пригласить друзей:</label>
-                  <input type="number" className="form-input" value={form.conditions.invite_friends} min="0" max="10"
-                    style={{ width: '70px' }}
-                    onChange={e => setForm(p => ({ ...p, conditions: { ...p.conditions, invite_friends: parseInt(e.target.value) || 0 } }))} />
-                </div>
               </div>
               <div className="form-hint">Условия, которые должен выполнить участник для участия в розыгрыше.</div>
             </div>

@@ -2,9 +2,11 @@
 
 Handles /start, /channels, /links, /giveaways, /pins, /stats, /help,
 /newlink, /newgiveaway, /newpin, /newleadmagnet,
-lead magnets, giveaways, channel membership events.
+lead magnets, giveaways, channel membership events, account linking.
 """
 import asyncio
+import json
+import re
 import secrets
 from typing import Optional
 
@@ -246,6 +248,75 @@ def _cache_telegram_file_id(api_result: dict, lead_magnet_id: int, attach_type: 
         )
 
 
+# ---- paid chat handler ----
+
+async def handle_paid_chat(chat_id: int, tg_user: dict, tracking_code: str):
+    """Show paid chat info: description, plans, and payment button."""
+    from ..database import fetch_one, fetch_all
+
+    channel = await fetch_one("SELECT * FROM channels WHERE tracking_code = $1", tracking_code)
+    if not channel:
+        await _send_message(chat_id, "Канал не найден.")
+        return
+
+    notif = await fetch_one(
+        "SELECT message_text, file_path, file_type, file_data FROM paid_chat_notifications WHERE channel_id = $1 AND event_type = 'before_subscribe' AND is_active = 1",
+        channel["id"],
+    )
+
+    plans = await fetch_all(
+        "SELECT id, plan_type, duration_days, price, currency, title, description FROM paid_chat_plans WHERE channel_id = $1 AND is_active = 1 ORDER BY sort_order, price",
+        channel["id"],
+    )
+
+    lines = []
+    channel_title = channel.get("title", "")
+    if channel_title:
+        lines.append(f"<b>{channel_title}</b>\n")
+
+    if notif and notif.get("message_text"):
+        from ..services.messenger import sanitize_html_for_telegram
+        lines.append(sanitize_html_for_telegram(notif["message_text"]))
+        lines.append("")
+
+    if plans:
+        lines.append("<b>Тарифы:</b>")
+        for p in plans:
+            price_str = f"{int(p['price']) if p['price'] == int(p['price']) else p['price']} {p.get('currency', 'RUB')}"
+            name = p.get("title") or (
+                "Разовая оплата" if p["plan_type"] == "one_time"
+                else f"Подписка на {p['duration_days']} дн."
+            )
+            lines.append(f"  {name} — <b>{price_str}</b>")
+            if p.get("description"):
+                lines.append(f"  <i>{p['description']}</i>")
+
+    if not plans:
+        lines.append("Тарифы пока не настроены.")
+
+    text = "\n".join(lines)
+
+    app_url = settings.APP_URL
+    from urllib.parse import urlencode
+    pay_params = urlencode({"platform": "telegram", "tid": tg_user["id"], "name": tg_user.get("first_name", ""), "user": tg_user.get("username", "")})
+    pay_url = f"{app_url}/pay/{tracking_code}?{pay_params}"
+    keyboard = {"inline_keyboard": [[{"text": "Оплатить", "url": pay_url}]]}
+
+    file_path = None
+    if notif and notif.get("file_path"):
+        try:
+            from ..services.file_storage import ensure_file
+            file_path = ensure_file(notif.get("file_path"), notif.get("file_data"))
+        except Exception:
+            file_path = None
+
+    if file_path and (notif.get("file_type") or "").startswith("image"):
+        from ..services.messenger import send_telegram_photo
+        await send_telegram_photo(chat_id, file_path, caption=text, reply_markup=keyboard)
+    else:
+        await _send_message(chat_id, text, reply_markup=keyboard)
+
+
 # ---- /start handler ----
 
 async def handle_start(chat_id: int, tg_user: dict, payload: str = ""):
@@ -254,6 +325,10 @@ async def handle_start(chat_id: int, tg_user: dict, payload: str = ""):
         return
     if payload.startswith("gw_"):
         await handle_giveaway(chat_id, tg_user, payload)
+        return
+    if payload.startswith("paid_"):
+        tracking_code = payload[5:]
+        await handle_paid_chat(chat_id, tg_user, tracking_code)
         return
     if payload.startswith("shop_"):
         tracking_code = payload.replace("shop_", "")
@@ -805,7 +880,50 @@ async def handle_my_chat_member(update: dict):
     chat_type = chat_info.get("type", "")
     chat_id = chat_info.get("id")
 
-    if chat_type != "channel" or not chat_id:
+    if not chat_id:
+        return
+
+    # Chats (group/supergroup) → save to bot_chats for paid chats feature
+    if chat_type in ("group", "supergroup") and new_status in ("administrator", "member"):
+        chat_title = chat_info.get("title", "Чат")
+        tg_user_data = {"id": from_user.get("id"), "username": from_user.get("username"), "first_name": from_user.get("first_name", "")}
+        result = await find_or_create_tg_user(tg_user_data)
+        bind_user_id = result["user"]["id"]
+        # Fetch avatar
+        _tg_avatar = None
+        try:
+            cd = await _tg_request("getChat", chat_id=chat_id)
+            if cd and cd.get("result", {}).get("photo"):
+                fid = cd["result"]["photo"].get("big_file_id") or cd["result"]["photo"].get("small_file_id")
+                if fid:
+                    fi = await _tg_request("getFile", file_id=fid)
+                    fp = fi.get("result", {}).get("file_path") if fi else None
+                    if fp:
+                        _tg_avatar = f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{fp}"
+        except Exception:
+            pass
+        try:
+            await execute(
+                """INSERT INTO bot_chats (chat_id, title, platform, user_id, is_admin, avatar_url)
+                   VALUES ($1, $2, 'telegram', $3, $4, $5)
+                   ON CONFLICT(chat_id) DO UPDATE SET title = EXCLUDED.title, is_admin = EXCLUDED.is_admin,
+                   avatar_url = COALESCE(EXCLUDED.avatar_url, bot_chats.avatar_url),
+                   user_id = COALESCE(bot_chats.user_id, EXCLUDED.user_id)""",
+                str(chat_id), chat_title, bind_user_id, new_status == "administrator", _tg_avatar,
+            )
+            print(f"[TG Bot] Saved chat '{chat_title}' ({chat_id})")
+            if new_status == "administrator":
+                from ..middleware.auth import create_jwt
+                _token = create_jwt(bind_user_id)
+                _url = f"{settings.APP_URL}/login?token={_token}"
+                await _send_message(from_user["id"],
+                    f"✅ Бот добавлен администратором в чат «{chat_title}».\n\nВы можете подключить его как платный чат в личном кабинете.",
+                    reply_markup={"inline_keyboard": [[{"text": "🔑 Перейти в кабинет", "url": _url}]]})
+        except Exception as e:
+            print(f"[TG Bot] Save chat error: {e}")
+        return
+
+    if chat_type != "channel":
         return
 
     if new_status == "administrator":
@@ -814,7 +932,7 @@ async def handle_my_chat_member(update: dict):
         user = result["user"]
         tracking_code = _generate_tracking_code()
 
-        existing = await fetch_one("SELECT id, trial_used FROM channels WHERE channel_id = $1", str(chat_id))
+        existing = await fetch_one("SELECT id, trial_used FROM channels WHERE channel_id = $1", int(chat_id))
 
         # For public channels, build join link from username; for private, fetch via API
         _tg_username = chat_info.get("username")
@@ -827,17 +945,32 @@ async def handle_my_chat_member(update: dict):
             if not _tg_join_link and chat_info.get("invite_link"):
                 _tg_join_link = chat_info["invite_link"]
 
+        # Fetch channel avatar
+        _tg_avatar = None
+        try:
+            chat_data = await _tg_request("getChat", chat_id=chat_id)
+            if chat_data and chat_data.get("result", {}).get("photo"):
+                file_id = chat_data["result"]["photo"].get("big_file_id") or chat_data["result"]["photo"].get("small_file_id")
+                if file_id:
+                    file_info = await _tg_request("getFile", file_id=file_id)
+                    file_path = file_info.get("result", {}).get("file_path") if file_info else None
+                    if file_path:
+                        _tg_avatar = f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{file_path}"
+        except Exception:
+            pass
+
         await execute("""
-            INSERT INTO channels (channel_id, title, username, owner_id, user_id, tracking_code, platform, join_link)
-            VALUES ($1, $2, $3, $4, $5, $6, 'telegram', $7)
+            INSERT INTO channels (channel_id, title, username, owner_id, user_id, tracking_code, platform, join_link, avatar_url)
+            VALUES ($1, $2, $3, $4, $5, $6, 'telegram', $7, $8)
             ON CONFLICT(channel_id) DO UPDATE SET
                 title = EXCLUDED.title, username = EXCLUDED.username,
                 is_active = 1, user_id = COALESCE(channels.user_id, EXCLUDED.user_id),
-                join_link = COALESCE(EXCLUDED.join_link, channels.join_link)
-        """, str(chat_id), chat_info.get("title", ""), _tg_username, user["id"], user["id"], tracking_code, _tg_join_link)
+                join_link = COALESCE(EXCLUDED.join_link, channels.join_link),
+                avatar_url = COALESCE(EXCLUDED.avatar_url, channels.avatar_url)
+        """, int(chat_id), chat_info.get("title", ""), _tg_username, user["id"], user["id"], tracking_code, _tg_join_link, _tg_avatar)
 
         # Trial activation
-        channel = await fetch_one("SELECT id, trial_used FROM channels WHERE channel_id = $1", str(chat_id))
+        channel = await fetch_one("SELECT id, trial_used FROM channels WHERE channel_id = $1", int(chat_id))
         trial_msg = ""
         if channel and not channel.get("trial_used"):
             existing_billing = await fetch_one("SELECT id FROM channel_billing WHERE channel_id = $1", channel["id"])
@@ -852,18 +985,38 @@ async def handle_my_chat_member(update: dict):
             print(f"[TG Bot] Trial activated for channel {chat_info.get('title')} ({chat_id})")
 
         try:
+            from ..middleware.auth import create_jwt
+            _token = create_jwt(user["id"])
+            _cabinet_url = f"{settings.APP_URL}/login?token={_token}"
+            keyboard = {"inline_keyboard": [[{"text": "🔑 Перейти в кабинет", "url": _cabinet_url}]]}
             await _send_message(
                 from_user["id"],
                 f"✅ Канал «{chat_info.get('title', '')}» успешно подключен!\n\n"
-                f"🔗 Код отслеживания: <code>{tracking_code}</code>{trial_msg}\n\n"
-                f"Откройте личный кабинет для настройки.",
+                f"🔗 Код отслеживания: <code>{tracking_code}</code>{trial_msg}",
+                reply_markup=keyboard,
             )
         except Exception as e:
             print(f"[TG Bot] Failed to notify owner: {e}")
 
-    elif new_status in ("left", "kicked"):
-        await execute("UPDATE channels SET is_active = 0 WHERE channel_id = $1", str(chat_id))
-        print(f"[TG Bot] Removed from channel {chat_info.get('title')} ({chat_id})")
+    elif new_status in ("left", "kicked", "member", "restricted"):
+        # "member"/"restricted" = demoted from admin; "left"/"kicked" = removed entirely
+        channel = await fetch_one("SELECT id, title, user_id FROM channels WHERE channel_id = $1", int(chat_id))
+        await execute("UPDATE channels SET is_active = 0 WHERE channel_id = $1", int(chat_id))
+
+        reason = "удалён из канала" if new_status in ("left", "kicked") else "разжалован из администраторов"
+        print(f"[TG Bot] Bot {reason}: {chat_info.get('title')} ({chat_id})")
+
+        if channel and channel.get("user_id"):
+            owner = await fetch_one("SELECT telegram_id FROM users WHERE id = $1 AND telegram_id IS NOT NULL", channel["user_id"])
+            if owner:
+                try:
+                    await _send_message(
+                        owner["telegram_id"],
+                        f"⚠️ Бот {reason} в канале «{channel.get('title', '')}».\n\n"
+                        f"Канал деактивирован. Чтобы снова подключить — добавьте бота администратором в канал.",
+                    )
+                except Exception as e:
+                    print(f"[TG Bot] Notify owner on remove failed: {e}")
 
 
 # ---- chat_member: new subscriber ----
@@ -875,16 +1028,44 @@ async def handle_chat_member(update: dict):
     new_status = cm.get("new_chat_member", {}).get("status", "")
     new_user = cm.get("new_chat_member", {}).get("user", {})
 
-    if chat.get("type") != "channel":
-        return
-
+    chat_type = chat.get("type", "")
     was_not_member = old_status in ("left", "kicked")
     is_member = new_status in ("member", "administrator", "creator")
 
     if not (was_not_member and is_member):
         return
 
-    channel = await fetch_one("SELECT id FROM channels WHERE channel_id = $1", str(chat["id"]))
+    tg_id = new_user.get("id")
+    chat_id_str = str(chat.get("id", ""))
+
+    # Check if this is a paid chat — kick unauthorized users
+    if chat_type in ("group", "supergroup") and tg_id:
+        paid_chat = await fetch_one(
+            "SELECT pc.id FROM paid_chats pc WHERE pc.chat_id = $1 AND pc.is_active = 1",
+            chat_id_str,
+        )
+        if paid_chat:
+            member = await fetch_one(
+                "SELECT id FROM paid_chat_members WHERE paid_chat_id = $1 AND telegram_id = $2 AND status = 'active'",
+                paid_chat["id"], tg_id,
+            )
+            if not member:
+                # Not paid — kick
+                try:
+                    token = settings.TELEGRAM_BOT_TOKEN
+                    await _tg_request("banChatMember", chat_id=chat["id"], user_id=tg_id)
+                    await _tg_request("unbanChatMember", chat_id=chat["id"], user_id=tg_id, only_if_banned=True)
+                    await _send_message(tg_id,
+                        "⚠️ Для доступа к этому чату необходима оплата.\n\nОплатите подписку, чтобы получить доступ.")
+                    print(f"[TG Bot] Kicked unpaid user {tg_id} from paid chat {chat_id_str}")
+                except Exception as e:
+                    print(f"[TG Bot] Failed to kick unpaid user: {e}")
+                return
+
+    if chat_type != "channel":
+        return
+
+    channel = await fetch_one("SELECT id FROM channels WHERE channel_id = $1", int(chat["id"]))
     if not channel:
         return
 
@@ -934,6 +1115,168 @@ async def handle_chat_member(update: dict):
         pass
 
 
+# ---- Account linking via 6-digit code ----
+
+async def _handle_link_code(chat_id: int, tg_user: dict, code: str):
+    """Handle a 6-digit code: link or unlink account."""
+    # Check unlink first
+    unlink_row = await fetch_one(
+        "SELECT * FROM account_link_codes WHERE code = $1 AND target_platform = 'unlink_telegram' AND used = FALSE AND expires_at > NOW()",
+        code,
+    )
+    if unlink_row:
+        old_user_id = unlink_row["user_id"]
+        tg_id = tg_user.get("id")
+        tg_username = tg_user.get("username")
+        tg_first_name = tg_user.get("first_name", "")
+
+        # Remove telegram from old account
+        await execute("UPDATE users SET telegram_id = NULL, username = NULL WHERE id = $1", old_user_id)
+
+        # Create new separate TG account
+        new_user_id = await execute_returning_id(
+            "INSERT INTO users (telegram_id, username, first_name) VALUES ($1, $2, $3) RETURNING id",
+            tg_id, tg_username, tg_first_name,
+        )
+
+        # Move TG channels to new account
+        await execute(
+            "UPDATE channels SET user_id = $1, owner_id = $1 WHERE user_id = $2 AND platform = 'telegram'",
+            new_user_id, old_user_id,
+        )
+
+        await execute("UPDATE account_link_codes SET used = TRUE WHERE id = $1", unlink_row["id"])
+
+        from ..middleware.auth import create_jwt
+        _token = create_jwt(new_user_id)
+        _url = f"{settings.APP_URL}/login?token={_token}"
+        await _send_message(
+            chat_id,
+            f"✅ Telegram успешно отвязан.\n\n"
+            f"Создан отдельный аккаунт для ваших Telegram-каналов:",
+            reply_markup={"inline_keyboard": [[{"text": "🔑 Войти в кабинет", "url": _url}]]},
+        )
+        return
+
+    # Link code
+    row = await fetch_one(
+        "SELECT * FROM account_link_codes WHERE code = $1 AND target_platform = 'telegram' AND used = FALSE AND expires_at > NOW()",
+        code,
+    )
+    if not row:
+        used = await fetch_one("SELECT * FROM account_link_codes WHERE code = $1 AND used = TRUE", code)
+        if used:
+            return
+        await _send_message(chat_id, "❌ Код не найден или истёк. Запросите новый код в личном кабинете.")
+        return
+
+    # Ask for confirmation with inline keyboard
+    user_row = await fetch_one("SELECT * FROM users WHERE id = $1", row["user_id"])
+    display_name = user_row.get("first_name") or user_row.get("username") or f"ID {row['user_id']}" if user_row else f"ID {row['user_id']}"
+
+    await _send_message(
+        chat_id,
+        f"🔗 <b>Привязка аккаунта</b>\n\n"
+        f"Связать этот Telegram-аккаунт с аккаунтом <b>{display_name}</b>?\n"
+        f"Код: <code>{code}</code>",
+        reply_markup={
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Да, связать", "callback_data": f"link_yes:{code}"},
+                    {"text": "❌ Нет", "callback_data": f"link_no:{code}"},
+                ]
+            ]
+        },
+    )
+
+
+async def _handle_callback_query(callback_query: dict):
+    """Handle inline keyboard button clicks."""
+    cb_id = callback_query.get("id")
+    data = callback_query.get("data", "")
+    user = callback_query.get("from", {})
+    chat_id = callback_query.get("message", {}).get("chat", {}).get("id")
+    tg_user_id = user.get("id")
+
+    # Answer the callback to dismiss loading spinner
+    try:
+        await _tg_request("answerCallbackQuery", callback_query_id=cb_id)
+    except Exception:
+        pass
+
+    if not chat_id or not tg_user_id:
+        return
+
+    if data.startswith("link_yes:"):
+        code = data[len("link_yes:"):]
+        msg_id = callback_query.get("message", {}).get("message_id")
+
+        # Delete the confirmation message
+        if msg_id:
+            try:
+                await _tg_request("deleteMessage", chat_id=chat_id, message_id=msg_id)
+            except Exception:
+                pass
+
+        # Show "please wait" message
+        wait_msg = await _send_message(chat_id, "⏳ Подождите пару секунд... Связываю аккаунты...")
+        wait_msg_id = wait_msg.get("result", {}).get("message_id") if isinstance(wait_msg, dict) else None
+
+        row = await fetch_one(
+            "SELECT * FROM account_link_codes WHERE code = $1 AND target_platform = 'telegram' AND used = FALSE AND expires_at > NOW()",
+            code,
+        )
+        if not row:
+            if wait_msg_id:
+                try:
+                    await _tg_request("deleteMessage", chat_id=chat_id, message_id=wait_msg_id)
+                except Exception:
+                    pass
+            await _send_message(chat_id, "❌ Код истёк. Запросите новый код в личном кабинете.")
+            return
+
+        # Check if this telegram_id is already linked to another account
+        existing = await fetch_one("SELECT * FROM users WHERE telegram_id = $1", tg_user_id)
+        if existing and existing["id"] != row["user_id"]:
+            old_id = existing["id"]
+            target_id = row["user_id"]
+            await execute("UPDATE channels SET user_id = $1 WHERE user_id = $2", target_id, old_id)
+            await execute("UPDATE channels SET owner_id = $1 WHERE owner_id = $2", target_id, old_id)
+            await execute("UPDATE users SET telegram_id = NULL WHERE id = $1", old_id)
+            await execute("DELETE FROM users WHERE id = $1", old_id)
+
+        # Link the account
+        await execute("UPDATE users SET telegram_id = $1, username = COALESCE(username, $2) WHERE id = $3",
+                      tg_user_id, user.get("username"), row["user_id"])
+        await execute("UPDATE account_link_codes SET used = TRUE WHERE id = $1", row["id"])
+
+        # Delete "please wait" message
+        if wait_msg_id:
+            try:
+                await _tg_request("deleteMessage", chat_id=chat_id, message_id=wait_msg_id)
+            except Exception:
+                pass
+
+        # Send success with cabinet button
+        from ..middleware.auth import create_jwt
+        _token = create_jwt(row["user_id"])
+        _url = f"{settings.APP_URL}/login?token={_token}"
+        await _send_message(
+            chat_id,
+            "✅ Telegram подключен! Теперь вы можете управлять Telegram-каналами из личного кабинета.",
+            reply_markup={"inline_keyboard": [[{"text": "🔑 Перейти в кабинет", "url": _url}]]},
+        )
+
+    elif data.startswith("link_no:"):
+        msg_id = callback_query.get("message", {}).get("message_id")
+        if msg_id:
+            try:
+                await _tg_request("deleteMessage", chat_id=chat_id, message_id=msg_id)
+            except Exception:
+                pass
+        await _send_message(chat_id, "❌ Привязка отменена.")
+
+
 # ---- Process a single Telegram update ----
 
 async def process_update(update: dict):
@@ -978,7 +1321,14 @@ async def process_update(update: dict):
                 # Non-command text: check conversation state
                 handled = await _handle_conversation(chat_id, tg_user, text)
                 if not handled:
-                    await handle_start(chat_id, tg_user)
+                    # Check if it's a 6-digit account link code
+                    if re.match(r'^\d{6}$', text):
+                        await _handle_link_code(chat_id, tg_user, text)
+                    else:
+                        await handle_start(chat_id, tg_user)
+
+        if "callback_query" in update:
+            await _handle_callback_query(update["callback_query"])
 
         if "my_chat_member" in update:
             await handle_my_chat_member(update)

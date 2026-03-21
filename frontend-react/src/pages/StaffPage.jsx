@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useChannels } from '../contexts/ChannelContext';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
+import Modal from '../components/Modal';
 import Loading from '../components/Loading';
 
 const ROLE_INFO = {
@@ -15,12 +16,12 @@ export default function StaffPage() {
   const { showToast } = useToast();
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [identifier, setIdentifier] = useState('');
-  const [role, setRole] = useState('editor');
-  const [identifierError, setIdentifierError] = useState('');
-  const identifierRef = useRef(null);
+  const [inviting, setInviting] = useState(false);
+  const [inviteRole, setInviteRole] = useState('editor');
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState('');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmInfo, setConfirmInfo] = useState(null);
 
   const tc = currentChannel?.tracking_code;
 
@@ -39,35 +40,31 @@ export default function StaffPage() {
 
   useEffect(() => { loadStaff(); }, [loadStaff]);
 
-  const handleAdd = async (e) => {
-    e.preventDefault();
-    if (!identifier.trim()) {
-      setIdentifierError('Укажите Telegram ID, MAX ID или @username');
-      if (identifierRef.current) {
-        identifierRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        identifierRef.current.classList.add('field-shake');
-        setTimeout(() => identifierRef.current.classList.remove('field-shake'), 500);
-      }
-      return;
-    }
-    setIdentifierError('');
-    setAdding(true);
+  const handleInvite = async (confirmed = false) => {
+    setInviting(true);
     try {
-      const data = await api.post(`/billing/${tc}/staff`, { identifier, role });
+      const data = await api.post(`/billing/${tc}/staff/invite`, { role: inviteRole, confirm: confirmed });
       if (data.success) {
-        showToast('Сотрудник добавлен');
-        setIdentifier('');
-        setShowForm(false);
-        loadStaff();
+        setInviteUrl(data.invite_url);
+        setShowConfirmModal(false);
+        setShowInviteModal(true);
+      } else if (data.needs_confirm) {
+        setConfirmInfo(data);
+        setShowConfirmModal(true);
       } else {
         showToast(data.detail || data.error || 'Ошибка', 'error');
       }
     } catch (err) {
-      const msg = err?.response?.data?.detail || err?.message || 'Ошибка добавления';
+      const msg = err?.response?.data?.detail || err?.message || 'Ошибка создания приглашения';
       showToast(msg, 'error');
     } finally {
-      setAdding(false);
+      setInviting(false);
     }
+  };
+
+  const copyInviteUrl = () => {
+    navigator.clipboard.writeText(inviteUrl);
+    showToast('Ссылка скопирована');
   };
 
   const handleChangeRole = async (staffId, newRole) => {
@@ -109,9 +106,21 @@ export default function StaffPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2>Сотрудники</h2>
-        <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Отмена' : '+ Добавить'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <select
+            value={inviteRole}
+            onChange={e => setInviteRole(e.target.value)}
+            className="input"
+            style={{ width: 'auto', padding: '6px 10px', fontSize: '0.84rem' }}
+          >
+            {Object.entries(ROLE_INFO).map(([key, info]) => (
+              <option key={key} value={key}>{info.name}</option>
+            ))}
+          </select>
+          <button className="btn btn-primary" onClick={() => handleInvite(false)} disabled={inviting}>
+            {inviting ? 'Создание...' : 'Пригласить'}
+          </button>
+        </div>
       </div>
 
       {/* Roles reference */}
@@ -134,50 +143,6 @@ export default function StaffPage() {
           ))}
         </div>
       </div>
-
-      {/* Add form */}
-      {showForm && (
-        <form onSubmit={handleAdd} style={{
-          background: 'var(--bg-glass)', border: '1px solid var(--primary)',
-          borderRadius: 'var(--radius)', padding: '20px', marginBottom: '24px',
-        }}>
-          <div style={{ marginBottom: '14px' }} ref={identifierRef}>
-            <label style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-              Telegram ID, MAX ID или @username *
-            </label>
-            <input
-              type="text"
-              value={identifier}
-              onChange={e => { setIdentifier(e.target.value); if (e.target.value.trim()) setIdentifierError(''); }}
-              placeholder="@username или 123456789"
-              className={`input${identifierError ? ' field-error' : ''}`}
-              style={{ width: '100%' }}
-            />
-            {identifierError && <div className="field-error-text">{identifierError}</div>}
-            <div className="form-hint">
-              Пользователь должен быть авторизован в системе. Telegram ID можно узнать через @userinfobot.
-            </div>
-          </div>
-          <div style={{ marginBottom: '14px' }}>
-            <label style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-              Роль
-            </label>
-            <select
-              value={role}
-              onChange={e => setRole(e.target.value)}
-              className="input"
-              style={{ width: '100%' }}
-            >
-              {Object.entries(ROLE_INFO).map(([key, info]) => (
-                <option key={key} value={key}>{info.name} — {info.desc}</option>
-              ))}
-            </select>
-          </div>
-          <button type="submit" className="btn btn-primary" disabled={adding} style={{ width: '100%' }}>
-            {adding ? 'Добавление...' : 'Добавить сотрудника'}
-          </button>
-        </form>
-      )}
 
       {/* Staff list */}
       {staff.length === 0 ? (
@@ -233,6 +198,62 @@ export default function StaffPage() {
           })}
         </div>
       )}
+
+      {/* Invite Link Modal */}
+      <Modal isOpen={showInviteModal} onClose={() => setShowInviteModal(false)} title="Ссылка-приглашение">
+        <div style={{ textAlign: 'center', padding: '16px 0' }}>
+          <p style={{ marginBottom: '16px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+            Отправьте эту ссылку сотруднику. Ссылка действует 7 дней.
+          </p>
+          <div style={{
+            padding: '12px 16px', background: 'var(--bg-glass)', borderRadius: '10px',
+            border: '1px solid var(--border)', wordBreak: 'break-all', fontSize: '0.85rem',
+            marginBottom: '16px', textAlign: 'left',
+          }}>
+            {inviteUrl}
+          </div>
+          <button className="btn btn-primary" onClick={copyInviteUrl} style={{ width: '100%' }}>
+            Скопировать ссылку
+          </button>
+        </div>
+      </Modal>
+
+      {/* Confirm subscription reduction modal */}
+      <Modal isOpen={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Добавление сотрудника">
+        {confirmInfo && (
+          <div style={{ textAlign: 'center', padding: '8px 0' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>⚠️</div>
+            <p style={{ fontSize: '0.95rem', marginBottom: '16px' }}>
+              Ваш срок подписки уменьшится в <strong>{confirmInfo.new_users}/{confirmInfo.current_users}</strong> раза
+              после добавления сотрудника.
+            </p>
+            <div style={{
+              background: 'var(--bg-glass)', borderRadius: '10px', padding: '16px', marginBottom: '20px',
+              display: 'flex', justifyContent: 'space-around', fontSize: '0.88rem',
+            }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>Сейчас</div>
+                <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{confirmInfo.remaining_days} дн.</div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>{confirmInfo.current_users} польз.</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', fontSize: '1.5rem', color: 'var(--text-secondary)' }}>→</div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>После</div>
+                <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--primary)' }}>{confirmInfo.new_remaining_days} дн.</div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>{confirmInfo.new_users} польз.</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button className="btn btn-primary" onClick={() => handleInvite(true)} disabled={inviting}>
+                {inviting ? 'Создание...' : 'Подтвердить и пригласить'}
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowConfirmModal(false)}>
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

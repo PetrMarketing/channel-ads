@@ -149,6 +149,7 @@ export default function ContentPage() {
     if (!validate()) return;
     setSaving(true);
     try {
+      const defaultTitle = form.title.trim() || `Публикация от ${new Date().toLocaleDateString('ru-RU')}`;
       let parsedButtons = null;
       if (form.inline_buttons && form.inline_buttons.trim()) {
         try {
@@ -165,7 +166,7 @@ export default function ContentPage() {
       if (postFile) {
         // Use FormData for file upload
         const fd = new FormData();
-        fd.append('title', form.title);
+        fd.append('title', defaultTitle);
         fd.append('message_text', form.message_text);
         fd.append('scheduled_at', form.scheduled_at || '');
         if (parsedButtons) {
@@ -181,7 +182,7 @@ export default function ContentPage() {
         }
       } else {
         const payload = {
-          title: form.title,
+          title: defaultTitle,
           message_text: form.message_text,
           scheduled_at: form.scheduled_at || null,
         };
@@ -295,9 +296,10 @@ export default function ContentPage() {
                     </span>
                   ) : null}
                 </div>
-                <p style={{ fontSize: '0.88rem', marginBottom: '6px', whiteSpace: 'pre-wrap', maxHeight: '80px', overflow: 'hidden' }}>
-                  {post.message_text}
-                </p>
+                <div
+                  style={{ fontSize: '0.88rem', marginBottom: '6px', maxHeight: '80px', overflowY: 'auto', lineHeight: 1.5 }}
+                  dangerouslySetInnerHTML={{ __html: post.message_text || '' }}
+                />
                 <div style={{ display: 'flex', gap: '12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                   {post.scheduled_at && <span>Запланировано: {new Date(post.scheduled_at).toLocaleString('ru-RU')}</span>}
                   {post.published_at && <span>Опубликовано: {new Date(post.published_at).toLocaleString('ru-RU')}</span>}

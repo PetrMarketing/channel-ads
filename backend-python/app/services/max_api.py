@@ -89,16 +89,18 @@ class MaxApi:
         return await self._request("POST", f"messages?user_id={user_id}", json=body)
 
     async def upload_file(self, file_path: str, file_type: str = "file") -> Dict[str, Any]:
-        type_map = {"photo": "image", "video": "video"}
+        # MAX upload types: image, video, audio, file
+        type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
         upload_type = type_map.get(file_type, "file")
-        # Step 1: get upload URL
+        # Step 1: get upload URL + token
         resp = await self._request("POST", f"uploads?type={upload_type}")
         if not resp.get("success"):
             return resp
         upload_url = resp["data"].get("url")
+        upload_token = resp["data"].get("token")
         if not upload_url:
             return {"success": False, "error": "No upload URL"}
-        # Step 2: upload file (MAX API expects field name "data")
+        # Step 2: upload file
         import os, mimetypes
         async with aiohttp.ClientSession() as session:
             filename = os.path.basename(file_path)
@@ -110,10 +112,23 @@ class MaxApi:
                 data = aiohttp.FormData()
                 data.add_field("data", f, filename=filename, content_type=mime)
                 async with session.post(upload_url, data=data) as up_resp:
-                    result = await up_resp.json(content_type=None)
-                    print(f"[MAX API] upload response status={up_resp.status} body={result}")
+                    raw = await up_resp.text()
+                    print(f"[MAX API] upload response status={up_resp.status} type={upload_type} body={raw[:300]}")
                     if up_resp.status >= 400:
-                        return {"success": False, "error": str(result)}
+                        return {"success": False, "error": raw[:200]}
+                    # Video/audio upload returns <retval>1</retval> (OK media API format)
+                    # Use the token from step 1 for attachments
+                    if upload_type in ("video", "audio"):
+                        if "<retval>1</retval>" in raw or raw.strip() == "1":
+                            return {"success": True, "data": {"token": upload_token}, "upload_type": upload_type}
+                        else:
+                            return {"success": False, "error": f"Media upload failed: {raw[:200]}"}
+                    # Image/file upload returns JSON
+                    try:
+                        import json as _json
+                        result = _json.loads(raw) if raw.strip() else {}
+                    except Exception:
+                        return {"success": False, "error": f"Invalid response: {raw[:200]}"}
                     return {"success": True, "data": result}
 
     async def answer_callback(self, callback_id: str, notification: str = None) -> Dict[str, Any]:
@@ -122,6 +137,10 @@ class MaxApi:
         if notification:
             body["notification"] = notification
         return await self._request("POST", "answers", json=body)
+
+    async def remove_chat_member(self, chat_id: str, user_id: str) -> Dict[str, Any]:
+        """Remove a user from a chat."""
+        return await self._request("DELETE", f"chats/{chat_id}/members?user_id={user_id}")
 
     async def get_membership(self, chat_id: str) -> Dict[str, Any]:
         return await self._request("GET", f"chats/{chat_id}/members/me")

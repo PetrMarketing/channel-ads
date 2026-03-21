@@ -10,8 +10,8 @@ export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'pkmarketing_rekl_bot';
-  const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_3_bot';
+  const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
+  const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
   const [showMerge, setShowMerge] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [newUser, setNewUser] = useState(null);
@@ -162,38 +162,22 @@ export default function LoginPage() {
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <a
-                href={`https://t.me/${tgBotUsername}?start=auth`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                  padding: '16px 24px', borderRadius: '12px', fontSize: '1rem', fontWeight: 600,
-                  textDecoration: 'none', background: '#2AABEE', color: '#fff', border: 'none',
-                  cursor: 'pointer', transition: 'all 0.2s',
-                }}
-              >
-                <span style={{ fontSize: '1.3rem' }}>📱</span>
-                Войти через Telegram
-              </a>
-              <a
-                href={`https://max.ru/${maxBotUsername}?start=auth`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={() => window.open(`https://max.ru/${maxBotUsername}?start=auth`, '_blank')}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
                   padding: '16px 24px', borderRadius: '12px', fontSize: '1rem', fontWeight: 600,
                   textDecoration: 'none', background: '#7B68EE', color: '#fff', border: 'none',
-                  cursor: 'pointer', transition: 'all 0.2s',
+                  cursor: 'pointer', transition: 'all 0.2s', width: '100%',
                 }}
               >
                 <span style={{ fontSize: '1.3rem' }}>💬</span>
                 Войти через MAX
-              </a>
+              </button>
             </div>
 
             <p style={{ marginTop: '24px', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              Нажмите кнопку — бот автоматически пришлёт ссылку для входа.<br />
+              Нажмите кнопку — бот в MAX пришлёт ссылку для входа.<br />
               Если бот не ответил — напишите ему <strong>/start</strong>
             </p>
           </>

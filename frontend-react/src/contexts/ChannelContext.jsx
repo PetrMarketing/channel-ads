@@ -10,23 +10,27 @@ export function ChannelProvider({ children }) {
   const [currentChannel, setCurrentChannel] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const loadChannels = useCallback(async () => {
+  const loadChannels = useCallback(async (silent = false) => {
     if (!token) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const data = await api.get('/channels');
       if (data.success) {
         setChannels(data.channels);
-        // Auto-select first channel if none selected
         setCurrentChannel(prev => {
           if (!prev && data.channels.length > 0) return data.channels[0];
+          // Update current channel data if it changed
+          if (prev) {
+            const updated = data.channels.find(c => c.tracking_code === prev.tracking_code);
+            return updated || prev;
+          }
           return prev;
         });
       }
     } catch (e) {
       console.error('Failed to load channels:', e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [token]);
 
@@ -35,8 +39,12 @@ export function ChannelProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    loadChannels();
-  }, [token]);
+    if (!token) return;
+    // On first load, scan for channels (catches missed bot_added events)
+    api.post('/channels/scan').catch(() => {}).then(() => loadChannels());
+    const interval = setInterval(() => loadChannels(true), 10000);
+    return () => clearInterval(interval);
+  }, [token, loadChannels]);
 
   return (
     <ChannelContext.Provider value={{

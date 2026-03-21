@@ -12,10 +12,13 @@ import ContentPage from './pages/ContentPage';
 import GiveawaysPage from './pages/GiveawaysPage';
 import BillingPage from './pages/BillingPage';
 import StaffPage from './pages/StaffPage';
+import PaidChatsPage from './pages/PaidChatsPage';
 
 // Public pages (standalone, no layout)
 import SubscribePage from './pages/public/SubscribePage';
 import PaymentSuccessPage from './pages/public/PaymentSuccessPage';
+import PaidChatPayPage from './pages/public/PaidChatPayPage';
+import StaffInvitePage from './pages/public/StaffInvitePage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -45,7 +48,11 @@ export default function App() {
       {/* Public pages */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/subscribe/:shortCode" element={<SubscribePage />} />
+      <Route path="/pay/:tc" element={<PaidChatPayPage />} />
+      <Route path="/paid-chat-pay/success/:orderId" element={<PaymentSuccessPage />} />
+      <Route path="/paid-chat-pay/fail/:orderId" element={<PaidChatPayPage />} />
       <Route path="/payment-success" element={<PaymentSuccessPage />} />
+      <Route path="/staff-invite/:token" element={<StaffInvitePage />} />
       {/* /go/:code handled by backend directly — instant 302 redirect */}
 
       {/* Admin panel */}
@@ -72,6 +79,7 @@ export default function App() {
         <Route path="giveaways" element={<GiveawaysPage />} />
         <Route path="billing" element={<BillingPage />} />
         <Route path="staff" element={<StaffPage />} />
+        <Route path="paid-chats" element={<PaidChatsPage />} />
       </Route>
     </Routes>
   );

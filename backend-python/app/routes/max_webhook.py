@@ -1,9 +1,11 @@
 """MAX bot webhook handler + long-polling fallback.
 
-Handles bot_started, message_created, bot_added, bot_removed, user_added events.
+Handles bot_started, message_created, bot_added, bot_removed, user_added events, account linking.
 Uses chat_id from events for all message sending (user_id param unreliable in MAX API).
 """
 import asyncio
+import json
+import re
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict
@@ -255,6 +257,157 @@ def _get_chat_id(body: dict) -> Optional[str]:
 
 # ---- Bot command handlers ----
 
+async def handle_paid_chat_max(max_api, chat_id: str, max_user_id: str, tracking_code: str):
+    """Show paid chat info in MAX bot."""
+    from ..database import fetch_one, fetch_all
+
+    channel = await fetch_one("SELECT * FROM channels WHERE tracking_code = $1", tracking_code)
+    if not channel:
+        await _send_to_chat(max_api, chat_id, "Канал не найден.")
+        return
+
+    notif = await fetch_one(
+        "SELECT message_text, file_path, file_type, file_data FROM paid_chat_notifications WHERE channel_id = $1 AND event_type = 'before_subscribe' AND is_active = 1",
+        channel["id"],
+    )
+    plans = await fetch_all(
+        "SELECT id, plan_type, duration_days, price, currency, title, description FROM paid_chat_plans WHERE channel_id = $1 AND is_active = 1 ORDER BY sort_order, price",
+        channel["id"],
+    )
+
+    lines = []
+    channel_title = channel.get("title", "")
+    if channel_title:
+        lines.append(f"**{channel_title}**\n")
+    if notif and notif.get("message_text"):
+        lines.append(notif["message_text"])
+        lines.append("")
+    if plans:
+        lines.append("**Тарифы:**")
+        for p in plans:
+            price_str = f"{int(p['price']) if p['price'] == int(p['price']) else p['price']} {p.get('currency', 'RUB')}"
+            name = p.get("title") or (
+                "Разовая оплата" if p["plan_type"] == "one_time"
+                else f"Подписка на {p['duration_days']} дн."
+            )
+            lines.append(f"  {name} — **{price_str}**")
+            if p.get("description"):
+                lines.append(f"  _{p['description']}_")
+    else:
+        lines.append("Тарифы пока не настроены.")
+
+    text = "\n".join(lines)
+
+    # Show info with image if attached
+    attachments = None
+    if notif and notif.get("file_path"):
+        from ..services.file_storage import ensure_file
+        file_path = ensure_file(notif.get("file_path"), notif.get("file_data"))
+        if file_path:
+            upload_result = await max_api.upload_file(file_path, notif.get("file_type") or "photo")
+            if upload_result.get("success"):
+                from ..services.messenger import _extract_max_file_token
+                file_token = _extract_max_file_token(upload_result.get("data", {}))
+                if file_token:
+                    attach_type = "image" if (notif.get("file_type") or "").startswith("image") else "file"
+                    attachments = [{"type": attach_type, "payload": {"token": file_token}}]
+
+    await _send_to_chat(max_api, chat_id, text, attachments=attachments)
+
+    # Start payment data collection conversation
+    if plans:
+        # Auto-select if only one plan/chat
+        chats = await fetch_all(
+            "SELECT id, title FROM paid_chats WHERE channel_id = $1 AND is_active = 1 ORDER BY created_at", channel["id"]
+        )
+        selected_plan = plans[0] if len(plans) == 1 else None
+        selected_chat = chats[0] if len(chats) == 1 else None
+
+        _conversation_state[max_user_id] = {
+            "action": "paid_chat_pay",
+            "step": "phone" if (selected_plan and selected_chat) else ("select_plan" if len(plans) > 1 else "select_chat"),
+            "tracking_code": tracking_code,
+            "channel_id": channel["id"],
+            "plans": plans,
+            "chats": chats,
+            "selected_plan": selected_plan,
+            "selected_chat": selected_chat,
+            "max_user_id": max_user_id,
+            "phone": None,
+            "email": None,
+            "name": (await fetch_one("SELECT first_name FROM users WHERE max_user_id = $1", str(max_user_id)) or {}).get("first_name", ""),
+        }
+
+        state = _conversation_state[max_user_id]
+        if state["step"] == "select_plan":
+            lines = ["Выберите тариф:\n"]
+            for i, p in enumerate(plans, 1):
+                price = f"{int(p['price']) if p['price'] == int(p['price']) else p['price']} RUB"
+                name = p.get("title") or f"Тариф #{i}"
+                lines.append(f"{i}. {name} — {price}")
+            lines.append("\nВведите номер:")
+            await _send_to_chat(max_api, chat_id, "\n".join(lines))
+        elif state["step"] == "select_chat":
+            lines = ["Выберите чат:\n"]
+            for i, c in enumerate(chats, 1):
+                lines.append(f"{i}. {c.get('title', c['id'])}")
+            lines.append("\nВведите номер:")
+            await _send_to_chat(max_api, chat_id, "\n".join(lines))
+        else:
+            await _send_to_chat(max_api, chat_id, "📱 Введите ваш номер телефона для оплаты:")
+
+
+async def _handle_go_link(max_api, chat_id: str, max_user_id: str, first_name: str, short_code: str):
+    """Handle seamless tracking link: record click+visit, redirect user to channel."""
+    link = await fetch_one("""
+        SELECT tl.*, c.tracking_code, c.channel_id as ch_channel_id, c.platform,
+               c.username as channel_username, c.max_chat_id, c.join_link, c.title as channel_title
+        FROM tracking_links tl JOIN channels c ON c.id = tl.channel_id
+        WHERE tl.short_code = $1
+    """, short_code)
+    if not link:
+        await _send_to_chat(max_api, chat_id, "Ссылка не найдена.")
+        return
+
+    # Record click
+    await execute("UPDATE tracking_links SET clicks = clicks + 1 WHERE id = $1", link["id"])
+    await execute("INSERT INTO clicks (link_id, ip_address, user_agent) VALUES ($1, $2, $3)",
+                  link["id"], "max-bot", f"max-user:{max_user_id}")
+
+    # Record visit
+    visit_id = await execute_returning_id(
+        """INSERT INTO visits (tracking_link_id, channel_id, max_user_id, platform,
+            utm_source, utm_medium, utm_campaign, utm_content, utm_term)
+           VALUES ($1,$2,$3,'max',$4,$5,$6,$7,$8) RETURNING id""",
+        link["id"], link["channel_id"], max_user_id,
+        link.get("utm_source"), link.get("utm_medium"), link.get("utm_campaign"),
+        link.get("utm_content"), link.get("utm_term"),
+    )
+
+    # Build channel URL
+    join_link = link.get("join_link")
+    max_chat_id = link.get("max_chat_id")
+    channel_username = link.get("channel_username")
+
+    if join_link:
+        channel_url = join_link
+    elif max_chat_id:
+        channel_url = max_chat_id if max_chat_id.startswith("http") else f"https://max.ru/chats/{max_chat_id}"
+    elif channel_username:
+        channel_url = f"https://max.ru/chats/{channel_username}"
+    else:
+        channel_url = None
+
+    if channel_url:
+        await _send_to_chat(max_api, chat_id,
+            f"👉 **{link.get('channel_title', 'Канал')}**\n\nПодпишитесь на канал:",
+            buttons=[[{"type": "link", "text": "Перейти в канал", "url": channel_url}]])
+    else:
+        await _send_to_chat(max_api, chat_id, "Канал не найден.")
+
+    print(f"[MAX Bot] go_link: code={short_code}, visit={visit_id}, user={max_user_id}")
+
+
 async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, payload: str = ""):
     """Handle /start command with optional payload."""
     if payload.startswith("lm_"):
@@ -270,6 +423,13 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
     if payload.startswith("gw_"):
         await _find_or_create_max_user(max_user_id, first_name, dialog_chat_id=chat_id)
         await handle_giveaway(max_api, chat_id, max_user_id, "", first_name, payload)
+        return
+    if payload.startswith("paid_"):
+        await _find_or_create_max_user(max_user_id, first_name, dialog_chat_id=chat_id)
+        await handle_paid_chat_max(max_api, chat_id, max_user_id, payload[5:])
+        return
+    if payload.startswith("go_"):
+        await _handle_go_link(max_api, chat_id, max_user_id, first_name, payload[3:])
         return
 
     result = await _find_or_create_max_user(max_user_id, first_name, dialog_chat_id=chat_id)
@@ -480,7 +640,7 @@ async def _cmd_check(max_api, chat_id: str, max_user_id: str, first_name: str):
     else:
         await _send_to_chat(max_api, chat_id,
             "⚠️ Бот всё ещё не является администратором.\n\n"
-            "Откройте канал → Настройки → Администраторы → сделайте бота админом, затем /check.")
+            "Откройте канал → Настройки → Администраторы → сделайте бота администратором. Канал подключится автоматически.")
 
 
 async def _cmd_login(max_api, chat_id: str, max_user_id: str, first_name: str):
@@ -513,7 +673,7 @@ async def _cmd_help(max_api, chat_id: str):
         f"/newpin — создать закреп\n"
         f"/newleadmagnet — создать лид-магнит\n"
         f"/stats — статистика\n"
-        f"/check — проверить статус каналов\n"
+        f"/check — проверить статус каналов (при проблемах)\n"
         f"/help — эта справка\n\n"
         f"📌 **Как подключить канал:**\n"
         f"1. Напишите /start для авторизации\n"
@@ -697,6 +857,78 @@ async def _cmd_newleadmagnet(max_api, chat_id: str, max_user_id: str):
         await _send_to_chat(max_api, chat_id, "\n".join(lines))
 
 
+async def _handle_link_code(max_api, chat_id: str, max_user_id: str, code: str):
+    """Handle a 6-digit code: link or unlink account."""
+    # Check unlink first
+    unlink_row = await fetch_one(
+        "SELECT * FROM account_link_codes WHERE code = $1 AND target_platform = 'unlink_max' AND used = FALSE AND expires_at > NOW()",
+        code,
+    )
+    if unlink_row:
+        old_user_id = unlink_row["user_id"]
+
+        # Remove MAX from old account
+        await execute("UPDATE users SET max_user_id = NULL, max_dialog_chat_id = NULL WHERE id = $1", old_user_id)
+
+        # Create new separate MAX account
+        new_user_id = await execute_returning_id(
+            "INSERT INTO users (max_user_id, max_dialog_chat_id, first_name) VALUES ($1, $2, $3) RETURNING id",
+            str(max_user_id), chat_id, "",
+        )
+
+        # Move MAX channels to new account
+        await execute(
+            "UPDATE channels SET user_id = $1, owner_id = $1 WHERE user_id = $2 AND platform = 'max'",
+            new_user_id, old_user_id,
+        )
+
+        await execute("UPDATE account_link_codes SET used = TRUE WHERE id = $1", unlink_row["id"])
+
+        from ..middleware.auth import create_jwt
+        _token = create_jwt(new_user_id)
+        _url = f"{settings.APP_URL}/login?token={_token}"
+        await _send_to_chat(max_api, chat_id,
+            f"✅ MAX успешно отвязан.\n\nСоздан отдельный аккаунт для ваших MAX-каналов:",
+            buttons=[[{"type": "link", "text": "🔑 Войти в кабинет", "url": _url}]])
+        return
+
+    # Link code
+    row = await fetch_one(
+        "SELECT * FROM account_link_codes WHERE code = $1 AND target_platform = 'max' AND used = FALSE AND expires_at > NOW()",
+        code,
+    )
+    if not row:
+        used = await fetch_one("SELECT * FROM account_link_codes WHERE code = $1 AND used = TRUE", code)
+        if used:
+            return
+        await _send_to_chat(max_api, chat_id, "❌ Код не найден или истёк. Запросите новый код в личном кабинете.")
+        return
+
+    # Check if this max_user_id is already linked to another account
+    existing = await fetch_one("SELECT * FROM users WHERE max_user_id = $1", str(max_user_id))
+    if existing and existing["id"] != row["user_id"]:
+        # Merge: transfer data from existing MAX user to target user, then delete old
+        old_id = existing["id"]
+        target_id = row["user_id"]
+        await execute("UPDATE channels SET user_id = $1 WHERE user_id = $2", target_id, old_id)
+        await execute("UPDATE channels SET owner_id = $1 WHERE owner_id = $2", target_id, old_id)
+        old_dialog = existing.get("max_dialog_chat_id")
+        await execute("UPDATE users SET max_user_id = NULL WHERE id = $1", old_id)
+        await execute("DELETE FROM users WHERE id = $1", old_id)
+
+    # Link the account
+    await execute("UPDATE users SET max_user_id = $1, max_dialog_chat_id = COALESCE(max_dialog_chat_id, $2) WHERE id = $3",
+                  str(max_user_id), chat_id, row["user_id"])
+    await execute("UPDATE account_link_codes SET used = TRUE WHERE id = $1", row["id"])
+
+    from ..middleware.auth import create_jwt
+    _token = create_jwt(row["user_id"])
+    _url = f"{settings.APP_URL}/login?token={_token}"
+    await _send_to_chat(max_api, chat_id,
+        "✅ MAX подключен! Теперь вы можете управлять MAX-каналами из личного кабинета.",
+        buttons=[[{"type": "link", "text": "🔑 Перейти в кабинет", "url": _url}]])
+
+
 async def _handle_conversation(max_api, chat_id: str, max_user_id: str, text: str) -> bool:
     """Handle multi-step conversation flow. Returns True if handled."""
     state = _conversation_state.get(max_user_id)
@@ -783,10 +1015,35 @@ async def _handle_conversation(max_api, chat_id: str, max_user_id: str, text: st
                 )
                 app_url = settings.APP_URL
                 del _conversation_state[max_user_id]
-                await _send_to_chat(max_api, chat_id,
-                    f"✅ Ссылка создана!\n\n"
-                    f"🔗 {app_url}/go/{short_code}\n\n"
-                    f"Используйте эту ссылку для отслеживания подписчиков.")
+
+                # For direct links on MAX channels, show bot deep link (seamless in MAX app)
+                link_url = f"{app_url}/go/{short_code}"
+                ch = await fetch_one("SELECT platform FROM channels WHERE id = $1", state["channel_id"])
+                if state.get("link_type") == "direct" and ch and ch.get("platform") == "max":
+                    bot_username = settings.BOT_USERNAME or "PKAds_bot"
+                    # Try MAX bot username
+                    try:
+                        from ..services.max_api import get_max_api as _get_max
+                        _mapi = _get_max()
+                        if _mapi:
+                            me = await _mapi.get_me()
+                            if me.get("success"):
+                                bot_username = me["data"].get("username", bot_username)
+                    except Exception:
+                        pass
+                    miniapp_link = f"https://max.ru/{bot_username}?startapp=go_{short_code}"
+                    bot_link = f"https://max.ru/{bot_username}?start=go_{short_code}"
+                    await _send_to_chat(max_api, chat_id,
+                        f"✅ Ссылка создана!\n\n"
+                        f"🔗 Бесшовная (ПК): `{miniapp_link}`\n"
+                        f"🔗 Бесшовная (мобильное): `{bot_link}`\n"
+                        f"🌐 Универсальная: `{app_url}/go/{short_code}`\n\n"
+                        f"Для ПК используйте startapp-ссылку, для мобильного — start-ссылку.")
+                else:
+                    await _send_to_chat(max_api, chat_id,
+                        f"✅ Ссылка создана!\n\n"
+                        f"🔗 {link_url}\n\n"
+                        f"Используйте эту ссылку для отслеживания подписчиков.")
             else:
                 del _conversation_state[max_user_id]
                 await _send_to_chat(max_api, chat_id, "❌ Создание ссылки отменено.")
@@ -836,7 +1093,7 @@ async def _handle_conversation(max_api, chat_id: str, max_user_id: str, text: st
                     deep_link_code = f"gw_{secrets.token_hex(4)}"
                     import json as _json
                     prizes_json = _json.dumps([state["prize"]], ensure_ascii=False)
-                    conditions_json = _json.dumps({"subscribe": True, "invite_friends": 0})
+                    conditions_json = _json.dumps({"subscribe": True})
                     await execute(
                         """INSERT INTO giveaways (channel_id, title, message_text, prizes, conditions, deep_link_code, status, participant_count, winner_count)
                            VALUES ($1, $2, $3, $4, $5, $6, 'draft', 0, 1)""",
@@ -966,6 +1223,96 @@ async def _handle_conversation(max_api, chat_id: str, max_user_id: str, text: st
                 await _send_to_chat(max_api, chat_id, "❌ Создание лид-магнита отменено.")
             return True
 
+    # --- Paid chat payment flow ---
+    if action == "paid_chat_pay":
+        if step == "select_plan":
+            try:
+                idx = int(text) - 1
+                plans = state["plans"]
+                if 0 <= idx < len(plans):
+                    state["selected_plan"] = plans[idx]
+                    chats = state["chats"]
+                    if len(chats) == 1:
+                        state["selected_chat"] = chats[0]
+                        state["step"] = "phone"
+                        await _send_to_chat(max_api, chat_id, "📱 Введите ваш номер телефона:")
+                    elif len(chats) > 1:
+                        state["step"] = "select_chat"
+                        lines = ["Выберите чат:\n"]
+                        for i, c in enumerate(chats, 1):
+                            lines.append(f"{i}. {c.get('title', c['id'])}")
+                        lines.append("\nВведите номер:")
+                        await _send_to_chat(max_api, chat_id, "\n".join(lines))
+                    else:
+                        await _send_to_chat(max_api, chat_id, "⚠️ Нет доступных чатов.")
+                        del _conversation_state[max_user_id]
+                else:
+                    await _send_to_chat(max_api, chat_id, f"Введите число от 1 до {len(plans)}")
+            except ValueError:
+                await _send_to_chat(max_api, chat_id, "Введите номер тарифа")
+            return True
+
+        if step == "select_chat":
+            try:
+                idx = int(text) - 1
+                chats = state["chats"]
+                if 0 <= idx < len(chats):
+                    state["selected_chat"] = chats[idx]
+                    state["step"] = "phone"
+                    await _send_to_chat(max_api, chat_id, "📱 Введите ваш номер телефона:")
+                else:
+                    await _send_to_chat(max_api, chat_id, f"Введите число от 1 до {len(chats)}")
+            except ValueError:
+                await _send_to_chat(max_api, chat_id, "Введите номер чата")
+            return True
+
+        if step == "phone":
+            phone = text.strip().replace(" ", "").replace("-", "")
+            if len(phone) < 10:
+                await _send_to_chat(max_api, chat_id, "Введите корректный номер телефона (например +79001234567):")
+                return True
+            state["phone"] = phone
+            state["step"] = "email"
+            await _send_to_chat(max_api, chat_id, "📧 Введите ваш email:")
+            return True
+
+        if step == "email":
+            email = text.strip()
+            if "@" not in email:
+                await _send_to_chat(max_api, chat_id, "Введите корректный email:")
+                return True
+            state["email"] = email
+
+            # All data collected — generate payment link
+            plan = state["selected_plan"]
+            chat = state["selected_chat"]
+            tc = state["tracking_code"]
+
+            from urllib.parse import urlencode, quote
+            pay_params = {
+                "platform": "max",
+                "mid": state["max_user_id"],
+                "name": state["name"],
+                "phone": state["phone"],
+                "email": state["email"],
+            }
+            pay_url = f"{settings.APP_URL}/pay/{tc}?{urlencode(pay_params)}"
+
+            price_str = f"{int(plan['price']) if plan['price'] == int(plan['price']) else plan['price']} RUB"
+            plan_name = plan.get("title") or "Подписка"
+
+            await _send_to_chat(max_api, chat_id,
+                f"✅ **Данные для оплаты:**\n\n"
+                f"📋 Тариф: {plan_name} — {price_str}\n"
+                f"📱 Телефон: {state['phone']}\n"
+                f"📧 Email: {state['email']}\n"
+                f"👤 Имя: {state['name']}\n\n"
+                f"Нажмите кнопку для перехода к оплате:",
+                buttons=[[{"type": "link", "text": f"💳 Оплатить {price_str}", "url": pay_url}]])
+
+            del _conversation_state[max_user_id]
+            return True
+
     # Unknown state — clean up
     del _conversation_state[max_user_id]
     return False
@@ -1073,6 +1420,10 @@ async def process_max_update(body: dict):
                 handled = await _handle_conversation(max_api, chat_id, max_user_id, text)
                 if handled:
                     return
+                # Check if it's a 6-digit account link code
+                if re.match(r'^\d{6}$', text):
+                    await _handle_link_code(max_api, chat_id, max_user_id, text)
+                    return
 
             # Cancel conversation on any new command
             if cmd.startswith("/") and max_user_id in _conversation_state:
@@ -1090,6 +1441,14 @@ async def process_max_update(body: dict):
                 elif payload.startswith("gw_"):
                     await _find_or_create_max_user(max_user_id, first_name)
                     await handle_giveaway(max_api, chat_id, max_user_id, username, first_name, payload)
+                elif payload.startswith("paid_"):
+                    await _find_or_create_max_user(max_user_id, first_name)
+                    try:
+                        await handle_paid_chat_max(max_api, chat_id, max_user_id, payload[5:])
+                    except Exception as e:
+                        print(f"[MAX Bot] message_callback: handle_paid_chat_max FAILED: {e}")
+                elif payload.startswith("go_"):
+                    await _handle_go_link(max_api, chat_id, max_user_id, first_name, payload[3:])
                 else:
                     await _cmd_start(max_api, chat_id, max_user_id, first_name, payload)
             elif cmd == "/login":
@@ -1186,6 +1545,13 @@ async def process_max_update(body: dict):
                     import traceback
                     print(f"[MAX Bot] message_callback: handle_giveaway FAILED: {e}")
                     traceback.print_exc()
+            elif payload.startswith("paid_"):
+                try:
+                    await handle_paid_chat_max(max_api, user_chat_id, max_user_id, payload[5:])
+                except Exception as e:
+                    print(f"[MAX Bot] message_callback: handle_paid_chat_max FAILED: {e}")
+            elif payload.startswith("go_"):
+                await _handle_go_link(max_api, user_chat_id, max_user_id, first_name, payload[3:])
             else:
                 print(f"[MAX Bot] message_callback: unknown payload: {payload}")
 
@@ -1194,6 +1560,65 @@ async def process_max_update(body: dict):
             raw_chat_id = body.get("chat_id") or body.get("chat", {}).get("chat_id")
             if not raw_chat_id:
                 print(f"[MAX Bot] bot_added: no chat_id")
+                return
+
+            # Separate channels from chats
+            is_channel = body.get("is_channel", False)
+            if not is_channel:
+                # Save chat to bot_chats — but only notify when bot is admin
+                chat_title = body.get("chat", {}).get("title") or body.get("title") or "Чат"
+                chat_link = body.get("chat", {}).get("link") or None
+                chat_avatar = None
+                is_admin = False
+                if max_api:
+                    try:
+                        ci = await max_api.get_chat(str(raw_chat_id))
+                        if ci.get("success") and ci.get("data"):
+                            chat_title = ci["data"].get("title") or chat_title
+                            chat_link = ci["data"].get("link") or chat_link
+                            _icon = ci["data"].get("icon", {})
+                            chat_avatar = _icon.get("url") if isinstance(_icon, dict) else None
+                    except Exception:
+                        pass
+                    # Check admin status (with retry)
+                    for attempt in range(3):
+                        try:
+                            if attempt > 0:
+                                await asyncio.sleep(3)
+                            membership = await max_api.get_membership(str(raw_chat_id))
+                            is_admin = membership.get("success") and membership.get("data", {}).get("is_admin", False)
+                            if is_admin:
+                                break
+                        except Exception:
+                            pass
+
+                bind_user_id = None
+                inviter_id = body.get("inviter_id") or body.get("user", {}).get("user_id")
+                if inviter_id:
+                    inv_row = await fetch_one("SELECT id FROM users WHERE max_user_id = $1", str(inviter_id))
+                    if inv_row:
+                        bind_user_id = inv_row["id"]
+                try:
+                    await execute(
+                        """INSERT INTO bot_chats (chat_id, title, platform, user_id, is_admin, join_link, avatar_url)
+                           VALUES ($1, $2, 'max', $3, $4, $5, $6)
+                           ON CONFLICT(chat_id) DO UPDATE SET title = EXCLUDED.title, is_admin = EXCLUDED.is_admin,
+                           join_link = COALESCE(EXCLUDED.join_link, bot_chats.join_link),
+                           avatar_url = COALESCE(EXCLUDED.avatar_url, bot_chats.avatar_url),
+                           user_id = COALESCE(bot_chats.user_id, EXCLUDED.user_id)""",
+                        str(raw_chat_id), chat_title, bind_user_id, is_admin, chat_link, chat_avatar,
+                    )
+                    print(f"[MAX Bot] bot_added: saved chat '{chat_title}' ({raw_chat_id}), is_admin={is_admin}")
+                    # Only notify when bot is admin
+                    if is_admin and bind_user_id and inviter_id:
+                        from ..middleware.auth import create_jwt
+                        _token = create_jwt(bind_user_id)
+                        _url = f"{settings.APP_URL}/login?token={_token}"
+                        await _send_to_user_by_id(max_api, str(inviter_id),
+                            f"✅ Бот добавлен администратором в чат «{chat_title}».\n\nВы можете подключить его как платный чат в личном кабинете.",
+                            buttons=[[{"type": "link", "text": "🔑 Перейти в кабинет", "url": _url}]])
+                except Exception as e:
+                    print(f"[MAX Bot] bot_added: save chat error: {e}")
                 return
 
             chat_id_str = str(raw_chat_id)
@@ -1217,6 +1642,8 @@ async def process_max_update(body: dict):
                         chat_title = chat_info["data"].get("title") or chat_title
                         chat_link = chat_info["data"].get("link") or chat_link
                         chat_owner_id = chat_info["data"].get("owner_id") or chat_owner_id
+                        _icon = chat_info["data"].get("icon", {})
+                        chat_avatar = _icon.get("url") if isinstance(_icon, dict) else None
                         print(f"[MAX Bot] bot_added: title={chat_title}, owner={chat_owner_id}")
                 except Exception as e:
                     print(f"[MAX Bot] getChat failed: {e}")
@@ -1224,14 +1651,23 @@ async def process_max_update(body: dict):
             if not chat_title:
                 chat_title = "MAX Channel"
 
-            # Check admin status
+            # Check admin status (with retry — MAX delays granting admin rights after bot_added)
             is_admin = False
             if max_api:
-                try:
-                    membership = await max_api.get_membership(chat_id_str)
-                    is_admin = membership.get("success") and membership.get("data", {}).get("is_admin", False)
-                except Exception:
-                    pass
+                for attempt in range(5):
+                    try:
+                        await asyncio.sleep(3 if attempt == 0 else 5)
+                        membership = await max_api.get_membership(chat_id_str)
+                        is_admin = membership.get("success") and membership.get("data", {}).get("is_admin", False)
+                        print(f"[MAX Bot] bot_added: admin check #{attempt+1}: is_admin={is_admin}")
+                        if is_admin:
+                            break
+                    except Exception as e:
+                        print(f"[MAX Bot] bot_added: membership check error: {e}")
+            # MAX often delays admin rights — activate anyway, ChannelActivator will verify in 5 min
+            if not is_admin:
+                print(f"[MAX Bot] bot_added: admin not confirmed yet, activating optimistically (ChannelActivator will verify)")
+                is_admin = True
 
             existing = await fetch_one(
                 "SELECT id, is_active, trial_used FROM channels WHERE max_chat_id = $1",
@@ -1277,10 +1713,12 @@ async def process_max_update(body: dict):
 
                 # Determine join_link: if chat_link looks like a URL, use it
                 _join_link = chat_link if chat_link and ("http" in chat_link or "/" in chat_link) else None
+                _avatar = locals().get("chat_avatar")
                 await execute("""
-                    INSERT INTO channels (channel_id, title, username, max_chat_id, max_connected, tracking_code, platform, is_active, user_id, owner_id, join_link)
-                    VALUES ($1, $2, $3, $4, 1, $5, 'max', $6, $7, $8, $9)
-                """, chat_id_int, chat_title, chat_link, chat_id_str, tracking_code, active_status, bind_user_id, bind_user_id, _join_link)
+                    INSERT INTO channels (channel_id, title, username, max_chat_id, max_connected, tracking_code, platform, is_active, user_id, owner_id, join_link, avatar_url)
+                    VALUES ($1, $2, $3, $4, 1, $5, 'max', $6, $7, $8, $9, $10)
+                """, chat_id_int, chat_title, chat_link, chat_id_str, tracking_code, active_status, bind_user_id, bind_user_id, _join_link, _avatar)
+                print(f"[MAX Bot] bot_added: channel created, active={active_status}, user_id={bind_user_id}, owner_max={owner_max_user_id}")
 
                 # Activate trial
                 new_channel = await fetch_one("SELECT id FROM channels WHERE max_chat_id = $1", chat_id_str)
@@ -1293,20 +1731,24 @@ async def process_max_update(body: dict):
                     await execute("UPDATE channels SET trial_used = TRUE WHERE id = $1", new_channel["id"])
 
                 # Notify owner using DB-stored dialog chat_id (survives restarts!)
+                print(f"[MAX Bot] bot_added: notify check: bind_user_id={bind_user_id}, owner_max={owner_max_user_id}")
                 if bind_user_id and owner_max_user_id:
                     try:
                         if is_admin:
+                            # Generate login token for cabinet link
+                            from ..middleware.auth import create_jwt
+                            _token = create_jwt(bind_user_id)
+                            _cabinet_url = f"{settings.APP_URL}/login?token={_token}"
                             await _send_to_user_by_id(max_api, owner_max_user_id,
                                 f"✅ Канал «{chat_title}» успешно подключен!\n\n"
                                 f"🔗 Код отслеживания: `{tracking_code}`\n\n"
-                                f"🎁 Активирован бесплатный пробный период на 2 дня!\n\n"
-                                f"Откройте личный кабинет для настройки.")
+                                f"🎁 Активирован бесплатный пробный период на 2 дня!",
+                                buttons=[[{"type": "link", "text": "🔑 Перейти в кабинет", "url": _cabinet_url}]])
                         else:
                             await _send_to_user_by_id(max_api, owner_max_user_id,
                                 f"⚠️ Бот добавлен в канал «{chat_title}», но не является администратором.\n\n"
-                                f"1. Откройте канал → Настройки → Администраторы\n"
-                                f"2. Сделайте бота администратором\n"
-                                f"3. Напишите мне /check")
+                                f"Откройте канал → Настройки → Администраторы → сделайте бота администратором.\n"
+                                f"Канал подключится автоматически.")
                     except Exception as e:
                         print(f"[MAX Bot] Notify owner failed: {e}")
                 elif max_api:
@@ -1328,28 +1770,55 @@ async def process_max_update(body: dict):
                     WHERE id = $5
                 """, active_status, chat_title, chat_link, bind_user_id, existing["id"], _join_link)
 
+                print(f"[MAX Bot] bot_added: existing channel updated, active={active_status}, bind_user={bind_user_id}, owner_max={owner_max_user_id}")
+
                 # Notify owner about re-connection
                 if bind_user_id and owner_max_user_id:
                     try:
                         if is_admin:
+                            from ..middleware.auth import create_jwt
+                            _token = create_jwt(bind_user_id)
+                            _cabinet_url = f"{settings.APP_URL}/login?token={_token}"
                             await _send_to_user_by_id(max_api, owner_max_user_id,
-                                f"✅ Канал «{chat_title}» снова подключен!")
+                                f"✅ Канал «{chat_title}» снова подключен!",
+                                buttons=[[{"type": "link", "text": "🔑 Перейти в кабинет", "url": _cabinet_url}]])
+                            print(f"[MAX Bot] bot_added: re-connect notification sent")
                         else:
                             await _send_to_user_by_id(max_api, owner_max_user_id,
                                 f"⚠️ Бот снова добавлен в «{chat_title}», но не является администратором.\n"
-                                f"Сделайте бота админом и напишите /check.")
-                    except Exception:
-                        pass
+                                f"Сделайте бота админом — канал подключится автоматически.")
+                    except Exception as e:
+                        print(f"[MAX Bot] Notify owner failed (re-connect): {e}")
+                else:
+                    print(f"[MAX Bot] bot_added: cannot notify — no bind_user_id or owner_max_user_id")
 
         # === bot_removed ===
         if update_type == "bot_removed":
             removed_chat_id = str(body.get("chat_id") or body.get("chat", {}).get("chat_id") or "")
             if removed_chat_id:
+                channel = await fetch_one(
+                    "SELECT id, title, user_id FROM channels WHERE max_chat_id = $1", removed_chat_id
+                )
                 await execute("""
                     UPDATE channels SET is_active = 0, max_connected = 0
                     WHERE max_chat_id = $1
                 """, removed_chat_id)
                 print(f"[MAX Bot] Channel deactivated: {removed_chat_id}")
+
+                # Notify owner
+                if channel and channel.get("user_id"):
+                    owner = await fetch_one(
+                        "SELECT max_user_id FROM users WHERE id = $1 AND max_user_id IS NOT NULL",
+                        channel["user_id"],
+                    )
+                    if owner and max_api:
+                        try:
+                            ch_title = channel.get("title", "")
+                            await _send_to_user_by_id(max_api, owner["max_user_id"],
+                                f"⚠️ Бот удалён из канала «{ch_title}».\n\n"
+                                f"Канал деактивирован. Чтобы снова подключить — добавьте бота администратором в канал.")
+                        except Exception as e:
+                            print(f"[MAX Bot] Notify owner on remove failed: {e}")
 
         # === user_added / chat_member_joined ===
         if update_type in ("user_added", "chat_member_joined"):
@@ -1357,6 +1826,30 @@ async def process_max_update(body: dict):
             user_id = str(body.get("user", {}).get("user_id") or "")
             username = body.get("user", {}).get("username") or ""
             first_name = body.get("user", {}).get("name") or body.get("user", {}).get("first_name", "")
+
+            # Check if this is a paid chat — kick unauthorized users
+            paid_chat = await fetch_one(
+                "SELECT pc.id, pc.channel_id FROM paid_chats pc WHERE pc.chat_id = $1 AND pc.is_active = 1",
+                max_chat_id,
+            )
+            if paid_chat and user_id:
+                # Check if user has active membership
+                member = await fetch_one(
+                    "SELECT id FROM paid_chat_members WHERE paid_chat_id = $1 AND max_user_id = $2 AND status = 'active'",
+                    paid_chat["id"], user_id,
+                )
+                if not member:
+                    # Not paid — kick
+                    if max_api:
+                        try:
+                            await max_api.remove_chat_member(max_chat_id, user_id)
+                            print(f"[MAX Bot] Kicked unpaid user {user_id} from paid chat {max_chat_id}")
+                            # Notify user
+                            await _send_to_user_by_id(max_api, user_id,
+                                f"⚠️ Для доступа к этому чату необходима оплата.\n\nОплатите подписку, чтобы получить доступ.")
+                        except Exception as e:
+                            print(f"[MAX Bot] Failed to kick unpaid user: {e}")
+                    return
 
             channel = await fetch_one(
                 "SELECT id, platform FROM channels WHERE max_chat_id = $1",
@@ -1475,7 +1968,19 @@ async def _max_poll_loop():
     except Exception as e:
         print(f"[MAX Bot] Webhook check failed: {e}")
 
+    # Restore marker from DB (survives restarts)
     marker = None
+    try:
+        row = await fetch_one("SELECT value FROM _kv WHERE key = 'max_poll_marker'")
+        if row:
+            marker = row["value"]
+            print(f"[MAX Bot] Restored marker: {marker}")
+    except Exception:
+        # _kv table might not exist yet
+        try:
+            await execute("CREATE TABLE IF NOT EXISTS _kv (key TEXT PRIMARY KEY, value TEXT)")
+        except Exception:
+            pass
     print("[MAX Bot] Polling started")
 
     while True:
@@ -1497,8 +2002,12 @@ async def _max_poll_loop():
                     print(f"[MAX Bot] Update processing error: {ue}")
                     traceback.print_exc()
             new_marker = data.get("marker")
-            if new_marker:
+            if new_marker and new_marker != marker:
                 marker = new_marker
+                try:
+                    await execute("INSERT INTO _kv (key, value) VALUES ('max_poll_marker', $1) ON CONFLICT(key) DO UPDATE SET value = $1", marker)
+                except Exception:
+                    pass
         except asyncio.CancelledError:
             break
         except Exception as e:

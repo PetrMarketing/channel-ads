@@ -8,7 +8,7 @@ const DURATION_OPTIONS = [
   { months: 1, label: '1 месяц', price: 490 },
   { months: 3, label: '3 месяца', price: 1290 },
   { months: 6, label: '6 месяцев', price: 2290 },
-  { months: 12, label: '12 месяцев', price: 4990 },
+  { months: 12, label: '12 месяцев', price: 3990 },
 ];
 const CHANNEL_DISCOUNT_PERCENT = 10;
 
@@ -89,13 +89,21 @@ export default function BillingPage() {
   const calcPrice = () => {
     const dur = DURATION_OPTIONS.find(d => d.months === selectedMonths) || DURATION_OPTIONS[0];
     const basePrice = dur.price;
-    const extraChannels = Math.max(0, selectedCount - 1);
-    const channelDiscountPct = Math.min(extraChannels * CHANNEL_DISCOUNT_PERCENT, 90);
-    const pricePerUser = Math.round(basePrice * (1 - channelDiscountPct / 100));
+    // Progressive discount: 1st channel full price, 2nd -10%, 3rd -20%, etc
+    let total = 0;
+    const breakdown = [];
+    selectedChannels.forEach((ch, i) => {
+      const users = channelConfigs[ch.tracking_code]?.users || 1;
+      const discountPct = Math.min(i * CHANNEL_DISCOUNT_PERCENT, 90);
+      const channelPrice = Math.round(basePrice * (1 - discountPct / 100));
+      const channelTotal = channelPrice * users;
+      total += channelTotal;
+      breakdown.push({ title: ch.title, discount: discountPct, price: channelPrice, users, total: channelTotal });
+    });
     const totalUsers = selectedChannels.reduce((sum, ch) => sum + (channelConfigs[ch.tracking_code]?.users || 1), 0);
-    const total = pricePerUser * totalUsers;
     const fullPrice = basePrice * totalUsers;
-    return { basePrice, pricePerUser, total, fullPrice, savings: fullPrice - total, channelDiscountPct, totalUsers };
+    const avgDiscount = totalUsers > 0 ? Math.round((1 - total / fullPrice) * 100) : 0;
+    return { basePrice, total, fullPrice, savings: fullPrice - total, channelDiscountPct: avgDiscount, totalUsers, breakdown };
   };
 
   const handleBuy = async () => {
@@ -291,34 +299,28 @@ export default function BillingPage() {
             <span style={{ fontWeight: 500 }}>{DURATION_OPTIONS.find(d => d.months === selectedMonths)?.label}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
-            <span style={{ color: 'var(--text-secondary)' }}>Цена за пользователя</span>
-            <span style={{ fontWeight: 500 }}>
-              {price.channelDiscountPct > 0 && (
-                <span style={{ textDecoration: 'line-through', color: 'var(--text-secondary)', marginRight: '6px', fontSize: '0.82rem' }}>
-                  {price.basePrice.toLocaleString('ru-RU')} ₽
-                </span>
-              )}
-              {price.pricePerUser.toLocaleString('ru-RU')} ₽
-            </span>
+            <span style={{ color: 'var(--text-secondary)' }}>Базовая цена</span>
+            <span style={{ fontWeight: 500 }}>{price.basePrice.toLocaleString('ru-RU')} ₽/канал</span>
           </div>
-          {price.channelDiscountPct > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
-              <span style={{ color: 'var(--success)' }}>Скидка за {selectedCount} каналов</span>
-              <span style={{ fontWeight: 500, color: 'var(--success)' }}>-{price.channelDiscountPct}%</span>
+          {/* Per-channel breakdown with progressive discount */}
+          {price.breakdown && price.breakdown.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '8px', marginTop: '4px' }}>
+              {price.breakdown.map((b, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '4px' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {b.title || `Канал ${b.channel || i + 1}`}
+                    {b.users > 1 ? ` (${b.users} польз.)` : ''}
+                    {b.discount > 0 && <span style={{ color: 'var(--success)', marginLeft: '4px' }}>-{b.discount}%</span>}
+                  </span>
+                  <span>{b.total.toLocaleString('ru-RU')} ₽</span>
+                </div>
+              ))}
             </div>
           )}
-          {/* Per-channel breakdown */}
-          {selectedCount > 1 && (
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '8px', marginTop: '4px' }}>
-              {selectedChannels.map(ch => {
-                const cfg = channelConfigs[ch.tracking_code];
-                return (
-                  <div key={ch.tracking_code} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>{ch.title || ch.username} ({cfg?.users || 1} польз.)</span>
-                    <span>{(price.pricePerUser * (cfg?.users || 1)).toLocaleString('ru-RU')} ₽</span>
-                  </div>
-                );
-              })}
+          {price.savings > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', marginTop: '4px' }}>
+              <span style={{ color: 'var(--success)' }}>Экономия</span>
+              <span style={{ fontWeight: 500, color: 'var(--success)' }}>-{price.savings.toLocaleString('ru-RU')} ₽</span>
             </div>
           )}
         </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../../services/api';
 import Loading from '../../components/Loading';
@@ -10,8 +10,6 @@ export default function SubscribePage() {
   const [subscribed, setSubscribed] = useState(false);
   const [error, setError] = useState(null);
   const [visitId, setVisitId] = useState(null);
-  const metrikaReady = useRef(false);
-
   const loadInfo = useCallback(async () => {
     if (!shortCode) return;
     setLoading(true);
@@ -42,13 +40,12 @@ export default function SubscribePage() {
 
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  // Inject Yandex Metrika script
+  // Inject Yandex Metrika script (only for reachGoal on subscription)
   useEffect(() => {
     if (!info) return;
     const counterId = info.ym_counter_id || info.yandex_metrika_id;
     if (!counterId) return;
 
-    // Init Metrika
     window.ym = window.ym || function () {
       (window.ym.a = window.ym.a || []).push(arguments);
     };
@@ -57,51 +54,17 @@ export default function SubscribePage() {
       clickmap: true,
       trackLinks: true,
       accurateTrackBounce: true,
-      webvisor: true,
     });
 
-    // Load Metrika script
     const script = document.createElement('script');
     script.src = 'https://mc.yandex.ru/metrika/tag.js';
     script.async = true;
-    script.onload = () => {
-      metrikaReady.current = true;
-      // Capture client ID and send to backend
-      captureYmClientId(counterId);
-    };
     document.head.appendChild(script);
 
     return () => {
       try { document.head.removeChild(script); } catch {}
     };
   }, [info]);
-
-  // Capture ym_client_id and patch visit
-  const captureYmClientId = useCallback((counterId) => {
-    if (!visitId || !counterId) return;
-    const tryCapture = (attempts = 0) => {
-      if (attempts > 30) return; // 15 sec max
-      try {
-        window.ym(Number(counterId), 'getClientID', (clientID) => {
-          if (clientID) {
-            api.patch(`/track/visit/${visitId}/ym-client`, { ym_client_id: String(clientID) }).catch(() => {});
-          }
-        });
-      } catch {
-        setTimeout(() => tryCapture(attempts + 1), 500);
-      }
-    };
-    tryCapture();
-  }, [visitId]);
-
-  // Re-try client ID capture when visitId becomes available
-  useEffect(() => {
-    if (!visitId || !info) return;
-    const counterId = info.ym_counter_id || info.yandex_metrika_id;
-    if (counterId && metrikaReady.current) {
-      captureYmClientId(counterId);
-    }
-  }, [visitId, info, captureYmClientId]);
 
   // Poll for subscription confirmation
   useEffect(() => {
@@ -179,25 +142,25 @@ export default function SubscribePage() {
 
         {subscribed ? (
           <div>
-            <div style={{ fontSize: '3rem', marginBottom: '12px' }}>&#10003;</div>
-            <h3 style={{ color: 'var(--success)', marginBottom: '8px' }}>Вы подписаны!</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Спасибо за подписку</p>
+            <div style={{ fontSize: '3rem', marginBottom: '12px' }}>✅</div>
+            <h3 style={{ color: 'var(--success)', marginBottom: '8px' }}>Вы подписались!</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Спасибо за подписку на канал</p>
           </div>
         ) : (
           <div>
             {subscribeUrl ? (
               <a href={subscribeUrl} target="_blank" rel="noreferrer"
                 className="btn btn-primary btn-large"
-                style={{ display: 'block', textDecoration: 'none', marginBottom: '12px' }}>
-                Подписаться
+                style={{ display: 'block', textDecoration: 'none', marginBottom: '16px', padding: '14px 24px', fontSize: '1rem' }}>
+                Перейти в канал
               </a>
             ) : (
               <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
                 Подпишитесь на канал
               </p>
             )}
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              Подпишитесь на канал и оставайтесь на этой странице — мы автоматически проверим подписку
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', opacity: 0.7 }}>
+              Подпишитесь и оставайтесь на этой странице — статус обновится автоматически
             </p>
           </div>
         )}

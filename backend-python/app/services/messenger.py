@@ -25,17 +25,20 @@ def sanitize_html_for_telegram(html: str) -> str:
         r"<(?:div|p(?!re)|li|ul|ol|tr|td|th|table|thead|tbody|h[1-6]|blockquote|section|article|header|footer|nav|main|figure|figcaption|details|summary)(?:\s[^>]*)?\s*>",
         "", text, flags=re.I,
     )
-    # <strong> -> <b>, <em> -> <i>
-    text = re.sub(r"<strong[^>]*>", "<b>", text, flags=re.I)
-    text = re.sub(r"</strong>", "</b>", text, flags=re.I)
-    text = re.sub(r"<em[^>]*>", "<i>", text, flags=re.I)
-    text = re.sub(r"</em>", "</i>", text, flags=re.I)
-    # <strike>/<del> -> <s>
-    text = re.sub(r"<(?:strike|del)[^>]*>", "<s>", text, flags=re.I)
-    text = re.sub(r"</(?:strike|del)>", "</s>", text, flags=re.I)
-    # <ins> -> <u>
+    # <strong>/<b> -> <b>, <em>/<i> -> <i> (strip attributes)
+    text = re.sub(r"<(?:strong|b)(?:\s[^>]*)?>", "<b>", text, flags=re.I)
+    text = re.sub(r"</(?:strong|b)>", "</b>", text, flags=re.I)
+    text = re.sub(r"<(?:em|i)(?:\s[^>]*)?>", "<i>", text, flags=re.I)
+    text = re.sub(r"</(?:em|i)>", "</i>", text, flags=re.I)
+    # <strike>/<del>/<s> -> <s>
+    text = re.sub(r"<(?:strike|del|s)(?:\s[^>]*)?>", "<s>", text, flags=re.I)
+    text = re.sub(r"</(?:strike|del|s)>", "</s>", text, flags=re.I)
+    # <ins> -> <u>, <u> with attrs -> <u>
     text = re.sub(r"<ins[^>]*>", "<u>", text, flags=re.I)
     text = re.sub(r"</ins>", "</u>", text, flags=re.I)
+    text = re.sub(r"<u(?:\s[^>]*)?>", "<u>", text, flags=re.I)
+    # Strip <span> wrappers (editor artifacts)
+    text = re.sub(r"</?span(?:\s[^>]*)?>", "", text, flags=re.I)
     # Clean <a>: keep only href
     text = re.sub(r'<a\s+[^>]*href="([^"]*)"[^>]*>', r'<a href="\1">', text, flags=re.I)
     # Clean <code>/<pre> attributes
@@ -57,20 +60,118 @@ def sanitize_html_for_telegram(html: str) -> str:
 
 
 def html_to_max_markdown(html: str) -> str:
-    """Convert Telegram-style HTML to MAX markdown."""
+    """Convert rich HTML (from editor) to MAX markdown using a proper parser."""
     if not html:
         return ""
-    text = html
-    text = re.sub(r"<b>([\s\S]*?)</b>", r"**\1**", text, flags=re.I)
-    text = re.sub(r"<i>([\s\S]*?)</i>", r"*\1*", text, flags=re.I)
-    text = re.sub(r"<s>([\s\S]*?)</s>", r"~~\1~~", text, flags=re.I)
-    text = re.sub(r"<u>([\s\S]*?)</u>", r"\1", text, flags=re.I)
-    text = re.sub(r"<pre>([\s\S]*?)</pre>", r"```\n\1\n```", text, flags=re.I)
-    text = re.sub(r"<code>([\s\S]*?)</code>", r"`\1`", text, flags=re.I)
-    text = re.sub(r'<a\s+href="([^"]*)"[^>]*>([\s\S]*?)</a>', r"[\2](\1)", text, flags=re.I)
-    text = re.sub(r"<tg-spoiler>([\s\S]*?)</tg-spoiler>", r"\1", text, flags=re.I)
-    text = re.sub(r"<[^>]+>", "", text)
-    return text
+    from html.parser import HTMLParser
+
+    # MAX markdown markers for each tag type
+    TAG_MAP = {
+        "b": "**", "strong": "**",
+        "i": "*", "em": "*",
+        "s": "~~", "strike": "~~", "del": "~~",
+        "u": "++", "ins": "++",
+        "code": "`",
+    }
+
+    class MaxMarkdownConverter(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.result = []
+            self.link_href = None
+            self.fmt_stack = []  # active formatting tags
+
+        def _close_formats(self):
+            """Close all active formatting markers (for line breaks)."""
+            markers = []
+            for tag in reversed(self.fmt_stack):
+                if tag in TAG_MAP:
+                    markers.append(TAG_MAP[tag])
+            return "".join(markers)
+
+        def _reopen_formats(self):
+            """Reopen all active formatting markers (after line break)."""
+            markers = []
+            for tag in self.fmt_stack:
+                if tag in TAG_MAP:
+                    markers.append(TAG_MAP[tag])
+            return "".join(markers)
+
+        def handle_starttag(self, tag, attrs):
+            tag = tag.lower()
+            attrs_dict = dict(attrs)
+
+            if tag in ("br",):
+                self.result.append("\n")
+            elif tag in ("div", "p"):
+                if self.result and self.result[-1] not in ("\n", ""):
+                    self.result.append("\n")
+            elif tag == "a":
+                self.link_href = attrs_dict.get("href", "")
+                self.result.append("[")
+            elif tag == "pre":
+                self.result.append("```\n")
+            elif tag in TAG_MAP:
+                self.result.append(TAG_MAP[tag])
+                self.fmt_stack.append(tag)
+
+        def handle_endtag(self, tag):
+            tag = tag.lower()
+
+            if tag in ("div", "p"):
+                if self.result and self.result[-1] != "\n":
+                    self.result.append("\n")
+            elif tag == "a":
+                href = self.link_href or ""
+                self.link_href = None
+                # Remove trailing newlines before closing bracket
+                trailing_newlines = []
+                while self.result and self.result[-1] == "\n":
+                    trailing_newlines.append(self.result.pop())
+                self.result.append(f"]({href})")
+                self.result.extend(trailing_newlines)
+            elif tag == "pre":
+                self.result.append("\n```")
+            elif tag in TAG_MAP:
+                marker = TAG_MAP[tag]
+                if marker:
+                    # If last entries are newlines, insert closing marker before them
+                    # so **text\n** becomes **text**\n
+                    trailing_newlines = []
+                    while self.result and self.result[-1] == "\n":
+                        trailing_newlines.append(self.result.pop())
+                    self.result.append(marker)
+                    self.result.extend(trailing_newlines)
+                # Remove from stack (find last matching)
+                norm = tag
+                for i in range(len(self.fmt_stack) - 1, -1, -1):
+                    t = self.fmt_stack[i]
+                    if TAG_MAP.get(t) == TAG_MAP.get(norm):
+                        self.fmt_stack.pop(i)
+                        break
+
+        def handle_data(self, data):
+            # Split by newlines so trailing \n detection works for closing markers
+            parts = data.split("\n")
+            for i, part in enumerate(parts):
+                if part:
+                    self.result.append(part)
+                if i < len(parts) - 1:
+                    self.result.append("\n")
+
+        def get_result(self):
+            text = "".join(self.result)
+            text = re.sub(r"\n{3,}", "\n\n", text)
+            # Remove truly empty markers (marker with zero content between them)
+            text = text.replace("****", "")
+            text = text.replace("~~~~", "")
+            text = text.replace("++++", "")
+            text = text.replace("``", "")
+            return text.strip()
+
+    converter = MaxMarkdownConverter()
+    converter.feed(html)
+    return converter.get_result()
 
 
 def file_url(file_path: str) -> Optional[str]:
@@ -322,7 +423,8 @@ async def send_to_user(
             raise RuntimeError("MAX bot not configured")
         max_text = html_to_max_markdown(text)
         attachments = None
-        max_attach_type = "image" if send_type == "photo" else (send_type if send_type in ("video", "audio", "file", "voice") else "file")
+        _max_type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
+        max_attach_type = _max_type_map.get(send_type, "file")
         # Use cached max_file_token if available
         if max_file_token:
             attachments = [{"type": max_attach_type, "payload": {"token": max_file_token}}]
@@ -391,7 +493,8 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
         chat_id = channel.get("max_chat_id") or channel.get("channel_id")
         max_text = html_to_max_markdown(text)
         attachments = None
-        max_attach_type = "image" if send_type == "photo" else (send_type if send_type in ("video", "audio", "file", "voice") else "file")
+        _max_type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
+        max_attach_type = _max_type_map.get(send_type, "file")
         # Use cached max_file_token if available
         if max_file_token:
             attachments = [{"type": max_attach_type, "payload": {"token": max_file_token}}]
@@ -408,7 +511,12 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
         max_buttons = build_max_inline_buttons(inline_buttons)
         result = await max_api.send_message(str(chat_id), max_text, attachments, max_buttons)
         if not result.get("success"):
-            raise RuntimeError(result.get("error", "MAX API error"))
+            # Retry without attachments if upload failed
+            if attachments:
+                print(f"[Messenger] MAX send with attachment failed, retrying without: {result.get('error')}")
+                result = await max_api.send_message(str(chat_id), max_text, None, max_buttons)
+            if not result.get("success"):
+                raise RuntimeError(result.get("error", "MAX API error"))
         data = result.get("data", {})
         mid = (data.get("body", {}).get("mid")
                or data.get("message", {}).get("body", {}).get("mid")

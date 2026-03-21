@@ -26,7 +26,7 @@ async def _get_owned_channel(tc: str, uid: int):
 async def _save_upload(file: UploadFile) -> tuple:
     """Save uploaded file, return (path, type, data)."""
     from ..services.file_storage import save_upload
-    return await save_upload(file)
+    return await save_upload(file, photo_only=True)
 
 
 @router.get("/{tc}")
@@ -58,7 +58,7 @@ async def create_giveaway(tc: str, request: Request, user: Dict[str, Any] = Depe
             erid = form.get("erid", "")
             legal_info = form.get("legal_info", "")
             prizes = form.get("prizes", "[]")
-            conditions = form.get("conditions", '{"subscribe": true, "invite_friends": 0}')
+            conditions = form.get("conditions", '{"subscribe": true}')
             ends_at = form.get("ends_at") or None
             winner_count = form.get("winner_count", "1")
             attach_type = form.get("attach_type") or None
@@ -74,7 +74,7 @@ async def create_giveaway(tc: str, request: Request, user: Dict[str, Any] = Depe
             prizes = body.get("prizes", "[]")
             if isinstance(prizes, list):
                 prizes = _json.dumps(prizes, ensure_ascii=False)
-            conditions = body.get("conditions", '{"subscribe": true, "invite_friends": 0}')
+            conditions = body.get("conditions", '{"subscribe": true}')
             if isinstance(conditions, dict):
                 conditions = _json.dumps(conditions, ensure_ascii=False)
             ends_at = body.get("ends_at") or None
@@ -98,7 +98,7 @@ async def create_giveaway(tc: str, request: Request, user: Dict[str, Any] = Depe
             try:
                 _json.loads(conditions)
             except (ValueError, TypeError):
-                conditions = '{"subscribe": true, "invite_friends": 0}'
+                conditions = '{"subscribe": true}'
 
         # Parse ends_at if string
         if ends_at and isinstance(ends_at, str):
@@ -174,7 +174,7 @@ async def update_giveaway(tc: str, giveaway_id: int, request: Request, user: Dic
             try:
                 _json.loads(body["conditions"])
             except (ValueError, TypeError):
-                body["conditions"] = '{"subscribe": true, "invite_friends": 0}'
+                body["conditions"] = '{"subscribe": true}'
 
     # Parse ends_at
     if "ends_at" in body and body["ends_at"] and isinstance(body["ends_at"], str):

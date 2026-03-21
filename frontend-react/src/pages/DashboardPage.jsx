@@ -20,16 +20,18 @@ export default function DashboardPage() {
   const [addPlatform, setAddPlatform] = useState('telegram');
   const [unclaimedChannels, setUnclaimedChannels] = useState([]);
   const pollRef = useRef(null);
-  const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'pkmarketing_rekl_bot';
+  const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
   const maxBotId = import.meta.env.VITE_MAX_BOT_ID || '206603862';
-  const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_3_bot';
+  const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
 
   const loadStats = useCallback(async () => {
     try {
-      const data = await api.get('/dashboard');
+      const tc = currentChannel?.tracking_code;
+      const url = tc ? `/dashboard?tc=${tc}` : '/dashboard';
+      const data = await api.get(url);
       if (data.success) setStats(data);
     } catch {}
-  }, []);
+  }, [currentChannel]);
 
   useEffect(() => {
     loadStats();
@@ -61,20 +63,27 @@ export default function DashboardPage() {
     }
   };
 
-  const openAddModal = useCallback(() => {
+  const openAddModal = useCallback(async () => {
     const defaultPlatform = (user?.max_user_id && !user?.telegram_id) ? 'max' : 'telegram';
     setAddPlatform(defaultPlatform);
     setShowAddModal(true);
+    // Scan for channels that bot was added to (catches missed bot_added events)
+    try { await api.post('/channels/scan'); } catch {}
     loadUnclaimedChannels();
-  }, [user, loadUnclaimedChannels]);
+    loadChannels(true);
+  }, [user, loadUnclaimedChannels, loadChannels]);
 
-  // Poll for unclaimed channels while modal is open
+  // Poll for unclaimed channels while modal is open + scan for new
   useEffect(() => {
     if (showAddModal) {
-      pollRef.current = setInterval(loadUnclaimedChannels, 5000);
+      pollRef.current = setInterval(async () => {
+        try { await api.post('/channels/scan'); } catch {}
+        loadUnclaimedChannels();
+        loadChannels(true);
+      }, 5000);
       return () => clearInterval(pollRef.current);
     }
-  }, [showAddModal, loadUnclaimedChannels]);
+  }, [showAddModal, loadUnclaimedChannels, loadChannels]);
 
   const handleSaveSettings = async () => {
     if (!editChannel) return;
@@ -133,8 +142,10 @@ export default function DashboardPage() {
       )}
 
       {/* Channel List */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 500 }}>Каналы</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 500, margin: 0 }}>Каналы</h2>
+        </div>
         <button className="btn btn-primary" onClick={openAddModal}>
           + Добавить канал
         </button>
@@ -156,7 +167,7 @@ export default function DashboardPage() {
           </button>
         </div>
       ) : (
-        <div className="grid-channels">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {channels.map(ch => (
             <ChannelCard
               key={ch.tracking_code}
@@ -306,16 +317,6 @@ export default function DashboardPage() {
               <div className="form-hint">Формат: VK-RTRG-XXXXXX-XXXXX. Создайте пиксель в рекламном кабинете VK.</div>
             </div>
             <div>
-              <label className="form-label">OAuth Token (Яндекс.Метрика)</label>
-              <input
-                className="form-input"
-                placeholder="y0_AgAAAA..."
-                value={editChannel.ym_oauth_token || ''}
-                onChange={e => setEditChannel(p => ({ ...p, ym_oauth_token: e.target.value }))}
-              />
-              <div className="form-hint">Нужен для отправки целей в Метрику. Получите на oauth.yandex.ru с разрешением metrika:write.</div>
-            </div>
-            <div>
               <label className="form-label">Ссылка для подписки (join link)</label>
               <input
                 className="form-input"
@@ -334,6 +335,7 @@ export default function DashboardPage() {
           </div>
         )}
       </Modal>
+
     </div>
   );
 }
@@ -355,52 +357,121 @@ function StatCard({ label, value, color, onClick }) {
 
 function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
   const ch = channel;
+  const isDisconnected = ch.is_active === 0 || ch.is_active === false;
+  const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
+  const platformColor = ch.platform === 'max' ? '#7B68EE' : '#2AABEE';
+  const firstLetter = (ch.title || ch.channel_id || 'C')[0].toUpperCase();
+
+  const channelLink = ch.platform === 'max'
+    ? (ch.join_link || '')
+    : (ch.join_link || (ch.username ? `t.me/${ch.username}` : ''));
+
   return (
     <div
       className={`channel-card ${isSelected ? 'selected' : ''}`}
       style={{
-        background: 'var(--bg-glass)', border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)', padding: '20px', cursor: 'pointer',
+        background: isSelected ? 'rgba(var(--primary-rgb, 99,102,241), 0.06)' : 'var(--bg-glass)',
+        border: isDisconnected
+          ? '1px solid var(--error)'
+          : isSelected
+            ? '1px solid var(--primary)'
+            : '1px solid var(--border)',
+        borderRadius: 'var(--radius)',
+        padding: '12px 16px',
+        cursor: 'pointer',
         transition: 'var(--transition)',
+        opacity: isDisconnected ? 0.8 : 1,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '14px',
       }}
-      onClick={onSelect}
+      onClick={!isDisconnected ? onSelect : undefined}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-        <div>
-          <h3 style={{ fontSize: '1rem', fontWeight: 500, marginBottom: '4px' }}>
-            {ch.title || ch.channel_id || ch.tracking_code}
-          </h3>
-          <span style={{
-            fontSize: '0.72rem', padding: '2px 6px', borderRadius: '4px', fontWeight: 600,
-            background: ch.platform === 'max' ? '#7B68EE' : '#2AABEE', color: '#fff',
-          }}>
-            {ch.platform === 'max' ? 'MAX' : 'TG'}
-          </span>
+      {/* Avatar */}
+      {ch.avatar_url ? (
+        <img src={ch.avatar_url} alt="" style={{
+          width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0, objectFit: 'cover',
+        }} />
+      ) : (
+        <div style={{
+          width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0,
+          background: platformColor, color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '1.1rem', fontWeight: 700,
+        }}>
+          {firstLetter}
         </div>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '0.8rem' }} onClick={(e) => { e.stopPropagation(); onSettings(); }}>
+      )}
+
+      {/* Info */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {ch.title || ch.channel_id || ch.tracking_code}
+        </div>
+        {channelLink && (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {channelLink}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
+          {isDisconnected ? (
+            <span style={{
+              fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', fontWeight: 600,
+              background: 'var(--error)', color: '#fff',
+            }}>
+              Отключен
+            </span>
+          ) : ch.billing_active !== undefined ? (
+            ch.billing_active ? (
+              <span style={{
+                fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px',
+                background: 'rgba(42,157,143,0.1)', color: 'var(--success, #2a9d8f)', fontWeight: 500,
+              }}>
+                Активна · {ch.billing_days_left} дн.
+              </span>
+            ) : (
+              <span style={{
+                fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px',
+                background: 'rgba(230,57,70,0.1)', color: 'var(--error, #e63946)', fontWeight: 500,
+              }}>
+                Нет подписки
+              </span>
+            )
+          ) : null}
+        </div>
+        {isDisconnected && (
+          <div style={{ marginTop: '6px' }}>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 6px 0' }}>
+              Откройте канал → Настройки → Администраторы → добавьте бота <b>{ch.platform === 'max' ? '@PKMarketing' : '@' + tgBotUsername}</b>
+            </p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {ch.join_link && (
+                <a href={ch.join_link} target="_blank" rel="noreferrer" className="btn btn-primary"
+                  style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                  onClick={(e) => e.stopPropagation()}>
+                  Открыть канал
+                </a>
+              )}
+              <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+                Удалить из списка
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      {!isDisconnected && (
+        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          <button className="btn btn-outline" style={{ padding: '6px 8px', fontSize: '0.85rem', lineHeight: 1 }}
+            onClick={(e) => { e.stopPropagation(); onSettings(); }}>
             ⚙️
           </button>
-          <button className="btn btn-danger" style={{ padding: '4px 8px', fontSize: '0.8rem' }} onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+          <button className="btn btn-danger" style={{ padding: '6px 8px', fontSize: '0.85rem', lineHeight: 1 }}
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}>
             🗑️
           </button>
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: '16px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-        <span>Подписчики: {ch.subscribers_count || 0}</span>
-        <span>Визиты: {ch.visits_count || 0}</span>
-      </div>
-      {ch.billing_active !== undefined && (
-        <div style={{ marginTop: '8px', fontSize: '0.78rem' }}>
-          {ch.billing_active ? (
-            <span style={{ color: 'var(--success)' }}>
-              ✅ Подписка активна ({ch.billing_days_left} дн.)
-            </span>
-          ) : (
-            <span style={{ color: 'var(--error)' }}>
-              ❌ Нет подписки
-            </span>
-          )}
         </div>
       )}
     </div>

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import secrets
 from datetime import datetime, timedelta
 
 import aiohttp
@@ -11,13 +12,14 @@ from ..database import fetch_one, fetch_all, execute, execute_returning_id
 
 router = APIRouter()
 public_router = APIRouter()
+staff_invite_router = APIRouter()
 
 # --- Pricing model: fixed price per duration, per user, with channel discount ---
 DURATION_OPTIONS = {
     1:  {"months": 1,  "label": "1 месяц",    "price": 490},
     3:  {"months": 3,  "label": "3 месяца",   "price": 1290},
     6:  {"months": 6,  "label": "6 месяцев",  "price": 2290},
-    12: {"months": 12, "label": "12 месяцев", "price": 4990},
+    12: {"months": 12, "label": "12 месяцев", "price": 3990},
 }
 CHANNEL_DISCOUNT_PERCENT = 10  # 10% скидка за каждый дополнительный канал
 
@@ -41,25 +43,36 @@ STAFF_ROLES = {
 
 
 def calculate_price(users: int, months: int, channels: int = 1) -> dict:
-    """Calculate total price for N users for M months with channel discount."""
+    """Calculate total price for N users for M months with progressive channel discount.
+    1st channel = full price, 2nd = -10%, 3rd = -20%, 4th = -30%, etc (max 90% discount).
+    """
     duration = DURATION_OPTIONS.get(months)
     if not duration:
         raise ValueError(f"Invalid duration: {months}")
-    base_price = duration["price"]  # fixed price per user for this duration
-    # Channel discount: 10% for each additional channel (max 90%)
-    extra_channels = max(0, channels - 1)
-    channel_discount_pct = min(extra_channels * CHANNEL_DISCOUNT_PERCENT, 90)
-    price_per_user = round(base_price * (1 - channel_discount_pct / 100))
-    total = price_per_user * users
+    base_price = duration["price"]
+
+    # Progressive discount: each additional channel gets bigger discount
+    total = 0
+    breakdown = []
+    for i in range(channels):
+        discount_pct = min(i * CHANNEL_DISCOUNT_PERCENT, 90)
+        channel_price = round(base_price * (1 - discount_pct / 100))
+        total += channel_price
+        breakdown.append({"channel": i + 1, "discount": discount_pct, "price": channel_price})
+
+    total *= users
+    avg_discount = round((1 - total / (base_price * channels * users)) * 100) if channels > 0 else 0
+
     return {
         "users": users,
         "months": months,
         "channels": channels,
         "base_price": base_price,
-        "channel_discount_percent": channel_discount_pct,
-        "price_per_user": price_per_user,
+        "channel_discount_percent": avg_discount,
+        "price_per_user": total // max(users, 1),
         "total": total,
         "label": duration["label"],
+        "breakdown": breakdown,
     }
 
 
@@ -258,19 +271,17 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
 
     selected_count = len(resolved)
     base_price = DURATION_OPTIONS[months]["price"]
-    extra_channels = max(0, selected_count - 1)
-    channel_discount_pct = min(extra_channels * CHANNEL_DISCOUNT_PERCENT, 90)
-    price_per_user = round(base_price * (1 - channel_discount_pct / 100))
 
-    total_users = sum(r["users"] for r in resolved)
-    total = price_per_user * total_users
-    amount_kopeks = total * 100
-
+    # Progressive discount per channel
+    total = 0
     billing_ids = []
     channel_amounts = []
-    for r in resolved:
+    for i, r in enumerate(resolved):
         ch = r["channel"]
-        ch_amount = price_per_user * r["users"]
+        discount_pct = min(i * CHANNEL_DISCOUNT_PERCENT, 90)
+        ch_price = round(base_price * (1 - discount_pct / 100))
+        ch_amount = ch_price * r["users"]
+        total += ch_amount
         billing = await fetch_one("SELECT * FROM channel_billing WHERE channel_id = $1", ch["id"])
         if not billing:
             billing_id = await execute_returning_id(
@@ -294,6 +305,8 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
         )
         payment_ids.append(pid)
 
+    amount_kopeks = total * 100
+    total_users = sum(r["users"] for r in resolved)
     order_id = f"multi_{payment_ids[0]}"
     for pid in payment_ids:
         await execute("UPDATE billing_payments SET payment_id = $1 WHERE id = $2", order_id, pid)
@@ -508,18 +521,52 @@ async def add_staff(tracking_code: str, request: Request, user=Depends(get_curre
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
-    # Check max_users limit
+    # Adding staff shortens subscription: remaining time divided by new user count
     billing = await fetch_one("SELECT * FROM channel_billing WHERE channel_id = $1", channel["id"])
-    max_users = billing.get("max_users", 1) if billing else 1
-    current_count = await fetch_one(
-        "SELECT COUNT(*) as cnt FROM channel_staff WHERE channel_id = $1", channel["id"]
-    )
-    current = current_count["cnt"] if current_count else 0
-    if current + 1 >= max_users:  # +1 because owner counts as 1
-        raise HTTPException(
-            status_code=400,
-            detail=f"Лимит пользователей ({max_users}). Увеличьте количество пользователей в подписке."
-        )
+    confirm = body.get("confirm", False)
+    current_count = await fetch_one("SELECT COUNT(*) as cnt FROM channel_staff WHERE channel_id = $1", channel["id"])
+    current_staff = current_count["cnt"] if current_count else 0
+    current_users = current_staff + 1  # +1 for owner
+
+    if billing and billing.get("status") == "active" and billing.get("expires_at"):
+        now = datetime.utcnow()
+        expires = billing["expires_at"]
+        if hasattr(expires, 'replace'):
+            expires = expires.replace(tzinfo=None)
+        remaining_seconds = max(0, (expires - now).total_seconds())
+        remaining_days = remaining_seconds / 86400
+
+        new_users = current_users + 1
+        # New remaining = remaining * current_users / new_users
+        new_remaining_days = remaining_days * current_users / new_users
+        reduction_ratio = f"{new_users}/{current_users}"
+
+        if not confirm:
+            # Return preview — frontend shows confirmation modal
+            return {
+                "success": False,
+                "needs_confirm": True,
+                "current_users": current_users,
+                "new_users": new_users,
+                "remaining_days": round(remaining_days, 1),
+                "new_remaining_days": round(new_remaining_days, 1),
+                "reduction_ratio": reduction_ratio,
+            }
+
+        # Apply: shorten subscription
+        new_expires = now + timedelta(seconds=remaining_seconds * current_users / new_users)
+        await execute("UPDATE channel_billing SET max_users = $1, expires_at = $2 WHERE id = $3",
+                      new_users, new_expires, billing["id"])
+    elif not confirm:
+        return {
+            "success": False,
+            "needs_confirm": True,
+            "current_users": current_users,
+            "new_users": current_users + 1,
+            "remaining_days": 0,
+            "new_remaining_days": 0,
+            "reduction_ratio": "—",
+        }
 
     role = body.get("role", "editor")
     if role not in STAFF_ROLES:
@@ -594,4 +641,143 @@ async def remove_staff(tracking_code: str, staff_id: int, user=Depends(get_curre
         raise HTTPException(status_code=404, detail="Канал не найден")
 
     await execute("DELETE FROM channel_staff WHERE id = $1 AND channel_id = $2", staff_id, channel["id"])
+    return {"success": True}
+
+
+@router.post("/{tracking_code}/staff/invite")
+async def create_staff_invite(tracking_code: str, request: Request, user=Depends(get_current_user)):
+    body = await request.json()
+    channel = await fetch_one(
+        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
+        tracking_code, user["id"],
+    )
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+
+    # Adding staff shortens subscription
+    billing = await fetch_one("SELECT * FROM channel_billing WHERE channel_id = $1", channel["id"])
+    confirm = body.get("confirm", False)
+    current_count = await fetch_one("SELECT COUNT(*) as cnt FROM channel_staff WHERE channel_id = $1", channel["id"])
+    current_staff = current_count["cnt"] if current_count else 0
+    current_users = current_staff + 1  # +1 for owner
+    if billing and billing.get("status") == "active" and billing.get("expires_at"):
+        now = datetime.utcnow()
+        expires = billing["expires_at"]
+        if hasattr(expires, 'replace'):
+            expires = expires.replace(tzinfo=None)
+        remaining_seconds = max(0, (expires - now).total_seconds())
+        remaining_days = remaining_seconds / 86400
+        new_users = current_users + 1
+        new_remaining_days = remaining_days * current_users / new_users
+
+        if not confirm:
+            return {
+                "success": False,
+                "needs_confirm": True,
+                "current_users": current_users,
+                "new_users": new_users,
+                "remaining_days": round(remaining_days, 1),
+                "new_remaining_days": round(new_remaining_days, 1),
+                "reduction_ratio": f"{new_users}/{current_users}",
+            }
+
+        # Apply: shorten subscription and increase max_users
+        new_expires = now + timedelta(seconds=remaining_seconds * current_users / new_users)
+        await execute("UPDATE channel_billing SET max_users = max_users + 1, expires_at = $1 WHERE id = $2",
+                      new_expires, billing["id"])
+
+    elif not confirm:
+        return {
+            "success": False,
+            "needs_confirm": True,
+            "current_users": current_users,
+            "new_users": current_users + 1,
+            "remaining_days": 0,
+            "new_remaining_days": 0,
+            "reduction_ratio": "—",
+        }
+
+    role = body.get("role", "editor")
+    if role not in STAFF_ROLES:
+        raise HTTPException(status_code=400, detail="Неизвестная роль")
+
+    token = secrets.token_urlsafe(32)
+    await execute_returning_id(
+        """INSERT INTO staff_invites (channel_id, invited_by, role, token)
+           VALUES ($1, $2, $3, $4) RETURNING id""",
+        channel["id"], user["id"], role, token,
+    )
+
+    invite_url = f"{settings.APP_URL}/staff-invite/{token}"
+    return {"success": True, "invite_url": invite_url, "token": token}
+
+
+# --- Public staff invite endpoints ---
+
+@staff_invite_router.get("/invite/{token}")
+async def get_staff_invite_info(token: str):
+    invite = await fetch_one(
+        """SELECT si.*, c.title as channel_title, c.tracking_code,
+                  u.first_name as inviter_first_name, u.username as inviter_username
+           FROM staff_invites si
+           JOIN channels c ON c.id = si.channel_id
+           JOIN users u ON u.id = si.invited_by
+           WHERE si.token = $1""",
+        token,
+    )
+    if not invite:
+        raise HTTPException(status_code=404, detail="Приглашение не найдено")
+    if invite["accepted"]:
+        raise HTTPException(status_code=400, detail="Приглашение уже принято")
+    if invite["expires_at"] and invite["expires_at"] < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Приглашение истекло")
+
+    role_info = STAFF_ROLES.get(invite["role"], STAFF_ROLES["editor"])
+    return {
+        "success": True,
+        "invite": {
+            "channel_title": invite["channel_title"],
+            "role": invite["role"],
+            "role_name": role_info["name"],
+            "inviter_name": invite["inviter_first_name"] or invite["inviter_username"] or "—",
+            "expires_at": invite["expires_at"].isoformat() if invite["expires_at"] else None,
+        },
+    }
+
+
+@staff_invite_router.post("/invite/{token}/accept")
+async def accept_staff_invite(token: str, user=Depends(get_current_user)):
+    invite = await fetch_one(
+        "SELECT * FROM staff_invites WHERE token = $1", token,
+    )
+    if not invite:
+        raise HTTPException(status_code=404, detail="Приглашение не найдено")
+    if invite["accepted"]:
+        raise HTTPException(status_code=400, detail="Приглашение уже принято")
+    if invite["expires_at"] and invite["expires_at"] < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Приглашение истекло")
+
+    if invite["invited_by"] == user["id"]:
+        raise HTTPException(status_code=400, detail="Вы не можете принять собственное приглашение")
+
+    # Check if already staff
+    existing = await fetch_one(
+        "SELECT * FROM channel_staff WHERE channel_id = $1 AND user_id = $2",
+        invite["channel_id"], user["id"],
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Вы уже являетесь сотрудником этого канала")
+
+    # Add as staff
+    await execute_returning_id(
+        "INSERT INTO channel_staff (channel_id, user_id, role) VALUES ($1, $2, $3) RETURNING id",
+        invite["channel_id"], user["id"], invite["role"],
+    )
+
+    # Mark invite as accepted
+    await execute(
+        "UPDATE staff_invites SET accepted = TRUE, accepted_by = $1 WHERE id = $2",
+        user["id"], invite["id"],
+    )
+
     return {"success": True}

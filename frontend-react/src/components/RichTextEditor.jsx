@@ -1,25 +1,79 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-const EMOJIS = [
-  '😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😉','😊','😇','🥰','😍','🤩','😘',
-  '😗','😚','😙','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐',
-  '😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢',
-  '🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','😎','🤓','🧐','😕','😟','🙁','😮','😯',
-  '😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩',
-  '😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽',
-  '👾','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾','❤️','🧡','💛','💚','💙',
-  '💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','⭐','🌟','✨',
-  '⚡','🔥','💥','🎉','🎊','🎁','🏆','🥇','🥈','🥉','🎯','🎪','🎭','🎨','🎬','🎤',
-  '🎧','🎵','🎶','🎹','🎸','🎺','🎻','🥁','👍','👎','👏','🙌','🤝','🙏','✌️','🤞',
-  '🤟','🤘','👌','🤌','🤏','👈','👉','👆','👇','☝️','✋','🤚','🖐','🖖','👋','🤙',
-  '💪','🦾','🖕','✍️','🤳','💅','👂','👃','👣','👀','👁','🧠','🦷','👅','👄','💋',
-];
+const EMOJI_CATEGORIES = {
+  'Часто': [
+    '✅','❌','⚠️','‼️','❗','❓','💡','📌','📎','🔗','📢','📣','💬','💭','🗣️','💯','🛑',
+    '👉','👈','👆','👇','☝️','👍','👎','👏','🙌','🤝','🙏','💪','✌️','🤞','🤷‍♂️','🤷‍♀️',
+    '🔥','⭐','✨','💥','🎉','🎊','🏆','🥇','💰','💵','💸','💳','📈','📉','📊','👑','🗿',
+    '⏰','⏳','🕐','📅','🗓️','⌛','🔔','🔕',
+    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','💔','💕','💖','💗','❤️‍🩹',
+    '✍️','📝','📋','📄','📂','📁','🗂️','📚','📖','🔑','🔒','🔓',
+    '🌚','🌝','🫠','🫡','🦄','👻','⛄','🎄','🎅','👑','🍑','🍷',
+    '😀','🤣','😂','😭','😍','🥰','😎','🤩','🥳','😈','🤬','😱','🤮','💩','🤡','💀',
+  ],
+  'Лица': [
+    '😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😉','😊','😇','🥰','😍','🤩','😘',
+    '😗','😚','😙','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐',
+    '😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢',
+    '🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','😎','🤓','🧐','😕','😟','🙁','😮','😯',
+    '😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩',
+    '😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖',
+    '🫠','🫡','🫣','🫢','🫥','🥹','🫤','🫨',
+  ],
+  'Жесты': [
+    '👍','👎','👏','🙌','🤝','🙏','✌️','🤞','🤟','🤘','👌','🤌','🤏',
+    '👈','👉','👆','👇','☝️','✋','🤚','🖐','🖖','👋','🤙',
+    '💪','🦾','🖕','✍️','🤳','💅','👂','👃','👣','👀','👁','🧠',
+    '🤷‍♂️','🤷‍♀️','🙅‍♂️','🙅‍♀️','🙆‍♂️','🙆‍♀️','💁‍♂️','💁‍♀️','🙋‍♂️','🙋‍♀️','👩‍❤️‍👨','💑',
+  ],
+  'Символы': [
+    '✅','❌','⭕','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤',
+    '🔺','🔻','🔸','🔹','🔶','🔷','💠','🔘','🔲','🔳','⬛','⬜',
+    '▪️','▫️','◾','◽','◼️','◻️','🏁','🚩','🎌','🏴','🏳️',
+    '©️','®️','™️','#️⃣','*️⃣','0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟',
+    '🔠','🔡','🔢','🔣','🔤','🅰️','🅱️','🆎','🆑','🆒','🆓','🆔','🆕','🆖','🆗','🆘','🆙','🆚',
+  ],
+  'Стрелки': [
+    '➡️','⬅️','⬆️','⬇️','↗️','↘️','↙️','↖️','↕️','↔️','↩️','↪️',
+    '⤴️','⤵️','🔃','🔄','🔙','🔚','🔛','🔜','🔝',
+  ],
+  'Природа': [
+    '🌈','🌤️','⛅','🌥️','🌦️','🌧️','⛈️','🌩️','🌪️','🌫️','🌬️','🌀','🌊',
+    '🌸','💮','🏵️','🌺','🌻','🌼','🌷','🌹','🥀','🌾','🍀','☘️','🍃','🍂','🍁','🌿','🌱','🌲','🌳','🌴',
+    '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵',
+    '🦅','🦆','🦉','🐝','🦋','🐌','🐞','🐜','🐛',
+  ],
+  'Еда': [
+    '🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝',
+    '🍅','🍆','🥑','🥦','🥬','🌶️','🫑','🌽','🥕','🧄','🧅','🥔',
+    '🍞','🥐','🥖','🫓','🥨','🧀','🥚','🍳','🧈','🥞','🧇',
+    '🍔','🍟','🍕','🌭','🥪','🌮','🌯','🫔','🥙','🧆','🥗',
+    '☕','🍵','🫖','🍶','🍺','🍻','🥂','🍷','🥃','🍹','🧃','🥤','🧋',
+  ],
+  'Объекты': [
+    '📱','💻','🖥️','⌨️','🖨️','🖱️','💾','💿','📀',
+    '📷','📸','📹','🎥','📽️','🎞️','📺','📻','🎙️','🎤','🎧',
+    '📞','☎️','📟','📠','📧','📨','📩','📮','📬','📭','📪',
+    '🏠','🏡','🏢','🏣','🏤','🏥','🏦','🏨','🏩','🏪','🏫','🏬','🏭',
+    '🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','✈️','🚀','🛸',
+    '⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🏓','🏸','🏒',
+  ],
+};
+
+// Flat list for backward compat
+const EMOJIS = Object.values(EMOJI_CATEGORIES).flat();
+
+const CATEGORY_ICONS = {
+  'Часто': '⭐', 'Лица': '😀', 'Жесты': '👋', 'Символы': '✅',
+  'Стрелки': '➡️', 'Природа': '🌿', 'Еда': '🍕', 'Объекты': '📱',
+};
 
 export default function RichTextEditor({ value, onChange, placeholder, rows = 5, showEmoji = false }) {
   const editorRef = useRef(null);
   const [showToolbar, setShowToolbar] = useState(false);
   const [toolbarPos, setToolbarPos] = useState({ top: 0, left: 0 });
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [emojiCategory, setEmojiCategory] = useState('Часто');
   const savedSelection = useRef(null);
   const isInternalUpdate = useRef(false);
 
@@ -81,12 +135,24 @@ export default function RichTextEditor({ value, onChange, placeholder, rows = 5,
   };
 
   const execCommand = (cmd, val = null) => {
-    restoreSelection();
-    editorRef.current?.focus();
     if (cmd === 'createLink') {
+      // Save selection BEFORE prompt (prompt causes focus loss)
+      saveSelection();
       const url = prompt('URL:', 'https://');
-      if (url) document.execCommand('createLink', false, url);
+      if (url) {
+        restoreSelection();
+        editorRef.current?.focus();
+        // If no text selected, insert url as link text
+        const sel = window.getSelection();
+        if (sel && sel.toString().trim().length === 0) {
+          document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>`);
+        } else {
+          document.execCommand('createLink', false, url);
+        }
+      }
     } else {
+      restoreSelection();
+      editorRef.current?.focus();
       document.execCommand(cmd, false, val);
     }
     handleInput();
@@ -118,10 +184,18 @@ export default function RichTextEditor({ value, onChange, placeholder, rows = 5,
     const html = e.clipboardData.getData('text/html');
     const text = e.clipboardData.getData('text/plain');
     if (html) {
-      // Sanitize: only keep basic formatting
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
-      // Strip all but allowed tags
+      // Convert <img> emoji (from messengers) back to their alt text
+      tmp.querySelectorAll('img').forEach(img => {
+        const alt = img.getAttribute('alt');
+        if (alt) {
+          img.replaceWith(document.createTextNode(alt));
+        } else {
+          img.remove();
+        }
+      });
+      // Strip all but allowed tags, preserve text content
       const clean = tmp.innerHTML
         .replace(/<(?!\/?(b|i|u|s|strong|em|a|br|code|pre)(\s|>|\/))([^>]*)>/gi, '')
         .replace(/<br\s*\/?>/gi, '<br>');
@@ -164,17 +238,60 @@ export default function RichTextEditor({ value, onChange, placeholder, rows = 5,
 
       {/* Emoji button + picker */}
       {showEmoji && (
-        <div style={{ position: 'absolute', bottom: '8px', right: '8px' }}>
+        <div style={{ position: 'absolute', bottom: '8px', right: '8px', zIndex: 10 }}>
           <button type="button" className="emoji-toggle-btn"
             onClick={() => { saveSelection(); setShowEmojiPicker(!showEmojiPicker); }}
             title="Эмодзи">
             &#128522;
           </button>
           {showEmojiPicker && (
-            <div className="emoji-picker">
-              {EMOJIS.map((e, i) => (
-                <button key={i} type="button" className="emoji-item" onClick={() => insertEmoji(e)}>{e}</button>
-              ))}
+            <div style={{
+              position: 'fixed', bottom: '80px', right: '40px',
+              width: '340px', height: '380px',
+              background: 'var(--bg-primary, #fff)', border: '1px solid var(--border, #ddd)',
+              borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              zIndex: 10000,
+            }}>
+              {/* Category tabs */}
+              <div style={{
+                display: 'flex', gap: '0', borderBottom: '1px solid var(--border, #eee)',
+                background: 'var(--bg-secondary, #f8f8f8)', flexShrink: 0,
+              }}>
+                {Object.keys(EMOJI_CATEGORIES).map(cat => (
+                  <button key={cat} type="button"
+                    style={{
+                      flex: 1, padding: '10px 0', fontSize: '18px',
+                      border: 'none', cursor: 'pointer',
+                      background: emojiCategory === cat ? 'var(--bg-primary, #fff)' : 'transparent',
+                      borderBottom: emojiCategory === cat ? '2px solid var(--primary, #2AABEE)' : '2px solid transparent',
+                      transition: 'all 0.15s',
+                    }}
+                    title={cat}
+                    onClick={() => setEmojiCategory(cat)}
+                  >{CATEGORY_ICONS[cat] || cat[0]}</button>
+                ))}
+              </div>
+              {/* Emoji grid */}
+              <div style={{
+                flex: 1, overflowY: 'auto', padding: '8px',
+                display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)',
+                gap: '2px', alignContent: 'start',
+              }}>
+                {(EMOJI_CATEGORIES[emojiCategory] || []).map((e, i) => (
+                  <button key={i} type="button"
+                    style={{
+                      width: '36px', height: '36px', fontSize: '22px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border: 'none', borderRadius: '8px', cursor: 'pointer',
+                      background: 'transparent', transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={e => e.target.style.background = 'var(--bg-secondary, #f0f0f0)'}
+                    onMouseLeave={e => e.target.style.background = 'transparent'}
+                    onClick={() => insertEmoji(e)}
+                  >{e}</button>
+                ))}
+              </div>
             </div>
           )}
         </div>

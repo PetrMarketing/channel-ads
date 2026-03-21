@@ -8,30 +8,47 @@ import secrets
 from ..config import settings
 
 
-ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".tif"}
-ALLOWED_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/tiff"}
+IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/tiff"}
+VIDEO_CONTENT_TYPES = {"video/mp4", "video/quicktime", "video/webm", "video/mpeg"}
+AUDIO_CONTENT_TYPES = {"audio/ogg", "audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav"}
+
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
-async def save_upload(file) -> tuple:
+async def save_upload(file, photo_only=False) -> tuple:
     """Save uploaded file, return (path, file_type, file_data_bytes).
 
-    Only image files are allowed for giveaways.
+    file_type: 'photo', 'video', 'audio', 'voice', 'video_note', 'document'
     """
     ct = (getattr(file, "content_type", "") or "").lower()
     ext = os.path.splitext(getattr(file, "filename", "") or "")[1].lower()
 
-    if ct and ct not in ALLOWED_IMAGE_CONTENT_TYPES:
-        raise ValueError(f"Разрешены только фото (JPG, PNG, GIF, WebP). Загружен файл типа: {ct}")
-    if ext and ext not in ALLOWED_IMAGE_EXTENSIONS:
-        raise ValueError(f"Разрешены только фото (JPG, PNG, GIF, WebP). Расширение файла: {ext}")
+    if photo_only:
+        if ct and ct not in IMAGE_CONTENT_TYPES:
+            raise ValueError(f"Разрешены только фото (JPG, PNG, GIF, WebP). Тип: {ct}")
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     filename = secrets.token_hex(16) + ext
     path = os.path.join(settings.UPLOAD_DIR, filename)
     content = await file.read()
+
+    if len(content) > MAX_FILE_SIZE:
+        raise ValueError(f"Файл слишком большой. Максимум {MAX_FILE_SIZE // 1024 // 1024} МБ.")
+
     with open(path, "wb") as f:
         f.write(content)
-    return path, "photo", content
+
+    # Determine file_type from content_type
+    if ct in IMAGE_CONTENT_TYPES:
+        file_type = "photo"
+    elif ct in VIDEO_CONTENT_TYPES:
+        file_type = "video"
+    elif ct in AUDIO_CONTENT_TYPES:
+        file_type = "audio"
+    else:
+        file_type = "document"
+
+    return path, file_type, content
 
 
 def overlay_legal_text(file_path: str, erid: str = "", legal_info: str = "") -> str:

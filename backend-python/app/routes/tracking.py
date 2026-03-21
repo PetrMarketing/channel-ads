@@ -7,6 +7,54 @@ from ..database import fetch_one, fetch_all, execute, execute_returning_id
 router = APIRouter()
 
 
+@router.post("/miniapp-visit")
+async def miniapp_visit(request: Request):
+    """Record visit from MAX Mini App and return channel URL."""
+    body = await request.json()
+    code = body.get("code", "")
+
+    link = await fetch_one("""
+        SELECT tl.*, c.platform, c.username as channel_username,
+               c.max_chat_id, c.join_link, c.title as channel_title
+        FROM tracking_links tl JOIN channels c ON c.id = tl.channel_id
+        WHERE tl.short_code = $1
+    """, code)
+
+    if not link:
+        return {"success": False, "channel_url": None}
+
+    # Record click + visit
+    await execute("UPDATE tracking_links SET clicks = clicks + 1 WHERE id = $1", link["id"])
+    ip = request.client.host if request.client else ""
+    ua = request.headers.get("user-agent", "")
+    await execute("INSERT INTO clicks (link_id, ip_address, user_agent) VALUES ($1,$2,$3)", link["id"], ip, ua)
+
+    await execute_returning_id(
+        """INSERT INTO visits (tracking_link_id, channel_id, ip_address, user_agent,
+            utm_source, utm_medium, utm_campaign, utm_content, utm_term, platform)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
+        link["id"], link["channel_id"], ip, ua,
+        link.get("utm_source"), link.get("utm_medium"), link.get("utm_campaign"),
+        link.get("utm_content"), link.get("utm_term"), link.get("platform", "max"),
+    )
+
+    # Build channel URL
+    join_link = link.get("join_link")
+    max_chat_id = link.get("max_chat_id")
+    channel_username = link.get("channel_username")
+
+    if join_link:
+        channel_url = join_link
+    elif max_chat_id:
+        channel_url = max_chat_id if max_chat_id.startswith("http") else f"https://max.ru/chats/{max_chat_id}"
+    elif channel_username:
+        channel_url = f"https://max.ru/chats/{channel_username}"
+    else:
+        channel_url = None
+
+    return {"success": True, "channel_url": channel_url}
+
+
 @router.post("/click/{short_code}")
 async def record_click(short_code: str, request: Request):
     """Record a click for a tracking link (used by frontend GoRedirectPage)."""
@@ -139,21 +187,6 @@ async def create_subscription(request: Request):
             visit["channel_id"], telegram_id, username, first_name, visit_id, platform, max_user_id,
         )
 
-    # Create offline conversion if ym_client_id available
-    if sub_id and visit.get("ym_client_id"):
-        link = None
-        if visit.get("tracking_link_id"):
-            link = await fetch_one("SELECT * FROM tracking_links WHERE id = $1", visit["tracking_link_id"])
-        channel = await fetch_one("SELECT * FROM channels WHERE id = $1", visit["channel_id"])
-        counter_id = (link.get("ym_counter_id") if link else None) or (channel.get("yandex_metrika_id") if channel else None)
-        goal_name = (link.get("ym_goal_name") if link else None) or "subscribe_channel"
-        if counter_id:
-            await execute(
-                """INSERT INTO offline_conversions (subscription_id, channel_id, visit_id, ym_client_id, ym_counter_id, goal_name, conversion_time)
-                   VALUES ($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT DO NOTHING""",
-                sub_id, visit["channel_id"], visit_id, visit["ym_client_id"], counter_id, goal_name,
-            )
-
     return {"success": True, "subscriptionId": sub_id}
 
 
@@ -185,27 +218,33 @@ async def check_subscription_by_visit(visit_id: int = Query(...)):
     if not visit:
         return {"success": True, "subscribed": False}
 
-    sub = None
-    if visit.get("telegram_id"):
+    # First try: direct match by visit_id (bot sets visit_id on subscription)
+    sub = await fetch_one(
+        "SELECT * FROM subscriptions WHERE visit_id = $1", visit_id
+    )
+
+    # Fallback: match by channel + user IDs from visit
+    if not sub and visit.get("telegram_id"):
         sub = await fetch_one(
             "SELECT * FROM subscriptions WHERE channel_id = $1 AND telegram_id = $2",
             visit["channel_id"], visit["telegram_id"],
         )
-    elif visit.get("max_user_id"):
+    if not sub and visit.get("max_user_id"):
         sub = await fetch_one(
             "SELECT * FROM subscriptions WHERE channel_id = $1 AND max_user_id = $2",
             visit["channel_id"], visit["max_user_id"],
         )
 
+    # Fallback: any recent subscription to same channel (within 10 min of visit)
+    if not sub:
+        sub = await fetch_one(
+            """SELECT * FROM subscriptions
+               WHERE channel_id = $1 AND subscribed_at > $2::timestamp - INTERVAL '1 minute'
+               AND subscribed_at < $2::timestamp + INTERVAL '10 minutes'
+               ORDER BY subscribed_at DESC LIMIT 1""",
+            visit["channel_id"], visit["visited_at"],
+        )
+
     return {"success": True, "subscribed": sub is not None, "subscription": sub}
 
 
-@router.patch("/visit/{visit_id}/ym-client")
-async def update_ym_client(visit_id: int, request: Request):
-    body = await request.json()
-    ym_client_id = body.get("ym_client_id")
-    if not ym_client_id:
-        raise HTTPException(status_code=400, detail="ym_client_id required")
-
-    await execute("UPDATE visits SET ym_client_id = $1 WHERE id = $2", ym_client_id, visit_id)
-    return {"success": True}

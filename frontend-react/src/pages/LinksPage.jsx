@@ -187,6 +187,20 @@ export default function LinksPage() {
                       onClick={() => copyLink(link.short_code)} title="Нажмите чтобы скопировать">
                       {APP_URL}/go/{link.short_code}
                     </code>
+                    {link.link_type === 'direct' && currentChannel?.platform === 'max' && (
+                      <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <code style={{ fontSize: '0.75rem', cursor: 'pointer', color: '#7B68EE' }}
+                          onClick={() => { navigator.clipboard.writeText(`https://max.ru/${import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}?startapp=go_${link.short_code}`); showToast('Ссылка для ПК скопирована'); }}
+                          title="MiniApp ссылка (ПК)">
+                          ПК: max.ru/{import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}?startapp=go_{link.short_code}
+                        </code>
+                        <code style={{ fontSize: '0.75rem', cursor: 'pointer', color: '#9B7DFF' }}
+                          onClick={() => { navigator.clipboard.writeText(`https://max.ru/${import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}?start=go_${link.short_code}`); showToast('Ссылка для мобильного скопирована'); }}
+                          title="Бот-ссылка (мобильное)">
+                          Моб: max.ru/{import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}?start=go_{link.short_code}
+                        </code>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
                       <span>Визиты: <b>{link.visit_count ?? 0}</b></span>
                       <span>Подписки: <b>{link.sub_count ?? 0}</b></span>

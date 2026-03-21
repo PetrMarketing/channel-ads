@@ -174,3 +174,28 @@ async def delete_step(tc: str, lm_id: int, step_id: int, user: Dict[str, Any] = 
         await execute("UPDATE funnel_steps SET step_number = $1 WHERE id = $2", i, s["id"])
 
     return {"success": True}
+
+
+@router.post("/{tc}/{lm_id}/steps/{step_id}/copy")
+async def copy_step(tc: str, lm_id: int, step_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    """Duplicate a funnel step."""
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    step = await fetch_one("SELECT * FROM funnel_steps WHERE id = $1 AND lead_magnet_id = $2", step_id, lm_id)
+    if not step:
+        raise HTTPException(status_code=404, detail="Шаг не найден")
+
+    max_num = await fetch_one("SELECT MAX(step_number) as m FROM funnel_steps WHERE lead_magnet_id = $1", lm_id)
+    new_num = (max_num["m"] or 0) + 1
+
+    new_id = await execute_returning_id(
+        """INSERT INTO funnel_steps (lead_magnet_id, channel_id, step_number, delay_minutes, message_text,
+           file_path, file_type, file_data, inline_buttons, attach_type, delay_config)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id""",
+        lm_id, channel["id"], new_num, step.get("delay_minutes", 0),
+        step.get("message_text", ""),
+        step.get("file_path"), step.get("file_type"), step.get("file_data"),
+        step.get("inline_buttons"), step.get("attach_type"), step.get("delay_config"),
+    )
+    return {"success": True, "id": new_id}
