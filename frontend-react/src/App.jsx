@@ -13,6 +13,9 @@ import GiveawaysPage from './pages/GiveawaysPage';
 import BillingPage from './pages/BillingPage';
 import StaffPage from './pages/StaffPage';
 import PaidChatsPage from './pages/PaidChatsPage';
+import ServicesPage from './pages/ServicesPage';
+import AnalyticsPage from './pages/AnalyticsPage';
+import CommentsPage from './pages/CommentsPage';
 
 // Public pages (standalone, no layout)
 import SubscribePage from './pages/public/SubscribePage';
@@ -80,6 +83,9 @@ export default function App() {
         <Route path="billing" element={<BillingPage />} />
         <Route path="staff" element={<StaffPage />} />
         <Route path="paid-chats" element={<PaidChatsPage />} />
+        <Route path="services" element={<ServicesPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="comments" element={<CommentsPage />} />
       </Route>
     </Routes>
   );

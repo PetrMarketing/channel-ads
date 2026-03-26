@@ -108,8 +108,10 @@ async def update_metrika(tracking_code: str, link_id: int, body: dict, user: Dic
         raise HTTPException(status_code=404, detail="Канал не найден")
 
     await execute(
-        "UPDATE tracking_links SET ym_counter_id = $1, ym_goal_name = $2 WHERE id = $3 AND channel_id = $4",
-        body.get("ym_counter_id"), body.get("ym_goal_name"), link_id, channel["id"],
+        "UPDATE tracking_links SET ym_counter_id = $1, ym_goal_name = $2, vk_pixel_id = $3, vk_goal_name = $4 WHERE id = $5 AND channel_id = $6",
+        body.get("ym_counter_id"), body.get("ym_goal_name"),
+        body.get("vk_pixel_id"), body.get("vk_goal_name"),
+        link_id, channel["id"],
     )
     return {"success": True}
 

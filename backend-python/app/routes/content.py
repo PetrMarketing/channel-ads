@@ -200,6 +200,12 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
     from ..services.file_storage import ensure_file
     post_file_path = ensure_file(post.get("file_path"), post.get("file_data"))
 
+    # Resolve comments buttons to deep links
+    from .pins import _resolve_buttons
+    resolved_buttons = post.get("inline_buttons")
+    if resolved_buttons:
+        resolved_buttons = await _resolve_buttons(resolved_buttons, channel, post_id=post_id, post_type="content")
+
     from ..services.messenger import send_to_channel
     import traceback
     try:
@@ -207,7 +213,7 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
             channel, post.get("message_text", ""),
             file_path=post_file_path, file_type=post.get("file_type"),
             telegram_file_id=post.get("telegram_file_id"),
-            inline_buttons=post.get("inline_buttons"),
+            inline_buttons=resolved_buttons,
             attach_type=post.get("attach_type"),
             max_file_token=post.get("max_file_token"),
         )

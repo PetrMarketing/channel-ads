@@ -24,7 +24,7 @@ export default function PinsPage() {
   const [editingLm, setEditingLm] = useState(null);
   const [pinForm, setPinForm] = useState({ title: '', message_text: '', lead_magnet_id: '', inline_buttons: '', attach_type: '' });
   const [pinFile, setPinFile] = useState(null);
-  const [lmForm, setLmForm] = useState({ title: '', message_text: '', attach_type: '' });
+  const [lmForm, setLmForm] = useState({ title: '', message_text: '', attach_type: '', subscribers_only: false });
   const [lmFile, setLmFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -188,14 +188,14 @@ export default function PinsPage() {
   // Lead magnet CRUD
   const openCreateLm = () => {
     setEditingLm(null);
-    setLmForm({ title: '', message_text: '', attach_type: '' });
+    setLmForm({ title: '', message_text: '', attach_type: '', subscribers_only: false });
     setLmFile(null);
     setShowLmModal(true);
   };
 
   const openEditLm = (lm) => {
     setEditingLm(lm);
-    setLmForm({ title: lm.title || '', message_text: lm.message_text || '', attach_type: lm.attach_type || '' });
+    setLmForm({ title: lm.title || '', message_text: lm.message_text || '', attach_type: lm.attach_type || '', subscribers_only: !!lm.subscribers_only });
     setLmFile(null);
     setShowLmModal(true);
   };
@@ -209,6 +209,7 @@ export default function PinsPage() {
       formData.append('title', lmTitle);
       formData.append('message_text', lmForm.message_text);
       if (lmForm.attach_type) formData.append('attach_type', lmForm.attach_type);
+      formData.append('subscribers_only', lmForm.subscribers_only ? 'true' : 'false');
       if (lmFile) formData.append('file', lmFile);
 
       const progressCb = lmFile ? (p) => setUploadProgress(p) : null;
@@ -571,6 +572,11 @@ export default function PinsPage() {
                 </div>
               </div>
             )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.9rem' }}>
+              <input type="checkbox" checked={lmForm.subscribers_only}
+                onChange={e => setLmForm(p => ({ ...p, subscribers_only: e.target.checked }))} />
+              Выдавать только подписчикам канала
+            </label>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button className="btn btn-outline" onClick={() => setShowLmModal(false)}>Отмена</button>
               <button className="btn btn-primary" onClick={handleSaveLm} disabled={saving}>

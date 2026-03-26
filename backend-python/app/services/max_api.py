@@ -19,19 +19,26 @@ class MaxApi:
         return f"{self.base_url}/{method}{sep}access_token={self.token}"
 
     async def _request(self, method: str, endpoint: str, timeout_seconds: int = 60, **kwargs) -> Dict[str, Any]:
+        import asyncio as _aio
         timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            url = self._url(endpoint)
+        for attempt in range(6):  # up to 5 retries on 429
             try:
-                async with session.request(method, url, **kwargs) as resp:
-                    data = await resp.json(content_type=None)
-                    if resp.status >= 400:
-                        print(f"[MAX API] Error {resp.status} {endpoint}: {data}")
-                        return {"success": False, "error": data.get("message", str(data))}
-                    return {"success": True, "data": data}
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    url = self._url(endpoint)
+                    async with session.request(method, url, **kwargs) as resp:
+                        data = await resp.json(content_type=None)
+                        if resp.status == 429:
+                            wait = 1.0 * (2 ** attempt)  # 1, 2, 4, 8, 16, 32 sec
+                            await _aio.sleep(wait)
+                            continue
+                        if resp.status >= 400:
+                            print(f"[MAX API] Error {resp.status} {endpoint}: {data}")
+                            return {"success": False, "error": data.get("message", str(data))}
+                        return {"success": True, "data": data}
             except Exception as e:
                 print(f"[MAX API] Request failed {method} {endpoint}: {e}")
                 return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Rate limited after retries"}
 
     async def get_me(self) -> Dict[str, Any]:
         return await self._request("GET", "me")
@@ -144,6 +151,14 @@ class MaxApi:
 
     async def get_membership(self, chat_id: str) -> Dict[str, Any]:
         return await self._request("GET", f"chats/{chat_id}/members/me")
+
+    async def is_user_member(self, chat_id: str, user_id: str) -> bool:
+        """Check if user is a member of a chat/channel."""
+        result = await self._request("GET", f"chats/{chat_id}/members?user_ids={user_id}")
+        if result.get("success"):
+            members = result.get("data", {}).get("members", [])
+            return len(members) > 0
+        return False
 
     async def get_invite_link(self, chat_id: str) -> Optional[str]:
         """Get invite link for a chat. Tries chat info first."""

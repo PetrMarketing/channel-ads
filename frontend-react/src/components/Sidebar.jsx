@@ -88,6 +88,27 @@ const icons = {
       <path d="M8 12h8"/>
     </svg>
   ),
+  services: (
+    <svg className="sidebar-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="8" y1="2" x2="8" y2="6"/>
+      <line x1="3" y1="10" x2="21" y2="10"/>
+      <circle cx="12" cy="15" r="2"/>
+    </svg>
+  ),
+  analytics: (
+    <svg className="sidebar-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10"/>
+      <line x1="12" y1="20" x2="12" y2="4"/>
+      <line x1="6" y1="20" x2="6" y2="14"/>
+    </svg>
+  ),
+  comments: (
+    <svg className="sidebar-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+  ),
 };
 
 const menuItems = [
@@ -99,6 +120,7 @@ const menuItems = [
       { path: '/pins', label: 'Закрепы', icon: icons.pins },
       { path: '/broadcasts', label: 'Рассылки', icon: icons.broadcasts },
       { path: '/funnels', label: 'Воронки', icon: icons.funnels },
+      { path: '/analytics', label: 'Аналитика', icon: icons.analytics },
     ],
   },
   {
@@ -106,12 +128,14 @@ const menuItems = [
     items: [
       { path: '/content', label: 'Публикации', icon: icons.publications },
       { path: '/giveaways', label: 'Розыгрыши', icon: icons.giveaways },
+      { path: '/comments', label: 'Комментарии', icon: icons.comments },
     ],
   },
   {
     category: 'monetization', label: 'Монетизация', icon: icons.paidChats,
     items: [
       { path: '/paid-chats', label: 'Платные чаты', icon: icons.paidChats },
+      { path: '/services', label: 'Услуги и запись', icon: icons.services },
     ],
   },
   { path: '/staff', label: 'Сотрудники', icon: icons.staff, standalone: true },
@@ -133,6 +157,7 @@ export default function Sidebar({ isOpen, onClose }) {
   };
 
   const isDisabled = !currentChannel;
+  const isSubActive = currentChannel?.billing_active;
 
   return (
     <nav className={`sidebar ${isOpen ? 'open' : ''}`}>

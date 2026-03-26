@@ -122,7 +122,7 @@ async def handle_lead_magnet(chat_id: int, tg_user: dict, code: str):
     # Strip lm_ prefix if present (deep links use ?start=lm_CODE)
     lm_code = code[3:] if code.startswith("lm_") else code
     lm = await fetch_one("""
-        SELECT lm.*, c.title as channel_title
+        SELECT lm.*, c.title as channel_title, c.channel_id as tg_channel_id, c.username as channel_username
         FROM lead_magnets lm JOIN channels c ON c.id = lm.channel_id
         WHERE lm.code = $1
     """, lm_code)
@@ -131,15 +131,40 @@ async def handle_lead_magnet(chat_id: int, tg_user: dict, code: str):
         return
 
     tg_id = tg_user["id"]
+
+    # Check subscription if required
+    if lm.get("subscribers_only") and lm.get("tg_channel_id"):
+        try:
+            result = await _tg_request("getChatMember", chat_id=int(lm["tg_channel_id"]), user_id=tg_id)
+            status = result.get("result", {}).get("status", "")
+            is_member = status in ("member", "administrator", "creator")
+        except Exception:
+            is_member = False
+        if not is_member:
+            channel_title = lm.get("channel_title") or "канал"
+            channel_username = lm.get("channel_username") or ""
+            sub_url = f"https://t.me/{channel_username}" if channel_username else f"https://t.me/c/{str(lm['tg_channel_id'])[4:]}"
+            keyboard = {"inline_keyboard": [
+                [{"text": f"Подписаться на {channel_title}", "url": sub_url}],
+                [{"text": "✅ Я подписался", "callback_data": f"lm_{lm_code}"}],
+            ]}
+            await _send_message(chat_id,
+                f"📢 Чтобы получить материал, сначала подпишитесь на канал <b>{channel_title}</b>.",
+                reply_markup=keyboard)
+            return
+
     existing = await fetch_one("SELECT id FROM leads WHERE lead_magnet_id = $1 AND telegram_id = $2", lm["id"], tg_id)
-    if not existing:
+    if existing:
+        lead_id = existing["id"]
+    else:
         lead_id = await execute_returning_id(
             "INSERT INTO leads (lead_magnet_id, telegram_id, username, first_name) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING id",
             lm["id"], tg_id, tg_user.get("username"), tg_user.get("first_name", ""),
         )
-        if lead_id:
-            from ..services.funnel_processor import schedule_funnel_for_lead
-            await schedule_funnel_for_lead(lead_id, lm["id"], telegram_id=tg_id)
+    # Always schedule funnel (reschedules from now, cancels old pending)
+    if lead_id:
+        from ..services.funnel_processor import schedule_funnel_for_lead
+        await schedule_funnel_for_lead(lead_id, lm["id"], telegram_id=tg_id)
 
     from ..services.messenger import (
         sanitize_html_for_telegram, send_telegram_photo, send_telegram_document,
@@ -1205,6 +1230,11 @@ async def _handle_callback_query(callback_query: dict):
         pass
 
     if not chat_id or not tg_user_id:
+        return
+
+    if data.startswith("lm_"):
+        # Re-check subscription and deliver lead magnet
+        await handle_lead_magnet(chat_id, user, data)
         return
 
     if data.startswith("link_yes:"):

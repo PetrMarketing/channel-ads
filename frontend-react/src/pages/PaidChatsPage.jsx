@@ -6,21 +6,15 @@ import Modal from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
 import AttachmentPicker from '../components/AttachmentPicker';
 import { api } from '../services/api';
+import Paywall from '../components/Paywall';
 
-const PROVIDERS = [
-  { id: 'yoomoney', name: 'ЮMoney', fields: [{ key: 'shop_id', label: 'Shop ID' }, { key: 'secret_key', label: 'Секретный ключ' }] },
-  { id: 'prodamus', name: 'Продамус', fields: [{ key: 'api_key', label: 'API-ключ' }, { key: 'shop_url', label: 'URL магазина' }] },
-  { id: 'tinkoff', name: 'Тинькофф Эквайринг', fields: [{ key: 'terminal_key', label: 'Terminal Key' }, { key: 'password', label: 'Пароль' }] },
-  { id: 'robokassa', name: 'Робокасса', fields: [{ key: 'merchant_login', label: 'Merchant Login' }, { key: 'password1', label: 'Пароль #1' }, { key: 'password2', label: 'Пароль #2' }] },
-  { id: 'getcourse', name: 'GetCourse', fields: [{ key: 'account_name', label: 'Аккаунт (поддомен)' }, { key: 'secret_key', label: 'Секретный ключ API' }] },
-];
-
-const EVENT_LABELS = {
-  before_subscribe: 'Перед подпиской (описание канала)',
-  after_subscribe: 'После подписки (приветствие)',
-  '3_days_before_expiry': 'За 3 дня до конца подписки',
-  '1_day_before_expiry': 'За 1 день до конца подписки',
-};
+import { EVENT_LABELS } from './paid-chats/constants';
+import PaymentTab from './paid-chats/PaymentTab';
+import PlansTab from './paid-chats/PlansTab';
+import ChatsTab from './paid-chats/ChatsTab';
+import MembersTab from './paid-chats/MembersTab';
+import NotificationsTab from './paid-chats/NotificationsTab';
+import PublishTab from './paid-chats/PublishTab';
 
 export default function PaidChatsPage() {
   const { currentChannel } = useChannels();
@@ -64,6 +58,7 @@ export default function PaidChatsPage() {
   const [notifForms, setNotifForms] = useState({});
   const [notifFiles, setNotifFiles] = useState({});
   const [savingNotif, setSavingNotif] = useState('');
+  const [editingNotifType, setEditingNotifType] = useState(null);
 
   // Posts
   const [posts, setPosts] = useState([]);
@@ -429,29 +424,40 @@ export default function PaidChatsPage() {
   ];
 
   return (
-    <>
+    <Paywall>
       <div className="page-header">
         <h1>Платные чаты</h1>
       </div>
 
       {/* Payment link */}
-      {setup.has_payment && setup.has_plans && setup.has_chats && (
-        <div className="pc-info-box" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <strong>Ссылка на оплату:</strong>
-          <code style={{ background: 'var(--bg)', padding: '4px 10px', borderRadius: 6, fontSize: '0.85rem', wordBreak: 'break-all' }}>
-            {window.location.origin}/pay/{tc}
-          </code>
-          <button
-            className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '0.82rem' }}
-            onClick={() => {
-              navigator.clipboard.writeText(`${window.location.origin}/pay/${tc}`);
-              showToast('Ссылка скопирована');
-            }}
-          >
-            Копировать
-          </button>
-        </div>
-      )}
+      {setup.has_payment && setup.has_plans && setup.has_chats && (() => {
+        const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
+        const botLink = `https://max.ru/${maxBotUsername}?startapp=paid_${tc}`;
+        const webLink = `${window.location.origin}/pay/${tc}`;
+        return (
+        <div className="pc-info-box" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+            <strong>Ссылка на бота:</strong>
+            <code style={{ background: 'var(--bg)', padding: '4px 10px', borderRadius: 6, fontSize: '0.85rem', wordBreak: 'break-all' }}>
+              {botLink}
+            </code>
+            <button
+              className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '0.82rem' }}
+              onClick={() => { navigator.clipboard.writeText(botLink); showToast('Ссылка скопирована'); }}
+            >Копировать</button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <strong>Веб-ссылка:</strong>
+            <code style={{ background: 'var(--bg)', padding: '4px 10px', borderRadius: 6, fontSize: '0.85rem', wordBreak: 'break-all' }}>
+              {webLink}
+            </code>
+            <button
+              className="btn btn-outline" style={{ padding: '6px 14px', fontSize: '0.82rem' }}
+              onClick={() => { navigator.clipboard.writeText(webLink); showToast('Ссылка скопирована'); }}
+            >Копировать</button>
+          </div>
+        </div>);
+      })()}
 
       {/* Setup progress */}
       <div className="pc-setup-bar">
@@ -491,405 +497,67 @@ export default function PaidChatsPage() {
         ))}
       </div>
 
-      {/* ═══════════ TAB: PAYMENT ═══════════ */}
+      {/* ═══════════ TAB CONTENT ═══════════ */}
       {tab === 'payment' && (
-        <div className="pc-section">
-          <h2>Настройка оплаты</h2>
-          <div className="pc-info-box">
-            <strong>Инструкция по подключению эквайринга:</strong>
-            <ol>
-              <li>Выберите платёжную систему из списка ниже</li>
-              <li>Зарегистрируйтесь на сайте платёжной системы и получите API-ключи</li>
-              <li>Введите полученные данные в форму и нажмите «Сохранить»</li>
-              <li>После подключения эквайринга станут доступны остальные разделы</li>
-            </ol>
-          </div>
-
-          <h3 style={{ marginTop: 24 }}>Платёжные системы</h3>
-          <div className="pc-providers-grid">
-            {PROVIDERS.map(p => {
-              const connected = paymentSettings.find(s => s.provider === p.id);
-              return (
-                <div key={p.id} className={`pc-provider-card ${connected ? 'connected' : ''}`}>
-                  <div className="pc-provider-header">
-                    <strong>{p.name}</strong>
-                    {connected && <span className="pc-badge success">Подключён</span>}
-                  </div>
-                  <div className="pc-provider-actions">
-                    <button className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '0.82rem' }} onClick={() => openProviderModal(p)}>
-                      {connected ? 'Изменить' : 'Подключить'}
-                    </button>
-                    {connected && (
-                      <button className="btn btn-danger" style={{ padding: '6px 14px', fontSize: '0.82rem' }} onClick={() => disconnectProvider(connected)}>
-                        Отключить
-                      </button>
-                    )}
-                  </div>
-                  {connected && ['yoomoney', 'robokassa', 'getcourse'].includes(p.id) && (
-                    <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      <span>⚠️ Webhook URL (добавьте в настройках {p.name}):</span>
-                      <code style={{ display: 'block', marginTop: '4px', padding: '6px', background: 'var(--bg-secondary, #f5f5f5)', borderRadius: '4px', fontSize: '0.72rem', cursor: 'pointer', wordBreak: 'break-all' }}
-                        onClick={() => {
-                          const url = p.id === 'getcourse'
-                            ? `${window.location.origin}/api/paid-chat-pay/webhook/getcourse/${currentChannel?.tracking_code}`
-                            : `${window.location.origin}/api/paid-chat-pay/webhook/${p.id}`;
-                          navigator.clipboard.writeText(url);
-                        }}
-                        title="Нажмите для копирования">
-                        {p.id === 'getcourse'
-                          ? `${window.location.origin}/api/paid-chat-pay/webhook/getcourse/${currentChannel?.tracking_code}`
-                          : `${window.location.origin}/api/paid-chat-pay/webhook/${p.id}`}
-                      </code>
-                      <p style={{ marginTop: '4px', fontSize: '0.7rem', opacity: 0.7 }}>
-                        {p.id === 'yoomoney' && 'Личный кабинет ЮKassa → Настройки → HTTP-уведомления → URL'}
-                        {p.id === 'robokassa' && 'Личный кабинет Робокассы → Технические настройки → Result URL'}
-                        {p.id === 'getcourse' && 'Настройки GetCourse → Уведомления об оплате → URL'}
-                      </p>
-                    </div>
-                  )}
-                  {connected && ['tinkoff', 'prodamus'].includes(p.id) && (
-                    <div style={{ marginTop: '8px', fontSize: '0.72rem', color: 'var(--success, #2a9d8f)' }}>
-                      ✅ Webhook настраивается автоматически при каждом платеже
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-        </div>
+        <PaymentTab
+          paymentSettings={paymentSettings}
+          openProviderModal={openProviderModal}
+          disconnectProvider={disconnectProvider}
+          currentChannel={currentChannel}
+        />
       )}
 
       {tab === 'plans' && (
-        <div className="pc-section">
-          <h2>Тарифы</h2>
-          {!setup.has_payment && (
-            <div className="pc-info-box warning">
-              Сначала подключите платёжную систему на вкладке «Оплата».
-            </div>
-          )}
-          {setup.has_payment && (
-            <>
-              <div className="pc-info-box">
-                <strong>Инструкция по тарифам:</strong>
-                <ul style={{ margin: '8px 0 0', paddingLeft: '18px' }}>
-                  <li><b>Разовая оплата</b> — пользователь платит один раз и получает доступ навсегда</li>
-                  <li><b>Регулярная подписка</b> — выберите срок и стоимость. По истечении доступ закрывается</li>
-                </ul>
-              </div>
-              <button className="btn btn-primary" onClick={openPlanCreate} style={{ marginBottom: 16 }}>
-                + Новый тариф
-              </button>
-              {plans.length === 0 && <p className="pc-empty">Тарифов пока нет. Создайте первый тариф.</p>}
-              <div className="pc-plans-list">
-                {plans.map(p => (
-                  <div key={p.id} className="pc-plan-card">
-                    <div className="pc-plan-info">
-                      <strong>{p.title || (p.plan_type === 'one_time' ? 'Разовая оплата' : `Подписка на ${p.duration_days} дн.`)}</strong>
-                      <span className="pc-plan-price">{Number(p.price).toLocaleString('ru-RU')} {p.currency || 'RUB'}</span>
-                      <span className={`pc-badge ${p.plan_type === 'recurring' ? 'info' : 'success'}`}>
-                        {p.plan_type === 'recurring' ? `Регулярная / ${p.duration_days} дн.` : 'Разовая'}
-                      </span>
-                    </div>
-                    <div className="pc-plan-actions">
-                      <button className="btn btn-outline" style={{ padding: '6px 14px', fontSize: '0.82rem' }} onClick={() => openPlanEdit(p)}>Редактировать</button>
-                      <button className="btn btn-danger" style={{ padding: '6px 14px', fontSize: '0.82rem' }} onClick={() => deletePlan(p)}>Удалить</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+        <PlansTab
+          setup={setup}
+          plans={plans}
+          openPlanCreate={openPlanCreate}
+          openPlanEdit={openPlanEdit}
+          deletePlan={deletePlan}
+        />
       )}
 
-      {/* ═══════════ TAB: CHATS ═══════════ */}
       {tab === 'chats' && (
-        <div className="pc-section">
-          <h2>Подключённые чаты</h2>
-          <div className="pc-info-box">
-            <strong>Как подключить платный чат:</strong>
-            <ol style={{ margin: '8px 0 0', paddingLeft: '18px' }}>
-              <li>Создайте закрытый чат/группу</li>
-              <li>Добавьте бота <b>администратором</b> в чат</li>
-              <li>Бот пришлёт уведомление — нажмите «Добавить чат» ниже</li>
-              <li>Выберите чат из списка</li>
-            </ol>
-          </div>
-          <button className="btn btn-primary" onClick={async () => {
+        <ChatsTab
+          chats={chats}
+          deleteChat={deleteChat}
+          onAddChat={async () => {
             try {
               const data = await api.get(`/paid-chats/${tc}/available-chats`);
               if (data.success) setAvailableChats(data.chats || []);
             } catch {}
             setShowChatModal(true);
-          }} style={{ marginBottom: 16 }}>
-            + Добавить чат
-          </button>
-          {chats.length === 0 && <p className="pc-empty">Чатов пока нет. Добавьте первый платный чат.</p>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {chats.map(c => {
-              const platformColor = c.platform === 'max' ? '#7B68EE' : '#2AABEE';
-              const firstLetter = (c.title || c.chat_id || 'Ч')[0].toUpperCase();
-              return (
-                <div key={c.id} style={{
-                  display: 'flex', alignItems: 'center', gap: '14px',
-                  padding: '14px 16px', background: 'var(--bg-glass)',
-                  border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-                }}>
-                  <div style={{
-                    width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0,
-                    background: platformColor, color: '#fff',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '1.1rem', fontWeight: 700,
-                  }}>
-                    {firstLetter}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, fontSize: '0.95rem' }}>{c.title || c.chat_id}</div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: '4px', fontWeight: 600, background: platformColor, color: '#fff' }}>
-                        {c.platform === 'max' ? 'MAX' : 'TG'}
-                      </span>
-                      <span className="pc-badge info" style={{ fontSize: '0.72rem' }}>{c.active_members || 0} участников</span>
-                      <span className={`pc-badge ${c.is_active ? 'success' : 'warning'}`} style={{ fontSize: '0.72rem' }}>
-                        {c.is_active ? 'Активен' : 'Неактивен'}
-                      </span>
-                    </div>
-                  </div>
-                  <button className="btn btn-danger" style={{ padding: '6px 14px', fontSize: '0.82rem', flexShrink: 0 }} onClick={() => deleteChat(c)}>
-                    Удалить
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+          }}
+        />
       )}
 
-      {/* ═══════════ TAB: MEMBERS ═══════════ */}
       {tab === 'members' && (
-        <div className="pc-section">
-          <h2>Участники</h2>
-          <div className="pc-filters">
-            <select value={memberChatFilter} onChange={e => setMemberChatFilter(e.target.value)}>
-              <option value="">Все чаты</option>
-              {chats.map(c => <option key={c.id} value={c.id}>{c.title || c.chat_id}</option>)}
-            </select>
-            <select value={memberStatusFilter} onChange={e => setMemberStatusFilter(e.target.value)}>
-              <option value="">Все статусы</option>
-              <option value="active">Активные</option>
-              <option value="expired">Истекшие</option>
-              <option value="cancelled">Отменённые</option>
-            </select>
-          </div>
-          {members.length === 0 && <p className="pc-empty">Участников пока нет.</p>}
-          {members.length > 0 && (
-            <>
-              {/* Desktop table */}
-              <div className="pc-members-table-wrap pc-desktop-only">
-                <table className="pc-members-table">
-                  <thead>
-                    <tr>
-                      <th>Пользователь</th>
-                      <th>Чат</th>
-                      <th>Тариф</th>
-                      <th>Оплата</th>
-                      <th>Статус</th>
-                      <th>Истекает</th>
-                      <th>Ссылка</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {members.map(m => (
-                      <tr key={m.id}>
-                        <td>
-                          <strong>{m.first_name || m.username || m.telegram_id || m.max_user_id}</strong>
-                          {m.username && <div className="pc-text-muted">@{m.username}</div>}
-                        </td>
-                        <td>{m.chat_title || '—'}</td>
-                        <td>
-                          {m.plan_title || (m.plan_type === 'one_time' ? 'Разовая' : 'Подписка')}
-                          {m.price && <div className="pc-text-muted">{Number(m.price).toLocaleString('ru-RU')} RUB</div>}
-                        </td>
-                        <td>{m.amount_paid ? `${Number(m.amount_paid).toLocaleString('ru-RU')} RUB` : '—'}</td>
-                        <td>
-                          <span className={`pc-badge ${m.status === 'active' ? 'success' : m.status === 'expired' ? 'warning' : 'danger'}`}>
-                            {m.status === 'active' ? 'Активен' : m.status === 'expired' ? 'Истёк' : m.status === 'cancelled' ? 'Отменён' : m.status}
-                          </span>
-                        </td>
-                        <td>{m.expires_at ? new Date(m.expires_at).toLocaleDateString('ru-RU') : 'Бессрочно'}</td>
-                        <td>{m.invite_link ? <a href={m.invite_link} target="_blank" rel="noreferrer" className="pc-text-muted" style={{fontSize: 12}}>Ссылка</a> : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-
-              {/* Mobile cards */}
-              <div className="pc-mobile-only" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {members.map(m => (
-                  <div key={m.id} className="pc-member-card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <div>
-                        <strong>{m.first_name || m.username || m.telegram_id || m.max_user_id}</strong>
-                        {m.username && <span className="pc-text-muted" style={{ marginLeft: 6 }}>@{m.username}</span>}
-                      </div>
-                      <span className={`pc-badge ${m.status === 'active' ? 'success' : m.status === 'expired' ? 'warning' : 'danger'}`}>
-                        {m.status === 'active' ? 'Активен' : m.status === 'expired' ? 'Истёк' : m.status === 'cancelled' ? 'Отменён' : m.status}
-                      </span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      <span>Чат: {m.chat_title || '—'}</span>
-                      <span>Тариф: {m.plan_title || (m.plan_type === 'one_time' ? 'Разовая' : 'Подписка')}</span>
-                      <span>Оплата: {m.amount_paid ? `${Number(m.amount_paid).toLocaleString('ru-RU')} ₽` : '—'}</span>
-                      <span>До: {m.expires_at ? new Date(m.expires_at).toLocaleDateString('ru-RU') : 'Бессрочно'}</span>
-                    </div>
-                    {m.invite_link && (
-                      <a href={m.invite_link} target="_blank" rel="noreferrer" style={{ fontSize: '0.75rem', marginTop: 6, display: 'inline-block' }}>Инвайт-ссылка</a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+        <MembersTab
+          members={members}
+          chats={chats}
+          memberChatFilter={memberChatFilter}
+          setMemberChatFilter={setMemberChatFilter}
+          memberStatusFilter={memberStatusFilter}
+          setMemberStatusFilter={setMemberStatusFilter}
+        />
       )}
 
-      {/* ═══════════ TAB: NOTIFICATIONS ═══════════ */}
       {tab === 'notifications' && (
-        <div className="pc-section">
-          <h2>Уведомления</h2>
-          <div className="pc-info-box">
-            <strong>Настройка уведомлений:</strong>
-            <ul>
-              <li><b>Перед подпиской</b> — описание канала, что получит пользователь</li>
-              <li><b>После подписки</b> — приветственное сообщение после оплаты</li>
-              <li><b>За 3 дня до конца</b> — напоминание о скором окончании подписки</li>
-              <li><b>За 1 день до конца</b> — последнее напоминание перед отключением</li>
-            </ul>
-          </div>
-          <div className="pc-notifs-list">
-            {Object.entries(EVENT_LABELS).map(([eventType, label]) => {
-              const form = notifForms[eventType] || { message_text: '', is_active: 1 };
-              return (
-                <div key={eventType} className="pc-notif-card">
-                  <div className="pc-notif-header">
-                    <strong>{label}</strong>
-                    <label className="pc-toggle-label">
-                      <input
-                        type="checkbox"
-                        checked={form.is_active === 1 || form.is_active === true}
-                        onChange={e => setNotifForms(prev => ({
-                          ...prev,
-                          [eventType]: { ...form, is_active: e.target.checked ? 1 : 0 }
-                        }))}
-                      />
-                      <span>Включено</span>
-                    </label>
-                  </div>
-                  <RichTextEditor
-                    value={form.message_text}
-                    onChange={text => setNotifForms(prev => ({
-                      ...prev,
-                      [eventType]: { ...form, message_text: text }
-                    }))}
-                    showEmoji={true}
-                  />
-                  <div style={{ marginTop: 8 }}>
-                    <label className="form-label" style={{ fontSize: '0.85rem' }}>Картинка (опционально)</label>
-                    <AttachmentPicker
-                      file={notifFiles[eventType] || null}
-                      onFileChange={f => setNotifFiles(prev => ({ ...prev, [eventType]: f }))}
-                      attachType=""
-                      onAttachTypeChange={() => {}}
-                      photoOnly
-                      existingFileInfo={form.file_type || ''}
-                    />
-                    {form.file_path && !notifFiles[eventType] && (
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span>Изображение прикреплено ({form.file_type})</span>
-                        <button
-                          className="btn btn-outline" style={{ padding: '6px 14px', fontSize: '0.82rem' }}
-                          style={{ padding: '2px 6px', fontSize: '0.72rem' }}
-                          onClick={async () => {
-                            try {
-                              const n = notifications.find(n => n.event_type === eventType);
-                              if (n) await api.delete(`/paid-chats/${tc}/notifications/${n.id}/image`);
-                              loadNotifications();
-                              showToast('Изображение удалено');
-                            } catch {}
-                          }}
-                        >Удалить</button>
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    className="btn-primary btn-sm"
-                    style={{ marginTop: 8 }}
-                    onClick={() => saveNotification(eventType)}
-                    disabled={savingNotif === eventType}
-                  >
-                    {savingNotif === eventType ? 'Сохранение...' : 'Сохранить'}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <NotificationsTab
+          notifForms={notifForms}
+          setEditingNotifType={setEditingNotifType}
+        />
       )}
 
-      {/* ═══════════ TAB: PUBLISH ═══════════ */}
       {tab === 'publish' && (
-        <div className="pc-section">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h2 style={{ margin: 0 }}>Публикации</h2>
-            <button className="btn btn-primary" onClick={openPostCreate}>+ Создать пост</button>
-          </div>
-          <div className="pc-info-box">
-            <strong>Как это работает:</strong>
-            <ol>
-              <li>Создайте пост — укажите текст, кнопку и прикрепите картинку</li>
-              <li>К посту автоматически добавится кнопка со ссылкой на бота</li>
-              <li>Нажмите «Опубликовать» — пост будет отправлен в канал</li>
-            </ol>
-          </div>
-          {posts.length === 0 && <p className="pc-empty">Постов пока нет. Создайте первый пост.</p>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {posts.map(post => (
-              <div key={post.id} className="pc-plan-card">
-                <div className="pc-plan-info" style={{ flex: 1 }}>
-                  {post.title && <strong>{post.title}</strong>}
-                  <div style={{ maxHeight: 60, overflow: 'hidden', color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: 1.4 }}>
-                    {post.message_text?.substring(0, 120)}{post.message_text?.length > 120 ? '...' : ''}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-                    <span className={`pc-badge ${post.status === 'published' ? 'success' : 'info'}`}>
-                      {post.status === 'published' ? 'Опубликован' : 'Черновик'}
-                    </span>
-                    {post.chat_title && <span className="pc-badge">{post.chat_title}</span>}
-                    {post.file_type && <span className="pc-badge">📎 {post.file_type}</span>}
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                      {post.published_at
-                        ? `Опубликован ${new Date(post.published_at).toLocaleDateString('ru-RU')}`
-                        : `Создан ${new Date(post.created_at).toLocaleDateString('ru-RU')}`}
-                    </span>
-                  </div>
-                </div>
-                <div className="pc-plan-actions">
-                  <button className="btn btn-outline" style={{ padding: '6px 14px', fontSize: '0.82rem' }} onClick={() => openPostEdit(post)}>Ред.</button>
-                  <button
-                    className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '0.82rem' }}
-                    onClick={() => publishPost(post)}
-                    disabled={publishingPostId === post.id}
-                  >
-                    {publishingPostId === post.id ? '...' : 'Опубликовать'}
-                  </button>
-                  <button className="btn btn-danger" style={{ padding: '6px 14px', fontSize: '0.82rem' }} onClick={() => deletePost(post)}>Удалить</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <PublishTab
+          posts={posts}
+          openPostCreate={openPostCreate}
+          openPostEdit={openPostEdit}
+          deletePost={deletePost}
+          publishPost={publishPost}
+          publishingPostId={publishingPostId}
+        />
       )}
 
       {/* ═══════════ MODALS ═══════════ */}
@@ -1169,6 +837,77 @@ export default function PaidChatsPage() {
           </button>
         </div>
       </Modal>
-    </>
+
+      {/* Notification edit modal */}
+      <Modal isOpen={!!editingNotifType} onClose={() => setEditingNotifType(null)} title={editingNotifType ? EVENT_LABELS[editingNotifType] : 'Уведомление'}>
+        {editingNotifType && (() => {
+          const form = notifForms[editingNotifType] || { message_text: '', is_active: 1 };
+          return (
+            <div className="modal-form">
+              <label className="pc-toggle-label" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={form.is_active === 1 || form.is_active === true}
+                  onChange={e => setNotifForms(prev => ({
+                    ...prev,
+                    [editingNotifType]: { ...form, is_active: e.target.checked ? 1 : 0 }
+                  }))}
+                />
+                <span>Включено</span>
+              </label>
+              <div className="form-group">
+                <label className="form-label">Текст сообщения</label>
+                <RichTextEditor
+                  value={form.message_text}
+                  onChange={text => setNotifForms(prev => ({
+                    ...prev,
+                    [editingNotifType]: { ...form, message_text: text }
+                  }))}
+                  showEmoji={true}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontSize: '0.85rem' }}>Картинка (опционально)</label>
+                <AttachmentPicker
+                  file={notifFiles[editingNotifType] || null}
+                  onFileChange={f => setNotifFiles(prev => ({ ...prev, [editingNotifType]: f }))}
+                  attachType=""
+                  onAttachTypeChange={() => {}}
+                  photoOnly
+                  existingFileInfo={form.file_type || ''}
+                />
+                {form.file_path && !notifFiles[editingNotifType] && (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>Изображение прикреплено ({form.file_type})</span>
+                    <button
+                      className="btn btn-outline" style={{ padding: '2px 6px', fontSize: '0.72rem' }}
+                      onClick={async () => {
+                        try {
+                          const n = notifications.find(n => n.event_type === editingNotifType);
+                          if (n) await api.delete(`/paid-chats/${tc}/notifications/${n.id}/image`);
+                          loadNotifications();
+                          showToast('Изображение удалено');
+                        } catch {}
+                      }}
+                    >Удалить</button>
+                  </div>
+                )}
+              </div>
+              <button
+                className="btn btn-primary"
+                style={{ marginTop: 8 }}
+                onClick={async () => {
+                  await saveNotification(editingNotifType);
+                  setEditingNotifType(null);
+                }}
+                disabled={savingNotif === editingNotifType}
+              >
+                {savingNotif === editingNotifType ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
+          );
+        })()}
+      </Modal>
+    </Paywall>
   );
 }

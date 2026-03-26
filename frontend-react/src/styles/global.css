@@ -1267,6 +1267,13 @@ code.copyable.copied::after {
     font-size: 0.9rem;
     font-weight: 400;
     transition: var(--transition);
+    -webkit-appearance: menulist;
+    appearance: menulist;
+}
+.form-group select option,
+select.form-input option {
+    background: #fff;
+    color: #1f2937;
 }
 
 .form-group input:focus,
@@ -3813,6 +3820,33 @@ code.copyable.copied::after {
 }
 .pc-badge.success { background: rgba(42,157,143,0.15); color: #2a9d8f; }
 .pc-badge.warning { background: rgba(230,57,70,0.15); color: #e63946; }
+.pc-badge.info { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.pc-badge.danger { background: rgba(239,68,68,0.15); color: #ef4444; }
+
+/* Booking calendar cell hover */
+.booking-cell { position: relative; cursor: pointer; transition: background 0.1s; }
+.booking-cell:hover { background: rgba(42,170,238,0.06); }
+.booking-cell .cell-add-btn {
+    display: none;
+    position: absolute; inset: 0;
+    align-items: center; justify-content: center;
+    background: rgba(42,170,238,0.10);
+    font-size: 0.72rem; font-weight: 600; color: var(--primary, #2AABEE);
+    z-index: 1; pointer-events: none;
+}
+.booking-cell:hover .cell-add-btn { display: flex; }
+.booking-cell.has-bookings .cell-add-btn { display: none !important; }
+/* Booking item edit overlay */
+.booking-item { position: relative; }
+.booking-item .item-edit-btn {
+    display: none;
+    position: absolute; inset: 0;
+    align-items: center; justify-content: center;
+    background: rgba(79,70,229,0.85);
+    color: #fff; font-size: 0.68rem; font-weight: 600;
+    border-radius: 3px; z-index: 3; pointer-events: none;
+}
+.booking-item:hover .item-edit-btn { display: flex; }
 .pc-members-table {
     width: 100%;
     border-collapse: collapse;

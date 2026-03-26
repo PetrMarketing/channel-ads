@@ -11,7 +11,7 @@ from ..database import fetch_one, fetch_all, execute, execute_returning_id
 router = APIRouter()
 
 # Columns to return in API responses (excludes file_data BYTEA)
-_LM_COLS = "id, channel_id, code, title, message_text, file_path, file_type, telegram_file_id, attach_type, created_at"
+_LM_COLS = "id, channel_id, code, title, message_text, file_path, file_type, telegram_file_id, attach_type, subscribers_only, created_at"
 _PIN_COLS = "id, channel_id, title, message_text, status, telegram_message_id, lead_magnet_id, inline_buttons, file_path, file_type, button_type, lm_button_text, attach_type, created_at, published_at"
 
 
@@ -42,6 +42,7 @@ async def create_lead_magnet(
     title: str = Form(...),
     message_text: str = Form(""),
     attach_type: Optional[str] = Form(None),
+    subscribers_only: Optional[str] = Form("false"),
     file: Optional[UploadFile] = File(None),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -56,11 +57,12 @@ async def create_lead_magnet(
     if file and file.filename:
         file_path, file_type, file_data = await _save_upload(file)
 
+    subs_only = subscribers_only in ("true", "1", "on", True)
     lm_id = await execute_returning_id(
-        """INSERT INTO lead_magnets (channel_id, code, title, message_text, file_path, file_type, file_data, attach_type)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id""",
+        """INSERT INTO lead_magnets (channel_id, code, title, message_text, file_path, file_type, file_data, attach_type, subscribers_only)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id""",
         int(channel["id"]), code, title, message_text or "", file_path, file_type, file_data,
-        attach_type or None,
+        attach_type or None, subs_only,
     )
     magnet = await fetch_one(f"SELECT {_LM_COLS} FROM lead_magnets WHERE id = $1", lm_id)
     return {"success": True, "leadMagnet": magnet}
@@ -73,6 +75,7 @@ async def update_lead_magnet(
     title: str = Form(...),
     message_text: str = Form(""),
     attach_type: Optional[str] = Form(None),
+    subscribers_only: Optional[str] = Form("false"),
     file: Optional[UploadFile] = File(None),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -84,17 +87,17 @@ async def update_lead_magnet(
     if not existing:
         raise HTTPException(status_code=404, detail="Лид-магнит не найден")
 
+    subs_only = subscribers_only in ("true", "1", "on", True)
     if file and file.filename:
         file_path, file_type, file_data = await _save_upload(file)
-        # Reset cached file IDs so both platforms re-upload the new file
         await execute(
-            "UPDATE lead_magnets SET title=$1, message_text=$2, file_path=$3, file_type=$4, file_data=$5, attach_type=$6, telegram_file_id=NULL, max_file_token=NULL WHERE id=$7",
-            title, message_text or "", file_path, file_type, file_data, attach_type or None, lm_id,
+            "UPDATE lead_magnets SET title=$1, message_text=$2, file_path=$3, file_type=$4, file_data=$5, attach_type=$6, subscribers_only=$7, telegram_file_id=NULL, max_file_token=NULL WHERE id=$8",
+            title, message_text or "", file_path, file_type, file_data, attach_type or None, subs_only, lm_id,
         )
     else:
         await execute(
-            "UPDATE lead_magnets SET title=$1, message_text=$2, attach_type=$3 WHERE id=$4",
-            title, message_text or "", attach_type or None, lm_id,
+            "UPDATE lead_magnets SET title=$1, message_text=$2, attach_type=$3, subscribers_only=$4 WHERE id=$5",
+            title, message_text or "", attach_type or None, subs_only, lm_id,
         )
 
     magnet = await fetch_one(f"SELECT {_LM_COLS} FROM lead_magnets WHERE id = $1", lm_id)
@@ -329,7 +332,7 @@ async def publish_pin(tc: str, pin_id: int, user: Dict[str, Any] = Depends(get_c
     # Resolve lead_magnet buttons to deep links
     inline_buttons = pin.get("inline_buttons")
     if inline_buttons:
-        inline_buttons = await _resolve_buttons(inline_buttons, channel)
+        inline_buttons = await _resolve_buttons(inline_buttons, channel, post_id=pin_id, post_type="pin")
 
     from ..services.messenger import send_to_channel
     import traceback
@@ -418,8 +421,8 @@ async def _get_max_bot_link_id() -> str:
     return _cached_max_bot_link_id or ""
 
 
-async def _resolve_buttons(inline_buttons_json, channel):
-    """Convert lead_magnet buttons to deep-link URL buttons."""
+async def _resolve_buttons(inline_buttons_json, channel, post_id=None, post_type="pin"):
+    """Convert lead_magnet/comments buttons to deep-link URL buttons."""
     import json as _json
     try:
         buttons = _json.loads(inline_buttons_json) if isinstance(inline_buttons_json, str) else inline_buttons_json
@@ -448,6 +451,16 @@ async def _resolve_buttons(inline_buttons_json, channel):
                     deep_url = f"https://t.me/{bot_username}?start=lm_{lm['code']}" if bot_username else ""
                     if deep_url:
                         resolved.append({"text": btn.get("text", "Получить"), "type": "url", "url": deep_url})
+        elif btn_type == "comments" and post_id:
+            if is_max:
+                bot_link_id = await _get_max_bot_link_id()
+                deep_url = f"https://max.ru/id{bot_link_id}_bot?startapp=comments_{post_type}_{post_id}"
+                resolved.append({"text": btn.get("text", "Комментарии"), "type": "link", "url": deep_url})
+            else:
+                bot_username = await _get_tg_bot_username()
+                deep_url = f"https://t.me/{bot_username}?start=comments_{post_type}_{post_id}" if bot_username else ""
+                if deep_url:
+                    resolved.append({"text": btn.get("text", "Комментарии"), "type": "url", "url": deep_url})
         elif btn.get("url"):
             resolved.append(btn)
 

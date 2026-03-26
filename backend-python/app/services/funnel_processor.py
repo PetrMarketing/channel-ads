@@ -25,7 +25,12 @@ _processor_tasks: list = []
 
 
 async def schedule_funnel_for_lead(lead_id: int, lead_magnet_id: int, telegram_id=None, max_user_id=None, platform="telegram"):
-    """Schedule funnel steps for a new lead."""
+    """Schedule funnel steps for a lead. Cancels any pending steps and reschedules from now."""
+    # Remove all previous progress for this lead (pending + sent) to start fresh
+    await execute(
+        "DELETE FROM funnel_progress WHERE lead_id = $1",
+        lead_id,
+    )
     steps = await fetch_all(
         "SELECT * FROM funnel_steps WHERE lead_magnet_id = $1 AND is_active = 1 ORDER BY step_number",
         lead_magnet_id,
@@ -53,15 +58,16 @@ async def schedule_funnel_for_lead(lead_id: int, lead_magnet_id: int, telegram_i
                 pass
         cumulative_seconds += step_delay
         await execute(
-            """INSERT INTO funnel_progress (lead_id, funnel_step_id, telegram_id, max_user_id, platform, scheduled_at)
-               VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '1 second' * $6)
-               ON CONFLICT DO NOTHING""",
+            """INSERT INTO funnel_progress (lead_id, funnel_step_id, telegram_id, max_user_id, platform, scheduled_at, status)
+               VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '1 second' * $6, 'pending')""",
             lead_id, step["id"], telegram_id, max_user_id, platform, cumulative_seconds,
         )
+    if steps:
+        print(f"[FunnelProcessor] Scheduled {len(steps)} steps for lead {lead_id}, lm {lead_magnet_id}")
 
 
 async def process_pending_funnel_messages():
-    """Send due funnel messages."""
+    """Send due funnel messages with concurrency."""
     pending = await fetch_all("""
         SELECT fp.*, fs.message_text, fs.file_path, fs.file_type, fs.telegram_file_id,
                fs.inline_buttons, fs.file_data, fs.attach_type, fs.max_file_token,
@@ -72,117 +78,129 @@ async def process_pending_funnel_messages():
         JOIN leads l ON l.id = fp.lead_id
         WHERE fp.status = 'pending' AND fp.scheduled_at <= NOW()
         ORDER BY fp.scheduled_at
-        LIMIT 50
+        LIMIT 200
     """)
+    if not pending:
+        return
     from .messenger import send_to_user
     from .file_storage import ensure_file
-    for msg in pending:
-        try:
-            user_id = msg.get("lead_tg_id") or msg.get("lead_max_id")
-            platform = msg.get("lead_platform", "telegram")
-            if not user_id:
+    sem = asyncio.Semaphore(10)  # 10 concurrent sends
+
+    async def _send_one(msg):
+        async with sem:
+            try:
+                user_id = msg.get("lead_tg_id") or msg.get("lead_max_id")
+                platform = msg.get("lead_platform", "telegram")
+                if not user_id:
+                    await execute("UPDATE funnel_progress SET status = 'failed' WHERE id = $1", msg["id"])
+                    return
+                msg_file_path = ensure_file(msg.get("file_path"), msg.get("file_data"))
+                await send_to_user(
+                    user_id=user_id, platform=platform,
+                    text=msg.get("message_text", ""),
+                    file_path=msg_file_path, file_type=msg.get("file_type"),
+                    telegram_file_id=msg.get("telegram_file_id"),
+                    inline_buttons=msg.get("inline_buttons"),
+                    attach_type=msg.get("attach_type"),
+                    max_file_token=msg.get("max_file_token"),
+                )
+                await execute("UPDATE funnel_progress SET status = 'sent', sent_at = NOW() WHERE id = $1", msg["id"])
+            except Exception as e:
+                print(f"[FunnelProcessor] Error sending funnel msg {msg['id']}: {e}")
                 await execute("UPDATE funnel_progress SET status = 'failed' WHERE id = $1", msg["id"])
-                continue
-            msg_file_path = ensure_file(msg.get("file_path"), msg.get("file_data"))
-            await send_to_user(
-                user_id=user_id,
-                platform=platform,
-                text=msg.get("message_text", ""),
-                file_path=msg_file_path,
-                file_type=msg.get("file_type"),
-                telegram_file_id=msg.get("telegram_file_id"),
-                inline_buttons=msg.get("inline_buttons"),
-                attach_type=msg.get("attach_type"),
-                max_file_token=msg.get("max_file_token"),
-            )
-            await execute("UPDATE funnel_progress SET status = 'sent', sent_at = NOW() WHERE id = $1", msg["id"])
-        except Exception as e:
-            print(f"[FunnelProcessor] Error sending funnel msg {msg['id']}: {e}")
-            await execute("UPDATE funnel_progress SET status = 'failed' WHERE id = $1", msg["id"])
+
+    await asyncio.gather(*[_send_one(m) for m in pending])
 
 
-async def process_scheduled_broadcasts():
-    """Send scheduled broadcasts that are due."""
-    broadcasts = await fetch_all("""
-        SELECT * FROM broadcasts
-        WHERE status = 'scheduled' AND scheduled_at <= NOW()
-    """)
-    for bc in broadcasts:
+_BROADCAST_CONCURRENCY = 5  # concurrent sends per broadcast (MAX API allows ~5-10 req/sec)
+
+
+async def _get_broadcast_leads(bc):
+    """Get recipients for a broadcast based on filter rules."""
+    filter_rules_raw = bc.get("filter_rules")
+    filter_rules = None
+    if filter_rules_raw:
         try:
-            await execute("UPDATE broadcasts SET status = 'sending', started_at = NOW() WHERE id = $1", bc["id"])
-            # Determine recipients — apply filter_rules if present
-            filter_rules_raw = bc.get("filter_rules")
+            filter_rules = json.loads(filter_rules_raw) if isinstance(filter_rules_raw, str) else filter_rules_raw
+        except (json.JSONDecodeError, TypeError):
             filter_rules = None
-            if filter_rules_raw:
-                try:
-                    filter_rules = json.loads(filter_rules_raw) if isinstance(filter_rules_raw, str) else filter_rules_raw
-                except (json.JSONDecodeError, TypeError):
-                    filter_rules = None
 
-            if filter_rules and isinstance(filter_rules, (dict, list)):
-                base_query = "SELECT * FROM leads WHERE lead_magnet_id IN (SELECT id FROM lead_magnets WHERE channel_id = $1)"
-                query_params = [bc["channel_id"]]
-                idx = 2
-                if isinstance(filter_rules, list):
-                    for rule in filter_rules:
-                        field = rule.get("field")
-                        op = rule.get("operator", "equals")
-                        value = rule.get("value")
-                        if not field or value is None:
-                            continue
-                        if field == "platform" and op == "equals":
-                            base_query += f" AND platform = ${idx}"
-                            query_params.append(value)
-                            idx += 1
-                        elif field == "lead_magnet_id" and op == "equals":
-                            base_query += f" AND lead_magnet_id = ${idx}"
-                            query_params.append(int(value))
-                            idx += 1
-                        elif field == "registration_date" and op == "after":
-                            base_query += f" AND claimed_at >= ${idx}"
-                            query_params.append(_parse_date_value(value) or value)
-                            idx += 1
-                        elif field == "registration_date" and op == "before":
-                            base_query += f" AND claimed_at <= ${idx}"
-                            query_params.append(_parse_date_value(value) or value)
-                            idx += 1
-                elif isinstance(filter_rules, dict):
-                    if filter_rules.get("platform"):
-                        base_query += f" AND platform = ${idx}"
-                        query_params.append(filter_rules["platform"])
-                        idx += 1
-                    if filter_rules.get("lead_magnet_id"):
-                        base_query += f" AND lead_magnet_id = ${idx}"
-                        query_params.append(int(filter_rules["lead_magnet_id"]))
-                        idx += 1
-                    if filter_rules.get("claimed_after"):
-                        base_query += f" AND claimed_at >= ${idx}"
-                        query_params.append(_parse_date_value(filter_rules["claimed_after"]) or filter_rules["claimed_after"])
-                        idx += 1
-                    if filter_rules.get("claimed_before"):
-                        base_query += f" AND claimed_at <= ${idx}"
-                        query_params.append(_parse_date_value(filter_rules["claimed_before"]) or filter_rules["claimed_before"])
-                        idx += 1
-                leads = await fetch_all(base_query, *query_params)
-            elif bc.get("target_type") == "all_leads":
-                leads = await fetch_all(
-                    "SELECT * FROM leads WHERE lead_magnet_id IN (SELECT id FROM lead_magnets WHERE channel_id = $1)",
-                    bc["channel_id"],
-                )
-            else:
-                leads = await fetch_all(
-                    "SELECT * FROM leads WHERE lead_magnet_id = $1",
-                    bc.get("target_lead_magnet_id"),
-                )
-            total = len(leads)
-            sent = 0
-            failed = 0
-            from .messenger import send_to_user
-            from .file_storage import ensure_file
-            bc_file_path = ensure_file(bc.get("file_path"), bc.get("file_data"))
-            cached_tg_file_id = bc.get("telegram_file_id")
-            cached_max_token = bc.get("max_file_token")
-            for lead in leads:
+    if filter_rules and isinstance(filter_rules, (dict, list)):
+        base_query = "SELECT * FROM leads WHERE lead_magnet_id IN (SELECT id FROM lead_magnets WHERE channel_id = $1)"
+        query_params = [bc["channel_id"]]
+        idx = 2
+        if isinstance(filter_rules, list):
+            for rule in filter_rules:
+                field = rule.get("field")
+                op = rule.get("operator", "equals")
+                value = rule.get("value")
+                if not field or value is None:
+                    continue
+                if field == "platform" and op == "equals":
+                    base_query += f" AND platform = ${idx}"
+                    query_params.append(value)
+                    idx += 1
+                elif field == "lead_magnet_id" and op == "equals":
+                    base_query += f" AND lead_magnet_id = ${idx}"
+                    query_params.append(int(value))
+                    idx += 1
+                elif field == "registration_date" and op == "after":
+                    base_query += f" AND claimed_at >= ${idx}"
+                    query_params.append(_parse_date_value(value) or value)
+                    idx += 1
+                elif field == "registration_date" and op == "before":
+                    base_query += f" AND claimed_at <= ${idx}"
+                    query_params.append(_parse_date_value(value) or value)
+                    idx += 1
+        elif isinstance(filter_rules, dict):
+            if filter_rules.get("platform"):
+                base_query += f" AND platform = ${idx}"
+                query_params.append(filter_rules["platform"])
+                idx += 1
+            if filter_rules.get("lead_magnet_id"):
+                base_query += f" AND lead_magnet_id = ${idx}"
+                query_params.append(int(filter_rules["lead_magnet_id"]))
+                idx += 1
+            if filter_rules.get("claimed_after"):
+                base_query += f" AND claimed_at >= ${idx}"
+                query_params.append(_parse_date_value(filter_rules["claimed_after"]) or filter_rules["claimed_after"])
+                idx += 1
+            if filter_rules.get("claimed_before"):
+                base_query += f" AND claimed_at <= ${idx}"
+                query_params.append(_parse_date_value(filter_rules["claimed_before"]) or filter_rules["claimed_before"])
+                idx += 1
+        return await fetch_all(base_query, *query_params)
+    elif bc.get("target_type") == "all_leads":
+        return await fetch_all(
+            "SELECT * FROM leads WHERE lead_magnet_id IN (SELECT id FROM lead_magnets WHERE channel_id = $1)",
+            bc["channel_id"],
+        )
+    else:
+        return await fetch_all(
+            "SELECT * FROM leads WHERE lead_magnet_id = $1",
+            bc.get("target_lead_magnet_id"),
+        )
+
+
+async def _send_broadcast(bc):
+    """Send a single broadcast to all its recipients concurrently."""
+    try:
+        await execute("UPDATE broadcasts SET status = 'sending', started_at = NOW() WHERE id = $1", bc["id"])
+        leads = await _get_broadcast_leads(bc)
+        total = len(leads)
+        sent = 0
+        failed = 0
+        from .messenger import send_to_user
+        from .file_storage import ensure_file
+        bc_file_path = ensure_file(bc.get("file_path"), bc.get("file_data"))
+        cached_tg_file_id = bc.get("telegram_file_id")
+        cached_max_token = bc.get("max_file_token")
+        sem = asyncio.Semaphore(_BROADCAST_CONCURRENCY)
+        lock = asyncio.Lock()
+
+        async def _send_one(lead):
+            nonlocal sent, failed, cached_tg_file_id, cached_max_token
+            async with sem:
                 try:
                     uid = lead.get("telegram_id") or lead.get("max_user_id")
                     plat = lead.get("platform", "telegram")
@@ -197,42 +215,61 @@ async def process_scheduled_broadcasts():
                             attach_type=bc.get("attach_type"),
                             max_file_token=cached_max_token,
                         )
-                        sent += 1
-                        # Cache file IDs after first successful send
-                        if isinstance(result, dict) and bc_file_path:
-                            if plat == "telegram" and not cached_tg_file_id:
-                                r = result.get("result", {})
-                                for key in ("document", "photo", "video", "audio", "voice"):
-                                    obj = r.get(key)
-                                    if obj:
-                                        fid = obj.get("file_id") if isinstance(obj, dict) else (obj[-1].get("file_id") if isinstance(obj, list) and obj else None)
-                                        if fid:
-                                            cached_tg_file_id = fid
+                        async with lock:
+                            sent += 1
+                            # Cache file IDs after first successful send
+                            if isinstance(result, dict) and bc_file_path:
+                                if plat == "telegram" and not cached_tg_file_id:
+                                    r = result.get("result", {})
+                                    for key in ("document", "photo", "video", "audio", "voice"):
+                                        obj = r.get(key)
+                                        if obj:
+                                            fid = obj.get("file_id") if isinstance(obj, dict) else (obj[-1].get("file_id") if isinstance(obj, list) and obj else None)
+                                            if fid:
+                                                cached_tg_file_id = fid
+                                                break
+                                elif plat == "max" and not cached_max_token:
+                                    body = result.get("data", result) if isinstance(result, dict) else {}
+                                    for att in (body.get("body", {}).get("attachments") or body.get("attachments") or []):
+                                        tok = att.get("payload", {}).get("token")
+                                        if tok:
+                                            cached_max_token = tok
                                             break
-                            elif plat == "max" and not cached_max_token:
-                                body = result.get("data", result) if isinstance(result, dict) else {}
-                                for att in (body.get("body", {}).get("attachments") or body.get("attachments") or []):
-                                    tok = att.get("payload", {}).get("token")
-                                    if tok:
-                                        cached_max_token = tok
-                                        break
                     else:
-                        failed += 1
-                    await asyncio.sleep(0.05)  # rate limiting
+                        async with lock:
+                            failed += 1
                 except Exception:
-                    failed += 1
-            # Persist cached file IDs
-            if cached_tg_file_id and cached_tg_file_id != bc.get("telegram_file_id"):
-                await execute("UPDATE broadcasts SET telegram_file_id = $1 WHERE id = $2", cached_tg_file_id, bc["id"])
-            if cached_max_token and cached_max_token != bc.get("max_file_token"):
-                await execute("UPDATE broadcasts SET max_file_token = $1 WHERE id = $2", cached_max_token, bc["id"])
-            await execute(
-                "UPDATE broadcasts SET status = 'completed', completed_at = NOW(), sent_count = $1, failed_count = $2, total_count = $3 WHERE id = $4",
-                sent, failed, total, bc["id"],
-            )
-        except Exception as e:
-            print(f"[FunnelProcessor] Broadcast {bc['id']} error: {e}")
-            await execute("UPDATE broadcasts SET status = 'failed' WHERE id = $1", bc["id"])
+                    async with lock:
+                        failed += 1
+
+        # Send all in parallel with semaphore
+        await asyncio.gather(*[_send_one(lead) for lead in leads])
+
+        # Persist cached file IDs
+        if cached_tg_file_id and cached_tg_file_id != bc.get("telegram_file_id"):
+            await execute("UPDATE broadcasts SET telegram_file_id = $1 WHERE id = $2", cached_tg_file_id, bc["id"])
+        if cached_max_token and cached_max_token != bc.get("max_file_token"):
+            await execute("UPDATE broadcasts SET max_file_token = $1 WHERE id = $2", cached_max_token, bc["id"])
+        await execute(
+            "UPDATE broadcasts SET status = 'completed', completed_at = NOW(), sent_count = $1, failed_count = $2, total_count = $3 WHERE id = $4",
+            sent, failed, total, bc["id"],
+        )
+        print(f"[Broadcast] #{bc['id']} done: {sent}/{total} sent, {failed} failed")
+    except Exception as e:
+        print(f"[Broadcast] #{bc['id']} error: {e}")
+        await execute("UPDATE broadcasts SET status = 'failed' WHERE id = $1", bc["id"])
+
+
+async def process_scheduled_broadcasts():
+    """Send scheduled broadcasts — multiple broadcasts run in parallel."""
+    broadcasts = await fetch_all("""
+        SELECT * FROM broadcasts
+        WHERE status = 'scheduled' AND scheduled_at <= NOW()
+    """)
+    if not broadcasts:
+        return
+    # Run all due broadcasts in parallel
+    await asyncio.gather(*[_send_broadcast(bc) for bc in broadcasts])
 
 
 async def process_scheduled_posts():

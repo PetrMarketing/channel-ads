@@ -66,6 +66,25 @@ export default function SubscribePage() {
     };
   }, [info]);
 
+  // Inject VK Pixel script
+  useEffect(() => {
+    if (!info) return;
+    const pixelId = info.vk_pixel_id;
+    if (!pixelId) return;
+
+    window._tmr = window._tmr || [];
+    window._tmr.push({ id: pixelId, type: 'pageView', start: Date.now() });
+
+    const script = document.createElement('script');
+    script.src = 'https://top-fwz1.mail.ru/js/code.js';
+    script.async = true;
+    document.head.appendChild(script);
+
+    return () => {
+      try { document.head.removeChild(script); } catch {}
+    };
+  }, [info]);
+
   // Poll for subscription confirmation
   useEffect(() => {
     if (!visitId || subscribed) return;
@@ -75,11 +94,17 @@ export default function SubscribePage() {
         if (data.subscribed) {
           setSubscribed(true);
           clearInterval(interval);
-          // Fire Metrika goal
+          // Fire Yandex Metrika goal
           const counterId = info?.ym_counter_id || info?.yandex_metrika_id;
           const goalName = info?.ym_goal_name || 'subscribe_channel';
           if (counterId && window.ym) {
             try { window.ym(Number(counterId), 'reachGoal', goalName); } catch {}
+          }
+          // Fire VK Pixel goal
+          const vkPixelId = info?.vk_pixel_id;
+          const vkGoalName = info?.vk_goal_name || 'subscribe_channel';
+          if (vkPixelId && window._tmr) {
+            try { window._tmr.push({ id: vkPixelId, type: 'reachGoal', goal: vkGoalName }); } catch {}
           }
         }
       } catch {}

@@ -17,7 +17,7 @@ export default function LinksPage() {
   const [showMetrikaModal, setShowMetrikaModal] = useState(false);
   const [editingLink, setEditingLink] = useState(null);
   const [metrikaLink, setMetrikaLink] = useState(null);
-  const [metrikaForm, setMetrikaForm] = useState({ ym_counter_id: '', ym_goal_name: '' });
+  const [metrikaForm, setMetrikaForm] = useState({ ym_counter_id: '', ym_goal_name: '', vk_pixel_id: '', vk_goal_name: '' });
   const [form, setForm] = useState({ name: '', link_type: 'landing', utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' });
   const [saving, setSaving] = useState(false);
 
@@ -63,6 +63,8 @@ export default function LinksPage() {
     setMetrikaForm({
       ym_counter_id: link.ym_counter_id || currentChannel?.yandex_metrika_id || '',
       ym_goal_name: link.ym_goal_name || 'subscribe_channel',
+      vk_pixel_id: link.vk_pixel_id || currentChannel?.vk_pixel_id || '',
+      vk_goal_name: link.vk_goal_name || 'subscribe_channel',
     });
     setShowMetrikaModal(true);
   };
@@ -205,7 +207,8 @@ export default function LinksPage() {
                       <span>Визиты: <b>{link.visit_count ?? 0}</b></span>
                       <span>Подписки: <b>{link.sub_count ?? 0}</b></span>
                       {link.utm_source && <span>UTM: {link.utm_source}</span>}
-                      {link.ym_counter_id && <span>Метрика: {link.ym_counter_id}</span>}
+                      {link.ym_counter_id && <span>YM: {link.ym_counter_id}</span>}
+                      {link.vk_pixel_id && <span>VK: {link.vk_pixel_id}</span>}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -217,7 +220,7 @@ export default function LinksPage() {
                     </button>
                     {link.link_type === 'landing' && (
                       <button className="btn btn-outline" style={btnSmall} onClick={() => openMetrika(link)}>
-                        Метрика
+                        Пиксели
                       </button>
                     )}
                     <button className="btn btn-outline" style={btnSmall} onClick={() => handleTogglePause(link)}>
@@ -321,16 +324,17 @@ export default function LinksPage() {
         </Modal>
 
         {/* Metrika Settings Modal */}
-        <Modal isOpen={showMetrikaModal} onClose={() => setShowMetrikaModal(false)} title="Настройки Яндекс Метрики">
+        <Modal isOpen={showMetrikaModal} onClose={() => setShowMetrikaModal(false)} title="Аналитика и пиксели">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ padding: '12px', background: 'rgba(139,92,246,0.06)', borderRadius: 'var(--radius)', border: '1px solid rgba(139,92,246,0.15)' }}>
               <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: 0 }}>
-                Укажите ID счётчика Яндекс Метрики и название цели. Счётчик автоматически подставляется
-                на страницу подписки. При подписке создаётся офлайн-конверсия.
+                Счётчики автоматически устанавливаются на страницу подписки. При подписке отправляется событие (цель).
               </p>
             </div>
+
+            <h4 style={{ margin: '4px 0 0', fontSize: '0.9rem' }}>Яндекс Метрика</h4>
             <div>
-              <label className="form-label">ID счётчика Метрики</label>
+              <label className="form-label">ID счётчика</label>
               <input className="form-input" placeholder="12345678" value={metrikaForm.ym_counter_id}
                 onChange={e => setMetrikaForm(p => ({ ...p, ym_counter_id: e.target.value }))} />
               {currentChannel?.yandex_metrika_id && !metrikaForm.ym_counter_id && (
@@ -343,6 +347,23 @@ export default function LinksPage() {
               <label className="form-label">Название цели</label>
               <input className="form-input" placeholder="subscribe_channel" value={metrikaForm.ym_goal_name}
                 onChange={e => setMetrikaForm(p => ({ ...p, ym_goal_name: e.target.value }))} />
+            </div>
+
+            <h4 style={{ margin: '8px 0 0', fontSize: '0.9rem' }}>Пиксель VK Рекламы</h4>
+            <div>
+              <label className="form-label">ID пикселя VK</label>
+              <input className="form-input" placeholder="3751584" value={metrikaForm.vk_pixel_id}
+                onChange={e => setMetrikaForm(p => ({ ...p, vk_pixel_id: e.target.value }))} />
+              {currentChannel?.vk_pixel_id && !metrikaForm.vk_pixel_id && (
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  Используется пиксель канала: {currentChannel.vk_pixel_id}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="form-label">Название цели VK</label>
+              <input className="form-input" placeholder="subscribe_channel" value={metrikaForm.vk_goal_name}
+                onChange={e => setMetrikaForm(p => ({ ...p, vk_goal_name: e.target.value }))} />
             </div>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button className="btn btn-outline" onClick={() => setShowMetrikaModal(false)}>Отмена</button>

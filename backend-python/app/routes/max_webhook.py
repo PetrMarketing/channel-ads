@@ -77,7 +77,7 @@ async def handle_lead_magnet(max_api, chat_id: str, max_user_id: str, username: 
     # Strip lm_ prefix if present (deep links use ?start=lm_CODE)
     lm_code = code[3:] if code.startswith("lm_") else code
     lm = await fetch_one("""
-        SELECT lm.*, c.title as channel_title
+        SELECT lm.*, c.title as channel_title, c.max_chat_id
         FROM lead_magnets lm JOIN channels c ON c.id = lm.channel_id
         WHERE lm.code = $1
     """, lm_code)
@@ -87,15 +87,44 @@ async def handle_lead_magnet(max_api, chat_id: str, max_user_id: str, username: 
 
     await _find_or_create_max_user(max_user_id, first_name, dialog_chat_id=chat_id)
 
+    # Check subscription if required
+    if lm.get("subscribers_only") and lm.get("max_chat_id"):
+        try:
+            is_member = await max_api.is_user_member(str(lm["max_chat_id"]), str(max_user_id))
+        except Exception as e:
+            print(f"[MAX Bot] Subscription check error: {e}")
+            is_member = False
+        if not is_member:
+            channel_title = lm.get("channel_title") or "канал"
+            # Get channel link for button
+            channel_link = None
+            try:
+                ch_info = await max_api.get_chat(str(lm["max_chat_id"]))
+                if ch_info.get("success"):
+                    channel_link = ch_info.get("data", {}).get("link")
+            except:
+                pass
+            btns = []
+            if channel_link:
+                btns.append([{"type": "link", "text": f"Подписаться на {channel_title}", "url": channel_link}])
+            btns.append([{"type": "callback", "text": "✅ Я подписался", "payload": f"lm_{lm_code}"}])
+            await _send_to_chat(max_api, chat_id,
+                f"📢 Чтобы получить материал, сначала подпишитесь на канал **{channel_title}**.",
+                buttons=btns)
+            return
+
     existing = await fetch_one("SELECT id FROM leads WHERE lead_magnet_id = $1 AND max_user_id = $2", lm["id"], max_user_id)
-    if not existing:
+    if existing:
+        lead_id = existing["id"]
+    else:
         lead_id = await execute_returning_id(
             "INSERT INTO leads (lead_magnet_id, telegram_id, max_user_id, username, first_name, platform) VALUES ($1, NULL, $2, $3, $4, 'max') ON CONFLICT DO NOTHING RETURNING id",
             lm["id"], max_user_id, username, first_name,
         )
-        if lead_id:
-            from ..services.funnel_processor import schedule_funnel_for_lead
-            await schedule_funnel_for_lead(lead_id, lm["id"], max_user_id=max_user_id, platform="max")
+    # Always schedule funnel (reschedules from now, cancels old pending)
+    if lead_id:
+        from ..services.funnel_processor import schedule_funnel_for_lead
+        await schedule_funnel_for_lead(lead_id, lm["id"], max_user_id=max_user_id, platform="max")
 
     from ..services.messenger import html_to_max_markdown, sanitize_html_for_telegram
     text = html_to_max_markdown(sanitize_html_for_telegram(lm.get("message_text") or f'📎 Ваш материал: "{lm.get("title", "")}"'))

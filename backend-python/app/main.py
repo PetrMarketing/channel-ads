@@ -29,7 +29,7 @@ from .routes import (
     auth, channels, links, tracking, billing, pins, broadcasts,
     funnels, content, giveaways, notifications, payments,
     max_routes, telegram_bot, max_webhook,
-    admin, paid_chats, paid_chat_payments,
+    admin, paid_chats, paid_chat_payments, services,
 )
 
 
@@ -53,6 +53,8 @@ async def lifespan(app: FastAPI):
 
     from .services.channel_activator import start_channel_activator
     start_channel_activator()
+    from .services.analytics_collector import start_analytics_collector
+    start_analytics_collector()
 
     # Start bot polling
     from .routes.telegram_bot import start_telegram_polling
@@ -124,6 +126,10 @@ app.include_router(max_routes.router, prefix="/api/max", tags=["max"])
 app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(paid_chats.router, prefix="/api/paid-chats", tags=["paid-chats"])
+app.include_router(services.router, prefix="/api/services", tags=["services"])
+from .routes import analytics, comments
+app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(comments.router, prefix="/api/comments", tags=["comments"])
 app.include_router(telegram_bot.router, prefix="/api/telegram", tags=["telegram-bot"])
 
 # ========================
@@ -133,6 +139,8 @@ app.include_router(tracking.router, prefix="/api/track", tags=["tracking"])
 app.include_router(max_webhook.router, prefix="/webhook/max", tags=["max-webhook"])
 app.include_router(billing.public_router, prefix="/api/billing/public", tags=["billing-public"])
 app.include_router(billing.staff_invite_router, prefix="/api/staff", tags=["staff-invites"])
+app.include_router(services.public_router, prefix="/api/services/public", tags=["services-public"])
+app.include_router(comments.public_router, prefix="/api/comments/public", tags=["comments-public"])
 app.include_router(paid_chat_payments.router, prefix="/api/paid-chat-pay", tags=["paid-chat-pay"])
 
 
@@ -261,6 +269,19 @@ async def miniapp_page(request: Request, code: str = ""):
     # Also check query param
     if not code:
         code = request.query_params.get("WebAppStartParam", "") or request.query_params.get("code", "")
+    # Handle comments_ prefix — redirect to comments miniapp
+    if code.startswith("comments_"):
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(f"/comments-app/{code}", status_code=302)
+    # Handle book_ prefix — redirect to booking miniapp
+    if code.startswith("book_"):
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(f"/booking/{code}", status_code=302)
+    # Handle paid_ prefix — redirect to payment page
+    if code.startswith("paid_"):
+        tc_val = code[5:]
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(f"/pay/{tc_val}", status_code=302)
     clean_code = code.replace("go_", "") if code.startswith("go_") else code
     # Meta refresh fallback: if JS fails completely, redirect via /go/ after 6 seconds
     meta_refresh = f'<meta http-equiv="refresh" content="6;url=/go/{clean_code}">' if clean_code else ''
@@ -300,6 +321,22 @@ async function doRedirect() {
     if (!startParam) {
       document.querySelector('p').textContent = 'Загрузка...';
       return false;
+    }
+
+    // Handle comments_ prefix
+    if (startParam.startsWith('comments_')) {
+      window.location.href = '/comments-app/' + startParam;
+      return true;
+    }
+    // Handle book_ prefix — redirect to booking page
+    if (startParam.startsWith('book_')) {
+      window.location.href = '/booking/' + startParam;
+      return true;
+    }
+    // Handle paid_ prefix — redirect to payment page
+    if (startParam.startsWith('paid_')) {
+      window.location.href = '/pay/' + startParam.slice(5);
+      return true;
     }
 
     const code = startParam.startsWith('go_') ? startParam.slice(3) : startParam;
@@ -385,6 +422,577 @@ const fallbackTimer = setTimeout(() => {
 </script>
 </body></html>"""
     html = html.replace('__META_REFRESH__', meta_refresh).replace('__SERVER_CODE__', code)
+    return HTMLResponse(html)
+
+
+@app.get("/comments-app")
+@app.get("/comments-app/{params}")
+async def comments_app_page(request: Request, params: str = ""):
+    """Comments miniapp — view and add comments to a post."""
+    from fastapi.responses import HTMLResponse
+    if not params:
+        params = request.query_params.get("WebAppStartParam", "") or request.query_params.get("startapp", "") or ""
+    # Parse comments_{post_type}_{post_id}  e.g. comments_content_42
+    post_type = "content"
+    post_id = ""
+    if params.startswith("comments_"):
+        parts = params[9:].split("_", 1)
+        if len(parts) == 2:
+            post_type = parts[0]
+            post_id = parts[1]
+        elif len(parts) == 1:
+            post_id = parts[0]
+
+    html = f"""<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<script src="https://st.max.ru/js/max-web-app.js"></script>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#1f2937}}
+.app{{max-width:480px;margin:0 auto;min-height:100vh;background:#fff;display:flex;flex-direction:column}}
+.header{{padding:16px 20px;text-align:center;color:#fff;position:sticky;top:0;z-index:10}}
+.header h1{{font-size:1.1rem;font-weight:600}}
+.header p{{font-size:0.82rem;opacity:0.85;margin-top:2px}}
+.comments-list{{padding:12px 16px;flex:1;overflow-y:auto;padding-bottom:80px}}
+.comment{{padding:12px;border-bottom:1px solid #f0f0f0}}
+.comment:last-child{{border-bottom:none}}
+.comment-author{{font-weight:600;font-size:0.9rem;color:#374151}}
+.comment-time{{font-size:0.72rem;color:#9ca3af;margin-left:8px}}
+.comment-text{{font-size:0.9rem;margin-top:4px;line-height:1.5;color:#4b5563}}
+.compose{{position:fixed;bottom:0;left:0;right:0;max-width:480px;margin:0 auto;background:#fff;border-top:1px solid #e5e7eb;padding:12px 16px;display:flex;gap:8px;z-index:20}}
+.compose input{{flex:1;padding:10px 14px;border:1px solid #e5e7eb;border-radius:20px;font-size:0.9rem;outline:none}}
+.compose input:focus{{border-color:var(--pc,#4F46E5)}}
+.compose button{{padding:10px 20px;border:none;border-radius:20px;font-weight:600;font-size:0.9rem;cursor:pointer;color:#fff}}
+.compose button:disabled{{opacity:0.5}}
+.empty{{text-align:center;padding:40px 20px;color:#9ca3af;font-size:0.9rem}}
+.loading{{text-align:center;padding:40px;color:#9ca3af}}
+.spinner{{width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:var(--pc,#4F46E5);border-radius:50%;animation:sp .6s linear infinite;margin:0 auto 8px}}
+@keyframes sp{{to{{transform:rotate(360deg)}}}}
+.avatar{{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:0.85rem;flex-shrink:0;object-fit:cover}}
+.comment-row{{display:flex;gap:10px;align-items:flex-start}}
+</style>
+</head><body>
+<div class="app" id="app"><div class="loading"><div class="spinner"></div><p>Загрузка...</p></div></div>
+<script>
+const API = '/api/comments/public';
+const POST_TYPE = '{post_type}';
+const POST_ID = '{post_id}';
+let userName = '';
+let maxUserId = '';
+let userPhoto = '';
+let channelTitle = '';
+let pc = '#4F46E5';
+
+function esc(s) {{ return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }}
+
+async function init() {{
+  if (window.WebApp) {{
+    try {{ window.WebApp.ready(); }} catch(e) {{}}
+    const u = window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user;
+    if (u) {{
+      userName = ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
+      maxUserId = String(u.user_id || u.id || '');
+      userPhoto = u.avatar_url || u.photo_url || '';
+    }}
+  }}
+  try {{
+    const r = await fetch(API + '/' + POST_TYPE + '/' + POST_ID);
+    const data = await r.json();
+    if (data.success) {{
+      channelTitle = data.channel_title || '';
+      const s = data.settings || {{}};
+      pc = s.primary_color || '#4F46E5';
+      document.documentElement.style.setProperty('--pc', pc);
+      render(data.comments || []);
+    }} else {{
+      document.getElementById('app').innerHTML = '<div class="empty">Пост не найден</div>';
+    }}
+  }} catch(e) {{
+    document.getElementById('app').innerHTML = '<div class="empty">Ошибка загрузки</div>';
+  }}
+}}
+
+function render(comments) {{
+  const app = document.getElementById('app');
+  let h = '<div class="header" style="background:' + pc + '">';
+  h += '<h1>Комментарии</h1>';
+  if (channelTitle) h += '<p>' + esc(channelTitle) + '</p>';
+  h += '</div>';
+  h += '<div class="comments-list">';
+  if (!comments.length) {{
+    h += '<div class="empty">Пока нет комментариев. Будьте первым!</div>';
+  }}
+  const colors = ['#4F46E5','#7C3AED','#2563EB','#0891B2','#059669','#D97706','#DC2626'];
+  comments.forEach((c, i) => {{
+    const color = colors[(c.user_name || '').charCodeAt(0) % colors.length];
+    const letter = (c.user_name || 'А')[0].toUpperCase();
+    const time = c.created_at ? new Date(c.created_at).toLocaleString('ru-RU', {{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}}) : '';
+    h += '<div class="comment"><div class="comment-row">';
+    if (c.user_avatar) {{
+      h += '<img class="avatar" src="' + esc(c.user_avatar) + '" alt="">';
+    }} else {{
+      h += '<div class="avatar" style="background:' + color + '">' + esc(letter) + '</div>';
+    }}
+    h += '<div><span class="comment-author">' + esc(c.user_name || 'Аноним') + '</span>';
+    h += '<span class="comment-time">' + time + '</span>';
+    h += '<div class="comment-text">' + esc(c.comment_text) + '</div>';
+    h += '</div></div></div>';
+  }});
+  h += '</div>';
+  h += '<div class="compose">';
+  h += '<input id="c-input" placeholder="Написать комментарий..." maxlength="500">';
+  h += '<button id="c-btn" style="background:' + pc + '" onclick="send()">→</button>';
+  h += '</div>';
+  app.innerHTML = h;
+  // Enter to send
+  document.getElementById('c-input').addEventListener('keydown', function(e) {{
+    if (e.key === 'Enter') send();
+  }});
+}}
+
+async function send() {{
+  const input = document.getElementById('c-input');
+  const btn = document.getElementById('c-btn');
+  const text = input.value.trim();
+  if (!text) return;
+  btn.disabled = true;
+  try {{
+    const r = await fetch(API + '/' + POST_TYPE + '/' + POST_ID, {{
+      method: 'POST',
+      headers: {{'Content-Type':'application/json'}},
+      body: JSON.stringify({{comment_text: text, user_name: userName, max_user_id: maxUserId, user_avatar: userPhoto}})
+    }});
+    const data = await r.json();
+    if (data.success) {{
+      input.value = '';
+      // Reload comments
+      const r2 = await fetch(API + '/' + POST_TYPE + '/' + POST_ID);
+      const d2 = await r2.json();
+      if (d2.success) render(d2.comments || []);
+      // Scroll to bottom
+      window.scrollTo(0, document.body.scrollHeight);
+    }} else {{
+      alert(data.detail || 'Ошибка');
+    }}
+  }} catch(e) {{ alert('Ошибка: ' + e.message); }}
+  finally {{ btn.disabled = false; }}
+}}
+
+init();
+</script>
+</body></html>"""
+    return HTMLResponse(html)
+
+
+@app.get("/booking")
+@app.get("/booking/{params}")
+async def booking_page(request: Request, params: str = ""):
+    """Booking miniapp — standalone SPA for service booking."""
+    from fastapi.responses import HTMLResponse
+    if not params:
+        params = request.query_params.get("WebAppStartParam", "") or request.query_params.get("startapp", "") or ""
+    # Parse book_{tc} or book_{tc}_{branch_id}
+    tc = ""
+    branch_id = ""
+    if params.startswith("book_"):
+        parts = params[5:].split("_", 1)
+        tc = parts[0] if parts else ""
+        branch_id = parts[1] if len(parts) > 1 else ""
+    elif params:
+        tc = params
+
+    html = f"""<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<script src="https://st.max.ru/js/max-web-app.js"></script>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#1f2937}}
+.app{{max-width:480px;margin:0 auto;min-height:100vh;background:#fff}}
+.header{{padding:16px 20px;text-align:center;color:#fff;position:sticky;top:0;z-index:10}}
+.header h1{{font-size:1.2rem;font-weight:600}}
+.header p{{font-size:0.85rem;opacity:0.85;margin-top:4px}}
+.section{{padding:12px 16px}}
+.section h2{{font-size:1rem;font-weight:600;margin-bottom:10px;color:#374151}}
+.card{{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;transition:all .15s}}
+.card:hover,.card.selected{{border-color:var(--pc,#4F46E5);box-shadow:0 0 0 2px rgba(79,70,229,0.15)}}
+.card .name{{font-weight:600;font-size:0.95rem}}
+.card .meta{{font-size:0.82rem;color:#6b7280;margin-top:4px}}
+.card .price{{font-weight:700;color:var(--pc,#4F46E5);font-size:1.05rem;margin-top:4px}}
+.slots-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}}
+.slot{{padding:8px 4px;text-align:center;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;font-size:0.85rem;transition:all .15s}}
+.slot:hover,.slot.selected{{background:var(--pc,#4F46E5);color:#fff;border-color:var(--pc,#4F46E5)}}
+.btn{{display:block;width:100%;padding:14px;border:none;border-radius:12px;font-size:1rem;font-weight:600;cursor:pointer;color:#fff;transition:opacity .15s}}
+.btn:disabled{{opacity:0.5}}
+.form-input{{width:100%;padding:10px 14px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.95rem;margin-bottom:10px;outline:none}}
+.form-input:focus{{border-color:var(--pc,#4F46E5)}}
+.form-label{{display:block;font-size:0.85rem;font-weight:500;margin-bottom:4px;color:#374151}}
+.dates-row{{display:flex;gap:6px;overflow-x:auto;padding:4px 0;margin-bottom:10px;-webkit-overflow-scrolling:touch}}
+.date-btn{{flex-shrink:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;text-align:center;font-size:0.82rem;transition:all .15s}}
+.date-btn:hover,.date-btn.selected{{background:var(--pc,#4F46E5);color:#fff;border-color:var(--pc,#4F46E5)}}
+.date-btn.disabled{{opacity:0.35;pointer-events:none;background:#f3f4f6}}
+.date-btn .day{{font-weight:600;font-size:0.9rem}}
+.date-btn .weekday{{font-size:0.72rem;color:#6b7280}}
+.date-btn.selected .weekday{{color:rgba(255,255,255,0.8)}}
+.date-btn.today{{border-color:var(--pc,#4F46E5)}}
+.cal-overlay{{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;display:flex;align-items:center;justify-content:center}}
+.cal-box{{background:#fff;border-radius:16px;padding:16px;width:320px;max-width:90vw}}
+.cal-nav{{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}}
+.cal-nav button{{background:none;border:none;font-size:1.2rem;cursor:pointer;padding:4px 8px;color:#374151}}
+.cal-nav span{{font-weight:600;font-size:0.95rem}}
+.cal-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}}
+.cal-grid .cal-hdr{{font-size:0.72rem;color:#9ca3af;font-weight:600;padding:4px 0}}
+.cal-grid .cal-day{{padding:8px 4px;border-radius:8px;font-size:0.85rem;cursor:pointer;transition:all .12s}}
+.cal-grid .cal-day:hover{{background:rgba(79,70,229,0.1)}}
+.cal-grid .cal-day.sel{{background:var(--pc,#4F46E5);color:#fff}}
+.cal-grid .cal-day.today-mark{{border:1.5px solid var(--pc,#4F46E5)}}
+.cal-grid .cal-day.past{{color:#d1d5db;pointer-events:none}}
+.cal-grid .cal-day.empty{{pointer-events:none}}
+.time-group{{margin-bottom:12px}}
+.time-group-title{{font-size:0.82rem;font-weight:600;color:#6b7280;margin-bottom:6px;display:flex;align-items:center;gap:6px}}
+.time-group-title span{{font-size:0.9rem}}
+.back-btn{{background:none;border:none;font-size:0.9rem;color:var(--pc,#4F46E5);cursor:pointer;padding:8px 0;font-weight:500}}
+.loading{{text-align:center;padding:40px;color:#9ca3af}}
+.spinner{{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:var(--pc,#4F46E5);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 12px}}
+@keyframes spin{{to{{transform:rotate(360deg)}}}}
+.specialist-card{{display:flex;gap:12px;align-items:center}}
+.avatar{{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;flex-shrink:0}}
+.success-screen{{text-align:center;padding:48px 24px}}
+.success-screen .icon{{font-size:3rem;margin-bottom:12px}}
+.success-screen h2{{margin-bottom:8px}}
+.success-screen p{{color:#6b7280;font-size:0.9rem}}
+</style>
+</head><body>
+<div class="app" id="app"><div class="loading"><div class="spinner"></div><p>Загрузка...</p></div></div>
+<script>
+const API = '/api/services/public';
+const TC = '{tc}';
+const BRANCH_ID = '{branch_id}';
+let appearance = {{}};
+let state = {{step:'services',services:[],specialists:[],selectedService:null,selectedSpecialist:null,selectedDate:'',selectedSlot:null,showCal:false,calYear:new Date().getFullYear(),calMonth:new Date().getMonth(),userName:'',userPhone:'',userEmail:'',userId:''}};
+const WEEKDAYS = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+const WEEKDAYS_SHORT = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+function localDateStr(d) {{ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }}
+
+async function api(path) {{
+  const r = await fetch(API + '/' + TC + path);
+  return r.json();
+}}
+
+async function init() {{
+  try {{
+    if (window.WebApp) {{
+      try {{ window.WebApp.ready(); }} catch(e) {{}}
+      // Get user info from MAX WebApp
+      const u = window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user;
+      if (u) {{
+        state.userName = ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
+        state.userId = u.user_id || u.id || '';
+      }}
+    }}
+    const [catData, appData] = await Promise.all([api('/catalog'), api('/appearance')]);
+    if (catData.success) state.services = catData.services || [];
+    if (appData.success && appData.settings) appearance = appData.settings;
+    document.documentElement.style.setProperty('--pc', appearance.primary_color || '#4F46E5');
+    render();
+  }} catch(e) {{
+    document.getElementById('app').innerHTML = '<div class="loading"><p>Ошибка загрузки: ' + e.message + '</p></div>';
+  }}
+}}
+
+function render() {{
+  const app = document.getElementById('app');
+  const pc = appearance.primary_color || '#4F46E5';
+  let h = '<div class="header" style="background:' + pc + '">';
+  h += '<h1>' + (appearance.welcome_text || 'Запись на услугу') + '</h1></div>';
+
+  // Cover image on services screen
+  if (state.step === 'services' && appearance.logo_url) {{
+    h += '<div style="padding:0 16px"><img src="' + esc(appearance.logo_url) + '" style="width:100%;max-height:180px;object-fit:cover;border-radius:12px;margin-top:12px" alt=""></div>';
+  }}
+
+  if (state.step === 'services') {{
+    h += '<div class="section"><h2>Выберите услугу</h2>';
+    if (!state.services.length) h += '<p style="color:#9ca3af;text-align:center;padding:20px">Нет доступных услуг</p>';
+    state.services.forEach((s, i) => {{
+      h += '<div class="card" onclick="selectService(' + i + ')">';
+      if (s.image_url) h += '<img src="' + esc(s.image_url) + '" style="width:100%;height:120px;object-fit:cover;border-radius:8px;margin-bottom:8px" alt="">';
+      h += '<div class="name">' + esc(s.name) + '</div>';
+      if (s.description) h += '<div class="meta">' + esc(s.description) + '</div>';
+      h += '<div class="meta">' + s.duration_minutes + ' мин</div>';
+      h += '<div class="price">' + Number(s.price).toLocaleString('ru-RU') + ' ₽</div>';
+      h += '</div>';
+    }});
+    h += '</div>';
+  }}
+
+  if (state.step === 'specialists') {{
+    h += '<div class="section"><button class="back-btn" onclick="goBack(\\\'services\\\')">&larr; Назад</button>';
+    h += '<h2>Выберите специалиста</h2>';
+    if (!state.specialists.length) h += '<p style="color:#9ca3af;text-align:center;padding:20px">Нет доступных специалистов</p>';
+    state.specialists.forEach((s, i) => {{
+      h += '<div class="card" onclick="selectSpecialist(' + i + ')">';
+      h += '<div class="specialist-card">';
+      const color = ['#4F46E5','#7C3AED','#2563EB','#0891B2','#059669'][i % 5];
+      if (s.photo_url) {{
+        h += '<img src="' + esc(s.photo_url) + '" style="width:44px;height:44px;border-radius:50%;object-fit:cover">';
+      }} else {{
+        h += '<div class="avatar" style="background:' + color + '">' + esc((s.name||'С')[0]) + '</div>';
+      }}
+      h += '<div><div class="name">' + esc(s.name) + '</div>';
+      if (s.position) h += '<div class="meta">' + esc(s.position) + '</div>';
+      h += '</div></div></div>';
+    }});
+    h += '</div>';
+  }}
+
+  if (state.step === 'datetime') {{
+    h += '<div class="section"><button class="back-btn" onclick="goBack(\\\'specialists\\\')">&larr; Назад</button>';
+    h += '<h2>Дата и время</h2>';
+    // Week strip - current week starting from Monday
+    const today = new Date(); today.setHours(0,0,0,0);
+    const todayStr = localDateStr(today);
+    // Find Monday of current week
+    const mon = new Date(today);
+    const dow = mon.getDay(); // 0=Sun
+    mon.setDate(mon.getDate() - (dow === 0 ? 6 : dow - 1));
+    h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">';
+    h += '<div class="dates-row" style="flex:1">';
+    for (let i = 0; i < 7; i++) {{
+      const d = new Date(mon); d.setDate(d.getDate() + i);
+      const ds = localDateStr(d);
+      const isPast = d < today;
+      const isToday = ds === todayStr;
+      const sel = state.selectedDate === ds ? ' selected' : '';
+      const cls = isPast ? ' disabled' : (isToday ? ' today' : '');
+      if (isPast) {{
+        h += '<div class="date-btn disabled">';
+      }} else {{
+        h += '<div class="date-btn' + sel + cls + '" onclick="selectDate(\\\'' + ds + '\\\')">';
+      }}
+      h += '<div class="day">' + d.getDate() + '</div>';
+      h += '<div class="weekday">' + WEEKDAYS[d.getDay()] + '</div>';
+      h += '</div>';
+    }}
+    h += '</div>';
+    // Calendar button
+    h += '<div style="flex-shrink:0"><button style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;cursor:pointer;font-size:1.1rem" onclick="toggleCal()">&#128197;</button></div>';
+    h += '</div>';
+
+    // Full month calendar overlay
+    if (state.showCal) {{
+      h += '<div class="cal-overlay" onclick="toggleCal()">';
+      h += '<div class="cal-box" onclick="event.stopPropagation()">';
+      h += '<div class="cal-nav">';
+      h += '<button onclick="calPrev()">&larr;</button>';
+      h += '<span>' + MONTHS[state.calMonth] + ' ' + state.calYear + '</span>';
+      h += '<button onclick="calNext()">&rarr;</button>';
+      h += '</div>';
+      h += '<div class="cal-grid">';
+      WEEKDAYS_SHORT.forEach(wd => {{ h += '<div class="cal-hdr">' + wd + '</div>'; }});
+      const first = new Date(state.calYear, state.calMonth, 1);
+      let startDow = first.getDay(); // 0=Sun
+      startDow = startDow === 0 ? 6 : startDow - 1; // Convert to Mon=0
+      const daysInMonth = new Date(state.calYear, state.calMonth + 1, 0).getDate();
+      for (let i = 0; i < startDow; i++) h += '<div class="cal-day empty"></div>';
+      for (let d = 1; d <= daysInMonth; d++) {{
+        const dt = new Date(state.calYear, state.calMonth, d);
+        const ds = localDateStr(dt);
+        const isPast = dt < today;
+        const isSel = state.selectedDate === ds;
+        const isT = ds === todayStr;
+        let cls = 'cal-day';
+        if (isPast) cls += ' past';
+        if (isSel) cls += ' sel';
+        if (isT) cls += ' today-mark';
+        if (isPast) {{
+          h += '<div class="' + cls + '">' + d + '</div>';
+        }} else {{
+          h += '<div class="' + cls + '" onclick="selectDate(\\\'' + ds + '\\\');toggleCal()">' + d + '</div>';
+        }}
+      }}
+      h += '</div></div></div>';
+    }}
+
+    // Time slots grouped by period
+    if (state.selectedDate) {{
+      if (state.loadingSlots) {{
+        h += '<div class="loading"><div class="spinner"></div></div>';
+      }} else if (state.slots && state.slots.length) {{
+        const morning = state.slots.filter(s => {{ const h = parseInt(s.start); return h < 12; }});
+        const afternoon = state.slots.filter(s => {{ const h = parseInt(s.start); return h >= 12 && h < 17; }});
+        const evening = state.slots.filter(s => {{ const h = parseInt(s.start); return h >= 17; }});
+        const groups = [
+          {{title: '🌅 Утро', slots: morning}},
+          {{title: '☀️ День', slots: afternoon}},
+          {{title: '🌙 Вечер', slots: evening}},
+        ];
+        groups.forEach(g => {{
+          if (g.slots.length === 0) return;
+          h += '<div class="time-group">';
+          h += '<div class="time-group-title"><span>' + g.title + '</span></div>';
+          h += '<div class="slots-grid">';
+          g.slots.forEach(sl => {{
+            const sel = state.selectedSlot && state.selectedSlot.start === sl.start ? ' selected' : '';
+            h += '<div class="slot' + sel + '" onclick="selectSlot(\\\'' + sl.start + '\\\',\\\'' + sl.end + '\\\')">' + sl.start + '</div>';
+          }});
+          h += '</div></div>';
+        }});
+      }} else {{
+        h += '<p style="color:#9ca3af;text-align:center;padding:16px">Нет свободных слотов на эту дату</p>';
+      }}
+    }}
+    if (state.selectedSlot) {{
+      h += '<div style="margin-top:16px"><button class="btn" style="background:' + pc + '" onclick="goToForm()">Далее</button></div>';
+    }}
+    h += '</div>';
+  }}
+
+  if (state.step === 'form') {{
+    // Format date nicely
+    const fd = new Date(state.selectedDate + 'T12:00:00');
+    const dateStr = fd.getDate() + ' ' + ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'][fd.getMonth()] + ', ' + WEEKDAYS[fd.getDay()];
+
+    h += '<div class="section"><button class="back-btn" onclick="goBack(\\\'datetime\\\')">&larr; Назад</button>';
+    h += '<h2>Подтверждение записи</h2>';
+    // Booking summary card
+    h += '<div style="background:#f9fafb;border-radius:12px;padding:16px;margin-bottom:16px">';
+    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">';
+    if (state.selectedSpecialist.photo_url) {{
+      h += '<img src="' + esc(state.selectedSpecialist.photo_url) + '" style="width:40px;height:40px;border-radius:50%;object-fit:cover">';
+    }} else {{
+      h += '<div style="width:40px;height:40px;border-radius:50%;background:' + pc + ';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">' + esc((state.selectedSpecialist.name||'С')[0]) + '</div>';
+    }}
+    h += '<div><div style="font-weight:600">' + esc(state.selectedSpecialist.name) + '</div>';
+    if (state.selectedSpecialist.position) h += '<div style="font-size:0.82rem;color:#6b7280">' + esc(state.selectedSpecialist.position) + '</div>';
+    h += '</div></div>';
+    h += '<div style="display:flex;flex-direction:column;gap:6px;font-size:0.9rem">';
+    h += '<div style="display:flex;justify-content:space-between"><span style="color:#6b7280">Услуга</span><span style="font-weight:500">' + esc(state.selectedService.name) + '</span></div>';
+    h += '<div style="display:flex;justify-content:space-between"><span style="color:#6b7280">Дата</span><span style="font-weight:500">' + dateStr + '</span></div>';
+    h += '<div style="display:flex;justify-content:space-between"><span style="color:#6b7280">Время</span><span style="font-weight:500">' + state.selectedSlot.start + ' – ' + state.selectedSlot.end + '</span></div>';
+    h += '<div style="display:flex;justify-content:space-between"><span style="color:#6b7280">Стоимость</span><span style="font-weight:700;color:' + pc + '">' + Number(state.selectedSpecialist.custom_price || state.selectedService.price).toLocaleString('ru-RU') + ' ₽</span></div>';
+    h += '</div></div>';
+
+    // User info (pre-filled from MAX, editable)
+    h += '<div style="margin-bottom:12px">';
+    h += '<label class="form-label">Имя</label>';
+    h += '<input class="form-input" id="f-name" value="' + esc(state.userName) + '" placeholder="Ваше имя">';
+    h += '<label class="form-label">Телефон</label>';
+    h += '<input class="form-input" id="f-phone" type="tel" value="' + esc(state.userPhone) + '" placeholder="+7...">';
+    h += '<label class="form-label">Комментарий</label>';
+    h += '<textarea class="form-input" id="f-notes" rows="2" placeholder="Пожелания (необязательно)"></textarea>';
+    h += '</div>';
+    h += '<button class="btn" id="book-btn" style="background:' + pc + '" onclick="submitBooking()">Подтвердить запись</button>';
+    h += '</div>';
+  }}
+
+  if (state.step === 'success') {{
+    h += '<div class="success-screen">';
+    h += '<div class="icon">✅</div>';
+    h += '<h2>Вы записаны!</h2>';
+    h += '<p>' + esc(state.selectedService.name) + '</p>';
+    h += '<p>' + esc(state.selectedSpecialist.name) + '</p>';
+    h += '<p><b>' + state.selectedDate + ' · ' + state.selectedSlot.start + '–' + state.selectedSlot.end + '</b></p>';
+    h += '<button class="btn" style="background:' + pc + ';margin-top:24px" onclick="resetApp()">Записаться ещё</button>';
+    h += '</div>';
+  }}
+
+  app.innerHTML = h;
+}}
+
+function esc(s) {{ return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }}
+
+function selectService(i) {{
+  state.selectedService = state.services[i];
+  state.step = 'specialists';
+  state.specialists = [];
+  render();
+  api('/specialists?service_id=' + state.selectedService.id).then(d => {{
+    if (d.success) state.specialists = d.specialists || [];
+    render();
+  }});
+}}
+
+function selectSpecialist(i) {{
+  state.selectedSpecialist = state.specialists[i];
+  state.step = 'datetime';
+  state.selectedDate = '';
+  state.selectedSlot = null;
+  state.slots = [];
+  render();
+}}
+
+function selectDate(d) {{
+  state.selectedDate = d;
+  state.selectedSlot = null;
+  state.loadingSlots = true;
+  render();
+  api('/slots?specialist_id=' + state.selectedSpecialist.id + '&service_id=' + state.selectedService.id + '&date=' + d).then(data => {{
+    state.loadingSlots = false;
+    state.slots = data.success ? (data.slots || []) : [];
+    render();
+  }});
+}}
+
+function selectSlot(start, end) {{
+  state.selectedSlot = {{start, end}};
+  render();
+}}
+
+function toggleCal() {{ state.showCal = !state.showCal; render(); }}
+function calPrev() {{ state.calMonth--; if (state.calMonth < 0) {{ state.calMonth = 11; state.calYear--; }} render(); }}
+function calNext() {{ state.calMonth++; if (state.calMonth > 11) {{ state.calMonth = 0; state.calYear++; }} render(); }}
+
+function goToForm() {{ state.step = 'form'; render(); }}
+
+function goBack(step) {{
+  state.step = step;
+  if (step === 'services') {{ state.selectedService = null; state.selectedSpecialist = null; }}
+  if (step === 'specialists') {{ state.selectedSpecialist = null; state.selectedDate = ''; state.selectedSlot = null; }}
+  if (step === 'datetime') {{ state.selectedSlot = null; }}
+  render();
+}}
+
+async function submitBooking() {{
+  const name = document.getElementById('f-name').value.trim();
+  const phone = document.getElementById('f-phone').value.trim();
+  const notes = document.getElementById('f-notes').value.trim();
+  if (!name) {{ alert('Укажите имя'); return; }}
+  const btn = document.getElementById('book-btn');
+  btn.disabled = true; btn.textContent = 'Подтверждение...';
+  try {{
+    const r = await fetch(API + '/' + TC + '/book', {{
+      method: 'POST',
+      headers: {{'Content-Type':'application/json'}},
+      body: JSON.stringify({{
+        service_id: state.selectedService.id,
+        specialist_id: state.selectedSpecialist.id,
+        branch_id: BRANCH_ID ? parseInt(BRANCH_ID) : null,
+        booking_date: state.selectedDate,
+        start_time: state.selectedSlot.start,
+        end_time: state.selectedSlot.end,
+        client_name: name, client_phone: phone, client_email: '',
+        client_max_user_id: state.userId || '', notes: notes
+      }})
+    }});
+    const data = await r.json();
+    if (data.success) {{ state.step = 'success'; render(); }}
+    else {{ alert(data.detail || 'Ошибка бронирования'); btn.disabled = false; btn.textContent = 'Подтвердить запись'; }}
+  }} catch(e) {{ alert('Ошибка: ' + e.message); btn.disabled = false; btn.textContent = 'Подтвердить запись'; }}
+}}
+
+function resetApp() {{
+  state = {{step:'services',services:state.services,specialists:[],selectedService:null,selectedSpecialist:null,selectedDate:'',selectedSlot:null}};
+  render();
+}}
+
+init();
+</script>
+</body></html>"""
     return HTMLResponse(html)
 
 

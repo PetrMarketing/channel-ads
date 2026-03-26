@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export default function ButtonBuilder({ value, onChange, leadMagnets = [], showLeadMagnet = true }) {
+export default function ButtonBuilder({ value, onChange, leadMagnets = [], showLeadMagnet = true, showComments = true }) {
   const [buttons, setButtons] = useState([]);
 
   useEffect(() => {
@@ -49,15 +49,26 @@ export default function ButtonBuilder({ value, onChange, leadMagnets = [], showL
               onClick={() => removeButton(idx)}>x</button>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <select className="form-input" value={btn.type || 'url'} style={{ width: 'auto', minWidth: '120px' }}
-              onChange={e => updateButton(idx, 'type', e.target.value)}>
+            <select className="form-input" value={btn.type || 'url'} style={{ width: 'auto', minWidth: '140px' }}
+              onChange={e => {
+                updateButton(idx, 'type', e.target.value);
+                if (e.target.value === 'comments' && !btn.text) updateButton(idx, 'text', 'Комментарии');
+              }}>
               <option value="url">Ссылка</option>
               {showLeadMagnet && <option value="lead_magnet">Лид-магнит</option>}
+              {showComments && <option value="comments">Комментарии</option>}
             </select>
-            {(btn.type || 'url') === 'url' ? (
-              <input className="form-input" placeholder="https://..." value={btn.url || ''}
-                onChange={e => updateButton(idx, 'url', e.target.value)} style={{ flex: 1 }} />
-            ) : (
+            {(btn.type || 'url') === 'url' ? (() => {
+              const urlVal = (btn.url || '').trim();
+              const isInvalid = urlVal.length > 0 && !/^https?:\/\//i.test(urlVal);
+              return (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <input className={`form-input${isInvalid ? ' field-error' : ''}`} placeholder="https://..." value={btn.url || ''}
+                    onChange={e => updateButton(idx, 'url', e.target.value)} />
+                  {isInvalid && <span style={{ fontSize: '0.72rem', color: 'var(--error, #e63946)' }}>Введите ссылку, начинающуюся с http:// или https://</span>}
+                </div>
+              );
+            })() : btn.type === 'lead_magnet' ? (
               <select className="form-input" value={btn.lead_magnet_id || ''} style={{ flex: 1 }}
                 onChange={e => updateButton(idx, 'lead_magnet_id', e.target.value)}>
                 <option value="">-- Выберите лид-магнит --</option>
@@ -65,7 +76,11 @@ export default function ButtonBuilder({ value, onChange, leadMagnets = [], showL
                   <option key={lm.id} value={lm.id}>{lm.title} ({lm.code})</option>
                 ))}
               </select>
-            )}
+            ) : btn.type === 'comments' ? (
+              <div style={{ flex: 1, fontSize: '0.82rem', color: 'var(--text-secondary)', padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 6 }}>
+                💬 Откроет мини-приложение с комментариями к посту
+              </div>
+            ) : null}
           </div>
         </div>
       ))}
