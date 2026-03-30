@@ -317,6 +317,13 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
     if len(description) > 250:
         description = description[:247] + "..."
 
+    user_email = body.get("email") or user.get("email") or ""
+    if not user_email:
+        raise HTTPException(status_code=400, detail="Укажите email для отправки чека")
+
+    # Save email to user profile
+    await execute("UPDATE users SET email = $1 WHERE id = $2", user_email, user["id"])
+
     receipt = {
         "Taxation": "osn",
         "Items": [{
@@ -328,13 +335,8 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
             "PaymentObject": "service",
             "Tax": "none",
         }],
+        "Email": user_email,
     }
-    # Add user email if available
-    user_email = user.get("email") or ""
-    if user_email:
-        receipt["Email"] = user_email
-    else:
-        receipt["Phone"] = "+70000000000"  # fallback — Tinkoff requires Email or Phone
 
     init_params = {
         "TerminalKey": settings.TINKOFF_TERMINAL_KEY,
@@ -457,6 +459,12 @@ async def create_payment(tracking_code: str, request: Request, user=Depends(get_
     duration_label = DURATION_OPTIONS[months]["label"]
     pay_description = f"Подписка {duration_label}, {users} польз. — {channel.get('title', '')}"
 
+    user_email = body.get("email") or user.get("email") or ""
+    if not user_email:
+        raise HTTPException(status_code=400, detail="Укажите email для отправки чека")
+
+    await execute("UPDATE users SET email = $1 WHERE id = $2", user_email, user["id"])
+
     receipt = {
         "Taxation": "osn",
         "Items": [{
@@ -468,12 +476,8 @@ async def create_payment(tracking_code: str, request: Request, user=Depends(get_
             "PaymentObject": "service",
             "Tax": "none",
         }],
+        "Email": user_email,
     }
-    user_email = user.get("email") or ""
-    if user_email:
-        receipt["Email"] = user_email
-    else:
-        receipt["Phone"] = "+70000000000"
 
     # Call Tinkoff Init
     init_params = {

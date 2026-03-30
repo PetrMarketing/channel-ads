@@ -18,6 +18,7 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(false);
   const [buying, setBuying] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState(1);
+  const [email, setEmail] = useState('');
   // Per-channel config: { [tracking_code]: { selected: bool, users: number } }
   const [channelConfigs, setChannelConfigs] = useState({});
   // Billing status per channel
@@ -36,6 +37,11 @@ export default function BillingPage() {
       return next;
     });
   }, [channels]);
+
+  // Load user email
+  useEffect(() => {
+    api.get('/auth/me').then(d => { if (d.user?.email) setEmail(d.user.email); }).catch(() => {});
+  }, []);
 
   // Load billing status for all channels
   const loadStatuses = useCallback(async () => {
@@ -111,10 +117,15 @@ export default function BillingPage() {
       showToast('Выберите хотя бы один канал', 'error');
       return;
     }
+    if (!email || !email.includes('@')) {
+      showToast('Укажите корректный email для получения чека', 'error');
+      return;
+    }
     setBuying(true);
     try {
       const payload = {
         months: selectedMonths,
+        email,
         channels: selectedChannels.map(ch => ({
           tracking_code: ch.tracking_code,
           users: channelConfigs[ch.tracking_code]?.users || 1,
@@ -338,6 +349,27 @@ export default function BillingPage() {
             Экономия: {price.savings.toLocaleString('ru-RU')} ₽
           </div>
         )}
+      </div>
+
+      {/* Email for receipt */}
+      <div style={{
+        background: 'var(--bg-glass)', border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)', padding: '20px', marginBottom: '24px',
+      }}>
+        <label style={{ fontSize: '0.92rem', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+          Email для чека *
+        </label>
+        <input
+          className="form-input"
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          style={{ width: '100%' }}
+        />
+        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
+          На этот адрес будет отправлен фискальный чек об оплате
+        </div>
       </div>
 
       {/* Pay button */}
