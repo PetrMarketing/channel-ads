@@ -317,11 +317,31 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
     if len(description) > 250:
         description = description[:247] + "..."
 
+    receipt = {
+        "Taxation": "osn",
+        "Items": [{
+            "Name": description[:128],
+            "Price": amount_kopeks,
+            "Quantity": 1,
+            "Amount": amount_kopeks,
+            "PaymentMethod": "full_payment",
+            "PaymentObject": "service",
+            "Tax": "none",
+        }],
+    }
+    # Add user email if available
+    user_email = user.get("email") or ""
+    if user_email:
+        receipt["Email"] = user_email
+    else:
+        receipt["Phone"] = "+70000000000"  # fallback — Tinkoff requires Email or Phone
+
     init_params = {
         "TerminalKey": settings.TINKOFF_TERMINAL_KEY,
         "Amount": amount_kopeks,
         "OrderId": order_id,
         "Description": description,
+        "Receipt": receipt,
     }
     init_params["Token"] = generate_tinkoff_token(init_params)
 
@@ -329,6 +349,7 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
         async with session.post("https://securepay.tinkoff.ru/v2/Init", json=init_params) as resp:
             result = await resp.json()
 
+    print(f"[Tinkoff pay-multi] Response: {result}")
     if not result.get("Success"):
         raise HTTPException(status_code=502, detail=result.get("Message", "Payment init failed"))
 
@@ -434,12 +455,33 @@ async def create_payment(tracking_code: str, request: Request, user=Depends(get_
     await execute("UPDATE billing_payments SET payment_id = $1 WHERE id = $2", order_id, payment_id)
 
     duration_label = DURATION_OPTIONS[months]["label"]
+    pay_description = f"Подписка {duration_label}, {users} польз. — {channel.get('title', '')}"
+
+    receipt = {
+        "Taxation": "osn",
+        "Items": [{
+            "Name": pay_description[:128],
+            "Price": amount_kopeks,
+            "Quantity": 1,
+            "Amount": amount_kopeks,
+            "PaymentMethod": "full_payment",
+            "PaymentObject": "service",
+            "Tax": "none",
+        }],
+    }
+    user_email = user.get("email") or ""
+    if user_email:
+        receipt["Email"] = user_email
+    else:
+        receipt["Phone"] = "+70000000000"
+
     # Call Tinkoff Init
     init_params = {
         "TerminalKey": settings.TINKOFF_TERMINAL_KEY,
         "Amount": amount_kopeks,
         "OrderId": order_id,
-        "Description": f"Подписка {duration_label}, {users} польз. — {channel.get('title', '')}",
+        "Description": pay_description,
+        "Receipt": receipt,
     }
     init_params["Token"] = generate_tinkoff_token(init_params)
 
