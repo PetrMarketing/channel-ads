@@ -16,8 +16,11 @@ def sanitize_html_for_telegram(html: str) -> str:
     if not html:
         return ""
     text = html
-    # <br> -> newline
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
+    # Convert <span style="font-weight: 700/bold"> to <b>
+    text = re.sub(r'<span[^>]*font-weight:\s*(?:700|bold)[^>]*>([\s\S]*?)</span>', r'<b>\1</b>', text, flags=re.I)
+    text = re.sub(r'<span[^>]*font-style:\s*italic[^>]*>([\s\S]*?)</span>', r'<i>\1</i>', text, flags=re.I)
+    # <br> with any attributes -> newline
+    text = re.sub(r"<br[^>]*/?>", "\n", text, flags=re.I)
     # Block-level closing tags -> newline
     text = re.sub(r"</(?:div|p|li|tr|h[1-6]|blockquote)>", "\n", text, flags=re.I)
     # Remove opening block tags
@@ -63,6 +66,20 @@ def html_to_max_markdown(html: str) -> str:
     """Convert rich HTML (from editor) to MAX markdown using a proper parser."""
     if not html:
         return ""
+    # Pre-process: normalize &nbsp; to space
+    html = html.replace('&nbsp;', ' ')
+    # Convert styled spans to semantic tags
+    html = re.sub(r'<span[^>]*font-weight:\s*(?:700|bold)[^>]*>([\s\S]*?)</span>', r'<b>\1</b>', html, flags=re.I)
+    html = re.sub(r'<span[^>]*font-style:\s*italic[^>]*>([\s\S]*?)</span>', r'<i>\1</i>', html, flags=re.I)
+    # Strip remaining spans (with any attributes)
+    html = re.sub(r'</?span[^>]*>', '', html, flags=re.I)
+    # Move <br> outside formatting tags: <b>text<br></b> -> <b>text</b><br>
+    _fmt_close = r'</(?:b|i|u|s|strong|em|strike|del|ins|a)>'
+    for _ in range(5):
+        html = re.sub(r'(\s*(?:&nbsp;)?\s*)<br[^>]*>(\s*)(' + _fmt_close + r')', r'\3\1<br>\2', html, flags=re.I)
+    # Remove trailing spaces before closing tags and <br>
+    html = re.sub(r'\s+(' + _fmt_close + r')', r'\1', html, flags=re.I)
+    html = re.sub(r'\s+(<br[^>]*/?>)', r'<br>', html, flags=re.I)
     from html.parser import HTMLParser
 
     # MAX markdown markers for each tag type
@@ -135,13 +152,13 @@ def html_to_max_markdown(html: str) -> str:
             elif tag in TAG_MAP:
                 marker = TAG_MAP[tag]
                 if marker:
-                    # If last entries are newlines, insert closing marker before them
-                    # so **text\n** becomes **text**\n
-                    trailing_newlines = []
-                    while self.result and self.result[-1] == "\n":
-                        trailing_newlines.append(self.result.pop())
+                    # Move trailing whitespace outside the marker
+                    # so **text ** becomes **text** (MAX requires marker next to text)
+                    trailing = []
+                    while self.result and self.result[-1] in ("\n", " ", "\t"):
+                        trailing.append(self.result.pop())
                     self.result.append(marker)
-                    self.result.extend(trailing_newlines)
+                    self.result.extend(reversed(trailing))
                 # Remove from stack (find last matching)
                 norm = tag
                 for i in range(len(self.fmt_stack) - 1, -1, -1):
@@ -161,12 +178,18 @@ def html_to_max_markdown(html: str) -> str:
 
         def get_result(self):
             text = "".join(self.result)
+            text = text.replace("\u00a0", " ")
             text = re.sub(r"\n{3,}", "\n\n", text)
-            # Remove truly empty markers (marker with zero content between them)
-            text = text.replace("****", "")
-            text = text.replace("~~~~", "")
-            text = text.replace("++++", "")
-            text = text.replace("``", "")
+            # Fix trailing spaces inside markers (per-line only, don't cross newlines)
+            for _ in range(3):
+                text = re.sub(r'\*\*([^\n*]+?)[ \t]+\*\*', r'**\1** ', text)
+                text = re.sub(r'(?<!\*)\*(?!\*)([^\n*]+?)[ \t]+\*(?!\*)', r'*\1* ', text)
+                text = re.sub(r'\+\+([^\n+]+?)[ \t]+\+\+', r'++\1++ ', text)
+                text = re.sub(r'~~([^\n~]+?)[ \t]+~~', r'~~\1~~ ', text)
+            # Remove empty markers
+            for empty in ("****", "~~~~", "++++", "``", "**\n**", "++\n++", "*\n*"):
+                text = text.replace(empty, "\n" if "\n" in empty else "")
+            text = re.sub(r"\n{3,}", "\n\n", text)
             return text.strip()
 
     converter = MaxMarkdownConverter()

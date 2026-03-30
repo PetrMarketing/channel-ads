@@ -4,8 +4,8 @@ import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 import Loading from '../components/Loading';
 
-const DURATION_OPTIONS = [
-  { months: 1, label: '1 месяц', price: 10 },
+const FALLBACK_DURATIONS = [
+  { months: 1, label: '1 месяц', price: 490 },
   { months: 3, label: '3 месяца', price: 1290 },
   { months: 6, label: '6 месяцев', price: 2290 },
   { months: 12, label: '12 месяцев', price: 3990 },
@@ -19,6 +19,7 @@ export default function BillingPage() {
   const [buying, setBuying] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState(1);
   const [email, setEmail] = useState('');
+  const [durations, setDurations] = useState(FALLBACK_DURATIONS);
   // Per-channel config: { [tracking_code]: { selected: bool, users: number } }
   const [channelConfigs, setChannelConfigs] = useState({});
   // Billing status per channel
@@ -38,9 +39,15 @@ export default function BillingPage() {
     });
   }, [channels]);
 
-  // Load user email
+  // Load user email + tariffs from API
   useEffect(() => {
     api.get('/auth/me').then(d => { if (d.user?.email) setEmail(d.user.email); }).catch(() => {});
+    api.get('/billing/plans').then(d => {
+      if (d.success && d.durations) {
+        const arr = Object.values(d.durations).sort((a, b) => a.months - b.months);
+        if (arr.length) setDurations(arr);
+      }
+    }).catch(() => {});
   }, []);
 
   // Load billing status for all channels
@@ -93,7 +100,7 @@ export default function BillingPage() {
   const selectedCount = selectedChannels.length;
 
   const calcPrice = () => {
-    const dur = DURATION_OPTIONS.find(d => d.months === selectedMonths) || DURATION_OPTIONS[0];
+    const dur = durations.find(d => d.months === selectedMonths) || durations[0];
     const basePrice = dur.price;
     // Progressive discount: 1st channel full price, 2nd -10%, 3rd -20%, etc
     let total = 0;
@@ -247,7 +254,7 @@ export default function BillingPage() {
       {/* Duration */}
       <h3 style={{ fontSize: '1rem', marginBottom: '14px' }}>Срок подписки</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-        {DURATION_OPTIONS.map(dur => {
+        {durations.map(dur => {
           const isSelected = selectedMonths === dur.months;
           const perMonth = Math.round(dur.price / dur.months);
           const isBestValue = dur.months === 12;
@@ -307,7 +314,7 @@ export default function BillingPage() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
             <span style={{ color: 'var(--text-secondary)' }}>Срок</span>
-            <span style={{ fontWeight: 500 }}>{DURATION_OPTIONS.find(d => d.months === selectedMonths)?.label}</span>
+            <span style={{ fontWeight: 500 }}>{durations.find(d => d.months === selectedMonths)?.label}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
             <span style={{ color: 'var(--text-secondary)' }}>Базовая цена</span>

@@ -1,7 +1,7 @@
 import os
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from typing import Dict, Any, Optional
 
 from ..middleware.auth import get_current_user
@@ -285,8 +285,8 @@ async def update_pin_upload(
     update_fields = "title=$1, message_text=$2, lead_magnet_id=$3, inline_buttons=$4, attach_type=$5"
     params = [title, message_text, lm_id, parsed_buttons, attach_type or None]
     if file_path:
-        # Reset cached platform file IDs so both platforms re-upload the new file
-        update_fields += ", file_path=$6, file_type=$7, file_data=$8, telegram_file_id=NULL, max_file_token=NULL"
+        # Reset cached file token so platform re-uploads the new file
+        update_fields += ", file_path=$6, file_type=$7, file_data=$8, max_file_token=NULL"
         params.extend([file_path, file_type, file_data])
         params.extend([pin_id, channel["id"]])
         where_idx = 9
@@ -309,6 +309,99 @@ async def delete_pin(tc: str, pin_id: int, user: Dict[str, Any] = Depends(get_cu
         raise HTTPException(status_code=404, detail="Канал не найден")
     await execute("DELETE FROM pin_posts WHERE id = $1 AND channel_id = $2", pin_id, channel["id"])
     return {"success": True}
+
+
+@router.post("/{tc}/send-preview")
+async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends(get_current_user)):
+    """Send a message preview to the user (owner) via bot."""
+    content_type = request.headers.get("content-type", "")
+    uploaded_file_path = None
+    uploaded_file_type = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        message_text = form.get("message_text", "")
+        entity_type = form.get("entity_type", "")
+        entity_id = form.get("entity_id")
+        upload = form.get("file")
+        if upload and hasattr(upload, 'filename') and upload.filename:
+            from ..services.file_storage import save_upload
+            uploaded_file_path, uploaded_file_type, _ = await save_upload(upload)
+    else:
+        body = await request.json()
+        message_text = body.get("message_text", "")
+        entity_type = body.get("entity_type", "")
+        entity_id = body.get("entity_id")
+
+    if not message_text.strip():
+        raise HTTPException(status_code=400, detail="Текст пустой")
+
+    # Use uploaded file if provided, otherwise load from DB
+    file_path = uploaded_file_path
+    file_type = uploaded_file_type
+    max_file_token = None
+
+    if entity_id and entity_type == "pin":
+        pin = await fetch_one("SELECT * FROM pin_posts WHERE id = $1", int(entity_id))
+        if pin:
+            message_text = pin.get("message_text") or message_text
+            if not file_path:
+                file_path = pin.get("file_path")
+                file_type = pin.get("file_type")
+                max_file_token = pin.get("max_file_token")
+                from ..services.file_storage import ensure_file
+                file_path = ensure_file(file_path, pin.get("file_data"))
+
+    elif entity_id and entity_type == "lead_magnet":
+        lm = await fetch_one("SELECT * FROM lead_magnets WHERE id = $1", int(entity_id))
+        if lm:
+            message_text = lm.get("message_text") or message_text
+            if not file_path:
+                file_path = lm.get("file_path")
+                file_type = lm.get("file_type")
+                max_file_token = lm.get("max_file_token")
+                from ..services.file_storage import ensure_file
+                file_path = ensure_file(file_path, lm.get("file_data"))
+
+    # Send to user via bot
+    from ..services.messenger import sanitize_html_for_telegram, html_to_max_markdown
+
+    # Try MAX first
+    if user.get("max_user_id"):
+        from ..services.max_api import get_max_api
+        max_api = get_max_api()
+        if max_api:
+            max_text = html_to_max_markdown(message_text)
+            attachments = None
+            if max_file_token:
+                _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
+                attachments = [{"type": _type_map.get(file_type, "file"), "payload": {"token": max_file_token}}]
+            elif file_path:
+                upload_result = await max_api.upload_file(file_path, file_type or "file")
+                if upload_result.get("success"):
+                    from ..services.messenger import _extract_max_file_token
+                    token = _extract_max_file_token(upload_result.get("data", {}))
+                    if token:
+                        _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
+                        attachments = [{"type": _type_map.get(file_type, "file"), "payload": {"token": token}}]
+            result = await max_api.send_direct_message(str(user["max_user_id"]), max_text, attachments=attachments)
+            if result.get("success"):
+                return {"success": True, "platform": "max"}
+
+    # Fallback to Telegram
+    if user.get("telegram_id"):
+        from ..services.messenger import send_telegram_message, send_telegram_photo
+        tg_text = sanitize_html_for_telegram(message_text)
+        try:
+            if file_path and file_type == "photo":
+                await send_telegram_photo(user["telegram_id"], file_path, caption=tg_text)
+            else:
+                await send_telegram_message(user["telegram_id"], tg_text)
+            return {"success": True, "platform": "telegram"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
+
+    raise HTTPException(status_code=400, detail="Нет привязанного мессенджера для отправки")
 
 
 @router.post("/{tc}/{pin_id}/publish")
@@ -334,27 +427,84 @@ async def publish_pin(tc: str, pin_id: int, user: Dict[str, Any] = Depends(get_c
     if inline_buttons:
         inline_buttons = await _resolve_buttons(inline_buttons, channel, post_id=pin_id, post_type="pin")
 
-    from ..services.messenger import send_to_channel
+    from ..services.messenger import send_to_channel, sanitize_html_for_telegram, html_to_max_markdown
     import traceback
-    try:
-        result = await send_to_channel(
-            channel, message_text,
-            file_path=file_path, file_type=pin.get("file_type"),
-            telegram_file_id=pin.get("telegram_file_id"), inline_buttons=inline_buttons,
-            attach_type=pin.get("attach_type"),
-            max_file_token=pin.get("max_file_token"),
-        )
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
 
-    msg_id = None
-    if isinstance(result, dict):
-        msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
-        # For MAX, message_id might be in message.body.mid
-        if not msg_id:
-            msg_data = result.get("message", {})
-            msg_id = msg_data.get("body", {}).get("mid")
+    existing_msg_id = pin.get("telegram_message_id")
+    edited = False
+
+    # If already published — try to edit existing message
+    if existing_msg_id and pin.get("status") == "published":
+        try:
+            if channel.get("platform") == "max":
+                from ..services.max_api import get_max_api
+                from ..services.messenger import build_max_inline_buttons, _extract_max_file_token
+                max_api = get_max_api()
+                if max_api:
+                    max_text = html_to_max_markdown(message_text)
+                    attachments = None
+                    max_file_token = pin.get("max_file_token")
+                    _max_type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
+
+                    if max_file_token:
+                        send_type = pin.get("file_type") or "file"
+                        attachments = [{"type": _max_type_map.get(send_type, "file"), "payload": {"token": max_file_token}}]
+                    elif file_path:
+                        upload_result = await max_api.upload_file(file_path, pin.get("file_type") or "file")
+                        if upload_result.get("success"):
+                            token = _extract_max_file_token(upload_result.get("data", {}))
+                            if token:
+                                send_type = pin.get("file_type") or "file"
+                                attachments = [{"type": _max_type_map.get(send_type, "file"), "payload": {"token": token}}]
+                                await execute("UPDATE pin_posts SET max_file_token = $1 WHERE id = $2", token, pin_id)
+
+                    max_buttons = build_max_inline_buttons(inline_buttons)
+                    result = await max_api.edit_message(existing_msg_id, max_text, attachments, max_buttons)
+                    if result.get("success"):
+                        edited = True
+            else:
+                # Telegram edit
+                import aiohttp
+                tg_text = sanitize_html_for_telegram(message_text)
+                token = settings.TELEGRAM_BOT_TOKEN
+                if token:
+                    url = f"https://api.telegram.org/bot{token}/editMessageText"
+                    payload = {
+                        "chat_id": channel["channel_id"],
+                        "message_id": int(existing_msg_id),
+                        "text": tg_text,
+                        "parse_mode": "HTML",
+                    }
+                    async with aiohttp.ClientSession() as session:
+                        resp = await session.post(url, json=payload)
+                        data = await resp.json()
+                        if data.get("ok"):
+                            edited = True
+        except Exception as e:
+            print(f"[Publish] Edit failed, will send new: {e}")
+            traceback.print_exc()
+
+    # If edit failed or new post — send new message
+    msg_id = existing_msg_id
+    if not edited:
+        try:
+            result = await send_to_channel(
+                channel, message_text,
+                file_path=file_path, file_type=pin.get("file_type"),
+                telegram_file_id=pin.get("telegram_file_id"), inline_buttons=inline_buttons,
+                attach_type=pin.get("attach_type"),
+                max_file_token=pin.get("max_file_token"),
+            )
+        except Exception as e:
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
+
+        msg_id = None
+        if isinstance(result, dict):
+            msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
+            if not msg_id:
+                msg_data = result.get("message", {})
+                msg_id = msg_data.get("body", {}).get("mid")
 
     msg_id_str = str(msg_id) if msg_id is not None else None
 
@@ -363,19 +513,7 @@ async def publish_pin(tc: str, pin_id: int, user: Dict[str, Any] = Depends(get_c
         msg_id_str, pin_id,
     )
 
-    # Pin the message in Telegram (MAX doesn't have pin API)
-    if msg_id_str and channel.get("platform") != "max":
-        import aiohttp
-        token = settings.TELEGRAM_BOT_TOKEN
-        if token:
-            try:
-                url = f"https://api.telegram.org/bot{token}/pinChatMessage"
-                async with aiohttp.ClientSession() as session:
-                    await session.post(url, json={"chat_id": channel["channel_id"], "message_id": msg_id_int})
-            except Exception:
-                pass  # Pinning is best-effort
-
-    return {"success": True, "messageId": str(msg_id) if msg_id else None}
+    return {"success": True, "messageId": msg_id_str, "edited": edited}
 
 
 _cached_tg_bot_username: str | None = None

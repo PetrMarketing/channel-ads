@@ -22,6 +22,7 @@ import SubscribePage from './pages/public/SubscribePage';
 import PaymentSuccessPage from './pages/public/PaymentSuccessPage';
 import PaidChatPayPage from './pages/public/PaidChatPayPage';
 import StaffInvitePage from './pages/public/StaffInvitePage';
+import DocumentationPage from './pages/public/DocumentationPage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -34,6 +35,8 @@ import AdminChannelProfilePage from './pages/admin/AdminChannelProfilePage';
 import AdminSubscribersPage from './pages/admin/AdminSubscribersPage';
 import AdminSubscriberDetailPage from './pages/admin/AdminSubscriberDetailPage';
 import AdminAdminsPage from './pages/admin/AdminAdminsPage';
+import AdminTariffsPage from './pages/admin/AdminTariffsPage';
+import AdminFinancePage from './pages/admin/AdminFinancePage';
 
 function PrivateRoute({ children }) {
   const { token } = useAuth();
@@ -56,6 +59,7 @@ export default function App() {
       <Route path="/paid-chat-pay/fail/:orderId" element={<PaidChatPayPage />} />
       <Route path="/payment-success" element={<PaymentSuccessPage />} />
       <Route path="/staff-invite/:token" element={<StaffInvitePage />} />
+      <Route path="/documentation" element={<DocumentationPage />} />
       {/* /go/:code handled by backend directly — instant 302 redirect */}
 
       {/* Admin panel */}
@@ -69,6 +73,8 @@ export default function App() {
         <Route path="subscribers" element={<AdminSubscribersPage />} />
         <Route path="subscribers/:identifier" element={<AdminSubscriberDetailPage />} />
         <Route path="admins" element={<AdminAdminsPage />} />
+        <Route path="tariffs" element={<AdminTariffsPage />} />
+        <Route path="finance" element={<AdminFinancePage />} />
       </Route>
 
       {/* Dashboard (protected) */}

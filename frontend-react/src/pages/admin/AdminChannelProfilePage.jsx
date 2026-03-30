@@ -4,7 +4,7 @@ import { adminApi } from '../../services/adminApi';
 
 const cardStyle = { background: '#fff', borderRadius: 8, padding: 20, marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' };
 const tabBtn = (active) => ({
-  padding: '8px 16px', border: 'none', borderBottom: active ? '2px solid #4361ee' : '2px solid transparent',
+  padding: '8px 14px', border: 'none', borderBottom: active ? '2px solid #4361ee' : '2px solid transparent',
   background: 'none', cursor: 'pointer', fontWeight: active ? 600 : 400, fontSize: 13, color: active ? '#4361ee' : '#666',
 });
 const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
@@ -13,42 +13,189 @@ const tdS = { padding: '8px 10px', borderBottom: '1px solid #f5f5f5' };
 const btnDanger = { background: '#e63946', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12 };
 const btnEdit = { background: '#f4a261', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12, marginRight: 4 };
 
+const TAB_CONFIG = {
+  pins: { endpoint: 'pins', key: 'pins', label: 'Закрепы', cols: ['id', 'title', 'status', 'created_at'] },
+  leadMagnets: { endpoint: 'lead-magnets', key: 'leadMagnets', label: 'Лид-магниты', cols: ['id', 'name', 'status', 'created_at'] },
+  content: { endpoint: 'content', key: 'posts', label: 'Посты', cols: ['id', 'title', 'status', 'created_at'] },
+  broadcasts: { endpoint: 'broadcasts', key: 'broadcasts', label: 'Рассылки', cols: ['id', 'title', 'status', 'created_at'] },
+  giveaways: { endpoint: 'giveaways', key: 'giveaways', label: 'Розыгрыши', cols: ['id', 'title', 'status', 'created_at'] },
+  funnels: { endpoint: 'funnels', key: 'funnels', label: 'Воронки', cols: ['id', 'name', 'delay_minutes', 'step_order'] },
+  subscribers: { endpoint: 'subscribers', key: 'subscribers', label: 'Подписчики' },
+  paidChats: { endpoint: 'paid-chats', key: null, label: 'Платные чаты' },
+  comments: { endpoint: 'comments', key: 'comments', label: 'Комментарии', cols: ['id', 'author_name', 'text', 'created_at'] },
+  links: { endpoint: 'links', key: 'links', label: 'Ссылки' },
+  logs: { endpoint: 'logs', key: 'logs', label: 'Логи' },
+};
+
 export default function AdminChannelProfilePage() {
   const { channelId } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState('pins');
-  const [tabData, setTabData] = useState([]);
+  const [tabData, setTabData] = useState(null);
   const [editLink, setEditLink] = useState(null);
 
   useEffect(() => { adminApi.get(`/channels/${channelId}`).then(d => { if (d) setData(d); }).catch(() => {}); }, [channelId]);
 
   useEffect(() => {
-    const map = { pins: 'pins', leadMagnets: 'lead-magnets', content: 'content', giveaways: 'giveaways', links: 'links' };
-    adminApi.get(`/channels/${channelId}/${map[tab]}`).then(d => {
-      if (d) setTabData(d.pins || d.leadMagnets || d.posts || d.giveaways || d.links || []);
-    }).catch(() => setTabData([]));
+    setTabData(null);
+    const cfg = TAB_CONFIG[tab];
+    if (!cfg) return;
+    adminApi.get(`/channels/${channelId}/${cfg.endpoint}`).then(d => {
+      if (d) setTabData(d);
+    }).catch(() => setTabData({}));
   }, [tab, channelId]);
 
-  if (!data) return <div>Загрузка...</div>;
+  if (!data) return <div style={{ padding: 20 }}>Загрузка...</div>;
   const { channel, staff } = data;
 
   const handleDeleteLink = async (linkId) => {
     if (!confirm('Удалить ссылку?')) return;
     await adminApi.delete(`/channels/${channelId}/links/${linkId}`);
-    setTabData(prev => prev.filter(x => x.id !== linkId));
+    setTabData(prev => ({ ...prev, links: (prev?.links || []).filter(x => x.id !== linkId) }));
   };
 
   const handleSaveLink = async () => {
     await adminApi.put(`/channels/${channelId}/links/${editLink.id}`, editLink);
     setEditLink(null);
-    adminApi.get(`/channels/${channelId}/links`).then(d => setTabData(d.links || []));
+    adminApi.get(`/channels/${channelId}/links`).then(d => setTabData(d));
   };
 
-  const tabs = [
-    { key: 'pins', label: 'Закрепы' }, { key: 'leadMagnets', label: 'Лид-магниты' },
-    { key: 'content', label: 'Посты' }, { key: 'giveaways', label: 'Розыгрыши' }, { key: 'links', label: 'Ссылки' },
-  ];
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('ru') : '-';
+
+  const renderGenericTable = () => {
+    const cfg = TAB_CONFIG[tab];
+    if (!cfg?.cols) return null;
+    const rows = tabData?.[cfg.key] || [];
+    return (
+      <table style={tableStyle}>
+        <thead><tr>{cfg.cols.map(c => <th key={c} style={thS}>{c}</th>)}</tr></thead>
+        <tbody>
+          {rows.map(item => (
+            <tr key={item.id}>
+              {cfg.cols.map(c => (
+                <td key={c} style={tdS}>
+                  {c === 'created_at' ? fmtDate(item[c]) :
+                   c === 'text' ? (item[c]?.slice(0, 80) || '-') :
+                   (item[c] ?? '-')}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {!rows.length && <tr><td colSpan={cfg.cols.length} style={{ ...tdS, textAlign: 'center', color: '#aaa' }}>Нет данных</td></tr>}
+        </tbody>
+      </table>
+    );
+  };
+
+  const renderLinks = () => {
+    const rows = tabData?.links || [];
+    return (
+      <table style={tableStyle}>
+        <thead><tr><th style={thS}>ID</th><th style={thS}>Название</th><th style={thS}>Код</th><th style={thS}>UTM Source</th><th style={thS}>Клики</th><th style={thS}>Пауза</th><th style={thS}></th></tr></thead>
+        <tbody>{rows.map(l => (
+          <tr key={l.id}>
+            <td style={tdS}>{l.id}</td><td style={tdS}>{l.name}</td><td style={tdS}>{l.short_code}</td>
+            <td style={tdS}>{l.utm_source || '-'}</td><td style={tdS}>{l.clicks}</td>
+            <td style={tdS}>{l.is_paused ? 'Да' : 'Нет'}</td>
+            <td style={tdS}>
+              <button style={btnEdit} onClick={() => setEditLink({ ...l })}>Ред.</button>
+              <button style={btnDanger} onClick={() => handleDeleteLink(l.id)}>Удалить</button>
+            </td>
+          </tr>
+        ))}</tbody>
+      </table>
+    );
+  };
+
+  const renderSubscribers = () => {
+    const rows = tabData?.subscribers || [];
+    return (
+      <table style={tableStyle}>
+        <thead><tr><th style={thS}>ID</th><th style={thS}>Имя</th><th style={thS}>Username</th><th style={thS}>Платформа</th><th style={thS}>Дата</th></tr></thead>
+        <tbody>{rows.map((s, i) => (
+          <tr key={i}>
+            <td style={tdS}>{s.telegram_id || s.max_user_id || '-'}</td>
+            <td style={tdS}>{s.first_name || '-'}</td>
+            <td style={tdS}>{s.username || '-'}</td>
+            <td style={tdS}>{s.platform || (s.telegram_id ? 'telegram' : 'max')}</td>
+            <td style={tdS}>{fmtDate(s.subscribed_at)}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+    );
+  };
+
+  const renderPaidChats = () => {
+    const chats = tabData?.chats || [];
+    const members = tabData?.members || [];
+    const posts = tabData?.posts || [];
+    return (
+      <div>
+        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Чаты ({chats.length})</h4>
+        <table style={{ ...tableStyle, marginBottom: 16 }}>
+          <thead><tr><th style={thS}>ID</th><th style={thS}>Название</th><th style={thS}>Цена</th><th style={thS}>Статус</th></tr></thead>
+          <tbody>{chats.map(c => (
+            <tr key={c.id}><td style={tdS}>{c.id}</td><td style={tdS}>{c.title || '-'}</td><td style={tdS}>{c.price || '-'}</td><td style={tdS}>{c.is_active ? 'Активен' : 'Неактивен'}</td></tr>
+          ))}</tbody>
+        </table>
+        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Участники ({members.length})</h4>
+        <table style={{ ...tableStyle, marginBottom: 16 }}>
+          <thead><tr><th style={thS}>Чат</th><th style={thS}>User ID</th><th style={thS}>Статус</th><th style={thS}>Дата</th></tr></thead>
+          <tbody>{members.map((m, i) => (
+            <tr key={i}><td style={tdS}>{m.chat_title || m.paid_chat_id}</td><td style={tdS}>{m.telegram_id || m.max_user_id || '-'}</td><td style={tdS}>{m.status || '-'}</td><td style={tdS}>{fmtDate(m.joined_at)}</td></tr>
+          ))}</tbody>
+        </table>
+        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Публикации ({posts.length})</h4>
+        <table style={tableStyle}>
+          <thead><tr><th style={thS}>ID</th><th style={thS}>Чат</th><th style={thS}>Текст</th><th style={thS}>Дата</th></tr></thead>
+          <tbody>{posts.map(p => (
+            <tr key={p.id}><td style={tdS}>{p.id}</td><td style={tdS}>{p.chat_title || p.paid_chat_id}</td><td style={tdS}>{(p.message_text || '').slice(0, 60) || '-'}</td><td style={tdS}>{fmtDate(p.created_at)}</td></tr>
+          ))}</tbody>
+        </table>
+        {!chats.length && !members.length && !posts.length && <div style={{ color: '#aaa', textAlign: 'center', padding: 20 }}>Нет данных</div>}
+      </div>
+    );
+  };
+
+  const renderLogs = () => {
+    const rows = tabData?.logs || [];
+    const typeColors = { visit: '#3b82f6', subscription: '#10b981', pin: '#f59e0b', broadcast: '#8b5cf6', post: '#6366f1', giveaway: '#ef4444', lead: '#14b8a6' };
+    const typeLabels = { visit: 'Визит', subscription: 'Подписка', pin: 'Закреп', broadcast: 'Рассылка', post: 'Публикация', giveaway: 'Розыгрыш', lead: 'Лид-магнит' };
+    return (
+      <div>
+        <div style={{ maxHeight: 600, overflowY: 'auto' }}>
+          {rows.map((log, i) => (
+            <div key={i} style={{
+              padding: '10px 14px', marginBottom: 6, borderRadius: 8, fontSize: 13,
+              background: '#f8f9fa',
+              borderLeft: `3px solid ${typeColors[log.type] || '#aaa'}`,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span style={{
+                  display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+                  background: (typeColors[log.type] || '#888') + '20', color: typeColors[log.type] || '#888',
+                }}>{typeLabels[log.type] || log.type}</span>
+                <span style={{ fontSize: 11, color: '#999' }}>{fmtDate(log.created_at)}</span>
+              </div>
+              <div style={{ color: '#333' }}>{log.text || '-'}</div>
+              {log.platform && <span style={{ fontSize: 11, color: '#999' }}>{log.platform}</span>}
+            </div>
+          ))}
+          {!rows.length && <div style={{ color: '#aaa', textAlign: 'center', padding: 40 }}>Нет логов</div>}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTabContent = () => {
+    if (!tabData) return <div style={{ color: '#aaa', padding: 20 }}>Загрузка...</div>;
+    if (tab === 'links') return renderLinks();
+    if (tab === 'subscribers') return renderSubscribers();
+    if (tab === 'paidChats') return renderPaidChats();
+    if (tab === 'logs') return renderLogs();
+    return renderGenericTable();
+  };
 
   return (
     <div>
@@ -79,38 +226,13 @@ export default function AdminChannelProfilePage() {
         </div>
       )}
 
-      <div style={{ borderBottom: '1px solid #ddd', marginBottom: 16, display: 'flex', gap: 4 }}>
-        {tabs.map(t => <button key={t.key} onClick={() => setTab(t.key)} style={tabBtn(tab === t.key)}>{t.label}</button>)}
+      <div style={{ borderBottom: '1px solid #ddd', marginBottom: 16, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+        {Object.entries(TAB_CONFIG).map(([key, cfg]) => (
+          <button key={key} onClick={() => setTab(key)} style={tabBtn(tab === key)}>{cfg.label}</button>
+        ))}
       </div>
 
-      {tab === 'links' ? (
-        <table style={tableStyle}>
-          <thead><tr><th style={thS}>ID</th><th style={thS}>Название</th><th style={thS}>Код</th><th style={thS}>UTM Source</th><th style={thS}>Клики</th><th style={thS}>Пауза</th><th style={thS}></th></tr></thead>
-          <tbody>{tabData.map(l => (
-            <tr key={l.id}>
-              <td style={tdS}>{l.id}</td><td style={tdS}>{l.name}</td><td style={tdS}>{l.short_code}</td>
-              <td style={tdS}>{l.utm_source || '-'}</td><td style={tdS}>{l.clicks}</td>
-              <td style={tdS}>{l.is_paused ? 'Да' : 'Нет'}</td>
-              <td style={tdS}>
-                <button style={btnEdit} onClick={() => setEditLink({ ...l })}>Ред.</button>
-                <button style={btnDanger} onClick={() => handleDeleteLink(l.id)}>Удалить</button>
-              </td>
-            </tr>
-          ))}</tbody>
-        </table>
-      ) : (
-        <table style={tableStyle}>
-          <thead><tr><th style={thS}>ID</th><th style={thS}>Заголовок</th><th style={thS}>Статус</th><th style={thS}>Дата</th></tr></thead>
-          <tbody>{tabData.map(item => (
-            <tr key={item.id}>
-              <td style={tdS}>{item.id}</td>
-              <td style={tdS}>{item.title || item.name || item.message_text?.slice(0, 50) || '-'}</td>
-              <td style={tdS}>{item.status || '-'}</td>
-              <td style={tdS}>{item.created_at ? new Date(item.created_at).toLocaleDateString('ru') : '-'}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      )}
+      {renderTabContent()}
 
       {editLink && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>

@@ -70,6 +70,13 @@ async def dashboard_stats(admin: Dict = Depends(get_current_admin)):
     subscribers = await fetch_one("SELECT COUNT(*) as c FROM subscriptions")
     active_billing = await fetch_one("SELECT COUNT(*) as c FROM channel_billing WHERE status = 'active' AND expires_at > NOW()")
     leads = await fetch_one("SELECT COUNT(*) as c FROM leads")
+    try:
+        pins = await fetch_one("SELECT COUNT(*) as c FROM pin_posts")
+        broadcasts = await fetch_one("SELECT COUNT(*) as c FROM broadcasts")
+        giveaways = await fetch_one("SELECT COUNT(*) as c FROM giveaways")
+        lead_magnets = await fetch_one("SELECT COUNT(*) as c FROM lead_magnets")
+    except Exception:
+        pins = broadcasts = giveaways = lead_magnets = {"c": 0}
     return {
         "success": True,
         "users": users["c"] if users else 0,
@@ -77,6 +84,10 @@ async def dashboard_stats(admin: Dict = Depends(get_current_admin)):
         "subscribers": subscribers["c"] if subscribers else 0,
         "activeBillings": active_billing["c"] if active_billing else 0,
         "leads": leads["c"] if leads else 0,
+        "pins": pins["c"] if pins else 0,
+        "broadcasts": broadcasts["c"] if broadcasts else 0,
+        "giveaways": giveaways["c"] if giveaways else 0,
+        "leadMagnets": lead_magnets["c"] if lead_magnets else 0,
     }
 
 
@@ -155,7 +166,7 @@ async def user_pins(user_id: int, admin: Dict = Depends(get_current_admin)):
            ORDER BY pp.created_at DESC""",
         user_id,
     )
-    return {"success": True, "pins": rows}
+    return {"success": True, "pins": _strip_binary(rows)}
 
 
 @router.get("/users/{user_id}/broadcasts")
@@ -166,7 +177,7 @@ async def user_broadcasts(user_id: int, admin: Dict = Depends(get_current_admin)
            ORDER BY b.created_at DESC""",
         user_id,
     )
-    return {"success": True, "broadcasts": rows}
+    return {"success": True, "broadcasts": _strip_binary(rows)}
 
 
 @router.get("/users/{user_id}/giveaways")
@@ -177,7 +188,7 @@ async def user_giveaways(user_id: int, admin: Dict = Depends(get_current_admin))
            ORDER BY g.created_at DESC""",
         user_id,
     )
-    return {"success": True, "giveaways": rows}
+    return {"success": True, "giveaways": _strip_binary(rows)}
 
 
 @router.get("/users/{user_id}/lead-magnets")
@@ -188,7 +199,7 @@ async def user_lead_magnets(user_id: int, admin: Dict = Depends(get_current_admi
            ORDER BY lm.created_at DESC""",
         user_id,
     )
-    return {"success": True, "leadMagnets": rows}
+    return {"success": True, "leadMagnets": _strip_binary(rows)}
 
 
 @router.put("/users/{user_id}/extend-tariff")
@@ -360,28 +371,36 @@ async def get_channel(channel_id: int, admin: Dict = Depends(get_current_admin))
     return {"success": True, "channel": ch, "staff": staff}
 
 
+def _strip_binary(rows):
+    """Remove binary fields (file_data etc.) from query results for JSON serialization."""
+    clean = []
+    for row in rows:
+        clean.append({k: v for k, v in row.items() if not isinstance(v, (bytes, bytearray, memoryview))})
+    return clean
+
+
 @router.get("/channels/{channel_id}/pins")
 async def channel_pins(channel_id: int, admin: Dict = Depends(get_current_admin)):
     rows = await fetch_all("SELECT * FROM pin_posts WHERE channel_id = $1 ORDER BY created_at DESC", channel_id)
-    return {"success": True, "pins": rows}
+    return {"success": True, "pins": _strip_binary(rows)}
 
 
 @router.get("/channels/{channel_id}/lead-magnets")
 async def channel_lead_magnets(channel_id: int, admin: Dict = Depends(get_current_admin)):
     rows = await fetch_all("SELECT * FROM lead_magnets WHERE channel_id = $1 ORDER BY created_at DESC", channel_id)
-    return {"success": True, "leadMagnets": rows}
+    return {"success": True, "leadMagnets": _strip_binary(rows)}
 
 
 @router.get("/channels/{channel_id}/content")
 async def channel_content(channel_id: int, admin: Dict = Depends(get_current_admin)):
     rows = await fetch_all("SELECT * FROM content_posts WHERE channel_id = $1 ORDER BY created_at DESC", channel_id)
-    return {"success": True, "posts": rows}
+    return {"success": True, "posts": _strip_binary(rows)}
 
 
 @router.get("/channels/{channel_id}/giveaways")
 async def channel_giveaways(channel_id: int, admin: Dict = Depends(get_current_admin)):
     rows = await fetch_all("SELECT * FROM giveaways WHERE channel_id = $1 ORDER BY created_at DESC", channel_id)
-    return {"success": True, "giveaways": rows}
+    return {"success": True, "giveaways": _strip_binary(rows)}
 
 
 @router.get("/channels/{channel_id}/links")
@@ -414,6 +433,160 @@ async def edit_channel_link(channel_id: int, link_id: int, request: Request, adm
 async def delete_channel_link(channel_id: int, link_id: int, admin: Dict = Depends(get_current_admin)):
     await execute("DELETE FROM tracking_links WHERE id = $1 AND channel_id = $2", link_id, channel_id)
     return {"success": True}
+
+
+@router.get("/channels/{channel_id}/broadcasts")
+async def channel_broadcasts(channel_id: int, admin: Dict = Depends(get_current_admin)):
+    rows = await fetch_all("SELECT * FROM broadcasts WHERE channel_id = $1 ORDER BY created_at DESC", channel_id)
+    return {"success": True, "broadcasts": _strip_binary(rows)}
+
+
+@router.get("/channels/{channel_id}/comments")
+async def channel_comments(channel_id: int, admin: Dict = Depends(get_current_admin)):
+    try:
+        rows = await fetch_all("SELECT * FROM comments WHERE channel_id = $1 ORDER BY created_at DESC LIMIT 100", channel_id)
+    except Exception:
+        rows = []
+    return {"success": True, "comments": rows}
+
+
+@router.get("/channels/{channel_id}/paid-chats")
+async def channel_paid_chats(channel_id: int, admin: Dict = Depends(get_current_admin)):
+    try:
+        chats = await fetch_all("SELECT * FROM paid_chats WHERE channel_id = $1 ORDER BY created_at DESC", channel_id)
+        members = await fetch_all(
+            """SELECT pcm.*, pc.title as chat_title FROM paid_chat_members pcm
+               JOIN paid_chats pc ON pc.id = pcm.paid_chat_id
+               WHERE pc.channel_id = $1 ORDER BY pcm.joined_at DESC LIMIT 100""",
+            channel_id,
+        )
+        posts = await fetch_all(
+            """SELECT pcp.*, pc.title as chat_title FROM paid_chat_posts pcp
+               JOIN paid_chats pc ON pc.id = pcp.paid_chat_id
+               WHERE pc.channel_id = $1 ORDER BY pcp.created_at DESC LIMIT 100""",
+            channel_id,
+        )
+    except Exception:
+        chats, members, posts = [], [], []
+    return {"success": True, "chats": _strip_binary(chats), "members": _strip_binary(members), "posts": _strip_binary(posts)}
+
+
+@router.get("/channels/{channel_id}/funnels")
+async def channel_funnels(channel_id: int, admin: Dict = Depends(get_current_admin)):
+    try:
+        rows = await fetch_all("SELECT * FROM funnel_steps WHERE channel_id = $1 ORDER BY step_order", channel_id)
+    except Exception:
+        rows = []
+    return {"success": True, "funnels": rows}
+
+
+@router.get("/channels/{channel_id}/subscribers")
+async def channel_subscribers(channel_id: int, admin: Dict = Depends(get_current_admin)):
+    rows = await fetch_all(
+        """SELECT s.*, u.username, u.first_name FROM subscriptions s
+           LEFT JOIN users u ON u.telegram_id = s.telegram_id OR u.max_user_id = s.max_user_id
+           WHERE s.channel_id = $1 ORDER BY s.subscribed_at DESC LIMIT 200""",
+        channel_id,
+    )
+    return {"success": True, "subscribers": rows}
+
+
+@router.get("/channels/{channel_id}/logs")
+async def channel_logs(channel_id: int, admin: Dict = Depends(get_current_admin)):
+    """Activity log for channel: visits, clicks, subscriptions."""
+    logs = []
+
+    # Visits
+    try:
+        visits = await fetch_all(
+            """SELECT v.id, v.ip_address, v.user_agent, v.platform, v.visited_at as created_at,
+                      v.username, v.first_name, tl.name as link_name, tl.short_code
+               FROM visits v LEFT JOIN tracking_links tl ON tl.id = v.tracking_link_id
+               WHERE v.channel_id = $1 ORDER BY v.visited_at DESC LIMIT 200""",
+            channel_id,
+        )
+        for v in visits:
+            logs.append({**v, "type": "visit", "text": f"Визит: {v.get('first_name') or v.get('username') or v.get('ip_address') or '—'} → {v.get('link_name') or v.get('short_code') or '—'}"})
+    except Exception:
+        pass
+
+    # Subscriptions
+    try:
+        subs = await fetch_all(
+            """SELECT s.id, s.telegram_id, s.max_user_id, s.username, s.first_name,
+                      s.platform, s.subscribed_at as created_at
+               FROM subscriptions s WHERE s.channel_id = $1 ORDER BY s.subscribed_at DESC LIMIT 200""",
+            channel_id,
+        )
+        for s in subs:
+            logs.append({**s, "type": "subscription", "text": f"Подписка: {s.get('first_name') or s.get('username') or s.get('telegram_id') or s.get('max_user_id') or '—'}"})
+    except Exception:
+        pass
+
+    # Pins
+    try:
+        pins = await fetch_all(
+            "SELECT id, title, status, published_at, created_at FROM pin_posts WHERE channel_id = $1 ORDER BY created_at DESC LIMIT 100",
+            channel_id,
+        )
+        for p in pins:
+            dt = p.get("published_at") or p.get("created_at")
+            logs.append({"type": "pin", "text": f"Закреп: {p.get('title') or '—'} [{p.get('status')}]", "created_at": dt})
+    except Exception:
+        pass
+
+    # Broadcasts
+    try:
+        broads = await fetch_all(
+            "SELECT id, title, status, sent_at, created_at FROM broadcasts WHERE channel_id = $1 ORDER BY created_at DESC LIMIT 100",
+            channel_id,
+        )
+        for b in broads:
+            dt = b.get("sent_at") or b.get("created_at")
+            logs.append({"type": "broadcast", "text": f"Рассылка: {b.get('title') or '—'} [{b.get('status')}]", "created_at": dt})
+    except Exception:
+        pass
+
+    # Content posts
+    try:
+        posts = await fetch_all(
+            "SELECT id, title, status, published_at, created_at FROM content_posts WHERE channel_id = $1 ORDER BY created_at DESC LIMIT 100",
+            channel_id,
+        )
+        for p in posts:
+            dt = p.get("published_at") or p.get("created_at")
+            logs.append({"type": "post", "text": f"Публикация: {p.get('title') or '—'} [{p.get('status')}]", "created_at": dt})
+    except Exception:
+        pass
+
+    # Giveaways
+    try:
+        gives = await fetch_all(
+            "SELECT id, title, status, created_at FROM giveaways WHERE channel_id = $1 ORDER BY created_at DESC LIMIT 50",
+            channel_id,
+        )
+        for g in gives:
+            logs.append({"type": "giveaway", "text": f"Розыгрыш: {g.get('title') or '—'} [{g.get('status')}]", "created_at": g.get("created_at")})
+    except Exception:
+        pass
+
+    # Lead magnets delivered (leads)
+    try:
+        leads = await fetch_all(
+            """SELECT l.id, l.created_at, lm.title as lm_title, l.username, l.first_name
+               FROM leads l LEFT JOIN lead_magnets lm ON lm.id = l.lead_magnet_id
+               WHERE l.channel_id = $1 ORDER BY l.created_at DESC LIMIT 100""",
+            channel_id,
+        )
+        for l in leads:
+            name = l.get("first_name") or l.get("username") or "—"
+            logs.append({"type": "lead", "text": f"Лид-магнит: {l.get('lm_title') or '—'} → {name}", "created_at": l.get("created_at")})
+    except Exception:
+        pass
+
+    # Sort by date desc
+    logs.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return {"success": True, "logs": logs[:500]}
 
 
 # ===========================
@@ -586,3 +759,130 @@ async def delete_admin(admin_id: int, admin: Dict = Depends(require_superadmin))
         raise HTTPException(status_code=400, detail="Нельзя удалить самого себя")
     await execute("DELETE FROM admin_users WHERE id = $1", admin_id)
     return {"success": True}
+
+
+# ===========================
+# Tariffs
+# ===========================
+
+@router.get("/tariffs")
+async def list_tariffs(admin: Dict = Depends(get_current_admin)):
+    tariffs = await fetch_all("SELECT * FROM tariffs ORDER BY months ASC")
+    return {"success": True, "tariffs": tariffs}
+
+
+@router.put("/tariffs/{tariff_id}")
+async def update_tariff(tariff_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    price = body.get("price")
+    label = body.get("label")
+    is_active = body.get("is_active")
+
+    if price is not None and (not isinstance(price, (int, float)) or price < 0):
+        raise HTTPException(status_code=400, detail="Некорректная цена")
+
+    fields = []
+    params = []
+    idx = 1
+    if price is not None:
+        fields.append(f"price = ${idx}")
+        params.append(int(price))
+        idx += 1
+    if label is not None:
+        fields.append(f"label = ${idx}")
+        params.append(label)
+        idx += 1
+    if is_active is not None:
+        fields.append(f"is_active = ${idx}")
+        params.append(bool(is_active))
+        idx += 1
+
+    if not fields:
+        return {"success": True}
+
+    fields.append(f"updated_at = NOW()")
+    params.append(tariff_id)
+    await execute(f"UPDATE tariffs SET {', '.join(fields)} WHERE id = ${idx}", *params)
+    tariff = await fetch_one("SELECT * FROM tariffs WHERE id = $1", tariff_id)
+    return {"success": True, "tariff": tariff}
+
+
+@router.post("/tariffs")
+async def create_tariff(request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    months = body.get("months")
+    label = body.get("label")
+    price = body.get("price")
+
+    if not months or not label or price is None:
+        raise HTTPException(status_code=400, detail="months, label и price обязательны")
+
+    tariff_id = await execute_returning_id(
+        "INSERT INTO tariffs (months, label, price) VALUES ($1, $2, $3) RETURNING id",
+        int(months), label, int(price),
+    )
+    tariff = await fetch_one("SELECT * FROM tariffs WHERE id = $1", tariff_id)
+    return {"success": True, "tariff": tariff}
+
+
+@router.delete("/tariffs/{tariff_id}")
+async def delete_tariff(tariff_id: int, admin: Dict = Depends(get_current_admin)):
+    await execute("DELETE FROM tariffs WHERE id = $1", tariff_id)
+    return {"success": True}
+
+
+# ===========================
+# Finance
+# ===========================
+
+@router.get("/finance")
+async def finance_overview(
+    admin: Dict = Depends(get_current_admin),
+    period: str = "30d",
+):
+    """Get all payments for the given period."""
+    days = {"7d": 7, "14d": 14, "30d": 30, "90d": 90, "365d": 365}.get(period, 30)
+
+    # Billing payments (service subscriptions)
+    billing = await fetch_all(
+        """SELECT bp.id, bp.amount, bp.currency, bp.status, bp.payment_id, bp.created_at,
+                  cb.channel_id, c.title as channel_title, u.username as user_username, u.first_name as user_name
+           FROM billing_payments bp
+           LEFT JOIN channel_billing cb ON cb.id = bp.channel_billing_id
+           LEFT JOIN channels c ON c.id = cb.channel_id
+           LEFT JOIN users u ON u.id = c.user_id
+           WHERE bp.created_at > NOW() - INTERVAL '%s days'
+           ORDER BY bp.created_at DESC""" % days,
+    )
+
+    # Paid chat payments
+    try:
+        paid_chat = await fetch_all(
+            """SELECT pcp.id, pcp.amount, pcp.currency, pcp.status, pcp.payment_id, pcp.created_at,
+                      pc.title as chat_title, c.title as channel_title
+               FROM paid_chat_payments pcp
+               LEFT JOIN paid_chats pc ON pc.id = pcp.paid_chat_id
+               LEFT JOIN channels c ON c.id = pc.channel_id
+               WHERE pcp.created_at > NOW() - INTERVAL '%s days'
+               ORDER BY pcp.created_at DESC""" % days,
+        )
+    except Exception:
+        paid_chat = []
+
+    # Totals
+    total_billing = sum(float(p.get("amount", 0)) for p in billing if p.get("status") == "paid")
+    total_paid_chat = sum(float(p.get("amount", 0)) for p in paid_chat if p.get("status") in ("paid", "success", "completed"))
+    pending_billing = sum(float(p.get("amount", 0)) for p in billing if p.get("status") == "pending")
+
+    return {
+        "success": True,
+        "billing_payments": billing,
+        "paid_chat_payments": paid_chat,
+        "totals": {
+            "billing": total_billing,
+            "paid_chat": total_paid_chat,
+            "total": total_billing + total_paid_chat,
+            "pending": pending_billing,
+        },
+        "period": period,
+    }

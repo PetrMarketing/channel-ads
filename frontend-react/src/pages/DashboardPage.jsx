@@ -17,7 +17,7 @@ export default function DashboardPage() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [editChannel, setEditChannel] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [addPlatform, setAddPlatform] = useState('telegram');
+  const [addPlatform, setAddPlatform] = useState('max');
   const [unclaimedChannels, setUnclaimedChannels] = useState([]);
   const pollRef = useRef(null);
   const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
@@ -184,57 +184,8 @@ export default function DashboardPage() {
       {/* Add Channel Modal */}
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Добавить канал">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Platform Selector */}
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              className={`btn ${addPlatform === 'telegram' ? 'btn-primary' : 'btn-outline'}`}
-              style={addPlatform === 'telegram' ? { background: '#2AABEE', borderColor: '#2AABEE' } : {}}
-              onClick={() => setAddPlatform('telegram')}
-            >
-              📱 Telegram
-            </button>
-            <button
-              className={`btn ${addPlatform === 'max' ? 'btn-primary' : 'btn-outline'}`}
-              style={addPlatform === 'max' ? { background: '#7B68EE', borderColor: '#7B68EE' } : {}}
-              onClick={() => setAddPlatform('max')}
-            >
-              💬 MAX
-            </button>
-          </div>
-
-          {/* Telegram */}
-          {addPlatform === 'telegram' && (
-            <div className="instruction-box" style={{ padding: '16px', background: 'var(--bg-glass)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-              {!user?.telegram_id ? (
-                <>
-                  <h4 style={{ marginBottom: '8px' }}>Подключите Telegram</h4>
-                  <p style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                    Чтобы добавлять Telegram-каналы, сначала авторизуйтесь через Telegram-бота.
-                  </p>
-                  <a href={`https://t.me/${tgBotUsername}?start=auth`} target="_blank" rel="noreferrer"
-                    className="btn btn-primary" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#2AABEE' }}>
-                    📱 Открыть бота в Telegram
-                  </a>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '10px' }}>
-                    Нажмите кнопку — бот автоматически пришлёт ссылку для привязки аккаунта.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <h4 style={{ marginBottom: '8px' }}>Добавьте бота в канал</h4>
-                  <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <li>Откройте ваш канал → <b>Настройки</b> → <b>Администраторы</b></li>
-                    <li>Добавьте бота: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg-glass)', borderRadius: '4px' }} onClick={() => { navigator.clipboard.writeText(`@${tgBotUsername}`); showToast('Скопировано'); }}>@{tgBotUsername}</code></li>
-                    <li>Дайте права: <b>чтение сообщений</b> и <b>управление подписчиками</b></li>
-                    <li>Вернитесь сюда — канал появится автоматически</li>
-                  </ol>
-                </>
-              )}
-            </div>
-          )}
-
           {/* MAX */}
-          {addPlatform === 'max' && (
+          {(
             <div className="instruction-box" style={{ padding: '16px', background: 'var(--bg-glass)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
               {!user?.max_user_id ? (
                 <>
@@ -359,7 +310,7 @@ function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
   const ch = channel;
   const isDisconnected = ch.is_active === 0 || ch.is_active === false;
   const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
-  const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_3_bot';
+  const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
   const platformColor = ch.platform === 'max' ? '#7B68EE' : '#2AABEE';
   const firstLetter = (ch.title || ch.channel_id || 'C')[0].toUpperCase();
 

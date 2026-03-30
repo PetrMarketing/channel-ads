@@ -18,7 +18,15 @@ export function ChannelProvider({ children }) {
       if (data.success) {
         setChannels(data.channels);
         setCurrentChannel(prev => {
-          if (!prev && data.channels.length > 0) return data.channels[0];
+          const savedTc = localStorage.getItem('selected_channel');
+          if (!prev && data.channels.length > 0) {
+            // Restore saved channel or pick first
+            if (savedTc) {
+              const saved = data.channels.find(c => c.tracking_code === savedTc);
+              if (saved) return saved;
+            }
+            return data.channels[0];
+          }
           // Update current channel data if it changed
           if (prev) {
             const updated = data.channels.find(c => c.tracking_code === prev.tracking_code);
@@ -36,6 +44,9 @@ export function ChannelProvider({ children }) {
 
   const selectChannel = useCallback((channel) => {
     setCurrentChannel(channel);
+    if (channel?.tracking_code) {
+      localStorage.setItem('selected_channel', channel.tracking_code);
+    }
   }, []);
 
   useEffect(() => {

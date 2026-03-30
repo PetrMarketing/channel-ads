@@ -69,6 +69,24 @@ class MaxApi:
             body["attachments"].append(keyboard)
         return await self._request("POST", f"messages?chat_id={chat_id}", json=body)
 
+    async def edit_message(
+        self, message_id: str, text: str,
+        attachments: Optional[List] = None,
+        buttons: Optional[List] = None,
+        fmt: str = "markdown",
+    ) -> Dict[str, Any]:
+        body: Dict[str, Any] = {"text": text, "format": fmt}
+        if attachments:
+            body["attachments"] = list(attachments)
+        if buttons:
+            if buttons and isinstance(buttons[0], dict):
+                buttons = [[btn] for btn in buttons]
+            keyboard = {"type": "inline_keyboard", "payload": {"buttons": buttons}}
+            if "attachments" not in body:
+                body["attachments"] = []
+            body["attachments"].append(keyboard)
+        return await self._request("PUT", f"messages?message_id={message_id}", json=body)
+
     async def send_direct_message(
         self, user_id: str, text: str,
         attachments: Optional[List] = None,

@@ -186,6 +186,8 @@ export default function RichTextEditor({ value, onChange, placeholder, rows = 5,
     if (html) {
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
+      // Remove <style> blocks (CSS from copied pages/emails)
+      tmp.querySelectorAll('style, meta, link, title, script').forEach(el => el.remove());
       // Convert <img> emoji (from messengers) back to their alt text
       tmp.querySelectorAll('img').forEach(img => {
         const alt = img.getAttribute('alt');
@@ -195,13 +197,26 @@ export default function RichTextEditor({ value, onChange, placeholder, rows = 5,
           img.remove();
         }
       });
-      // Strip all but allowed tags, preserve text content
-      const clean = tmp.innerHTML
-        .replace(/<(?!\/?(b|i|u|s|strong|em|a|br|code|pre)(\s|>|\/))([^>]*)>/gi, '')
-        .replace(/<br\s*\/?>/gi, '<br>');
+      // Convert block-level closing tags to <br> before stripping
+      let clean = tmp.innerHTML;
+      // <br> -> preserve
+      clean = clean.replace(/<br\s*\/?>/gi, '\n');
+      // Block closing tags -> newline
+      clean = clean.replace(/<\/(?:div|p|li|h[1-6]|blockquote|tr)>/gi, '\n');
+      // Remove opening block tags (with any attributes/styles)
+      clean = clean.replace(/<(?:div|p|li|ul|ol|h[1-6]|blockquote|tr|td|th|table|thead|tbody|section|article|header|footer|nav|figure|figcaption|span)(?:\s[^>]*)?\s*>/gi, '');
+      // Strip remaining non-allowed tags but keep content
+      clean = clean.replace(/<(?!\/?(b|i|u|s|strong|em|a|br|code|pre)(\s|>|\/))([^>]*)>/gi, '');
+      // Convert newlines back to <br>
+      clean = clean.replace(/\n/g, '<br>');
+      // Collapse 3+ <br> to 2
+      clean = clean.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
       document.execCommand('insertHTML', false, clean);
-    } else {
-      document.execCommand('insertText', false, text);
+    } else if (text) {
+      // Plain text: preserve line breaks as <br>
+      const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const withBreaks = escaped.replace(/\n/g, '<br>');
+      document.execCommand('insertHTML', false, withBreaks);
     }
     handleInput();
   };

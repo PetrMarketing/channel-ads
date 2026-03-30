@@ -98,7 +98,7 @@ export default function Header({ onToggleSidebar }) {
   const [unlinkCode, setUnlinkCode] = useState('');
   const [unlinkPlatform, setUnlinkPlatform] = useState('');
   const tgBot = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
-  const maxBot = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_3_bot';
+  const maxBot = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
 
   const handleUnlink = async (platform) => {
     try {
@@ -119,7 +119,7 @@ export default function Header({ onToggleSidebar }) {
     <header className="header">
       <div className="header-left">
         <button className="sidebar-toggle" onClick={onToggleSidebar}>&#9776;</button>
-        <h1>&#128226; Реклама канала</h1>
+        <h1><img src="/logo-64.png" alt="PK" style={{ width: 28, height: 28, borderRadius: 6, verticalAlign: 'middle', marginRight: 8 }} />MAXМаркетинг</h1>
         {channels.length > 0 && (
           <div className="global-channel-selector">
             <select
@@ -142,7 +142,6 @@ export default function Header({ onToggleSidebar }) {
         )}
         {user && (
           <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
-            <PlatformBadge platform="telegram" user={user} channels={channels} onUnlink={handleUnlink} />
             <PlatformBadge platform="max" user={user} channels={channels} onUnlink={handleUnlink} />
           </span>
         )}

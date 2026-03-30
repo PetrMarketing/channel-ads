@@ -14,14 +14,25 @@ router = APIRouter()
 public_router = APIRouter()
 staff_invite_router = APIRouter()
 
-# --- Pricing model: fixed price per duration, per user, with channel discount ---
-DURATION_OPTIONS = {
-    1:  {"months": 1,  "label": "1 месяц",    "price": 10},
+# --- Pricing model: loaded from DB, with hardcoded fallback ---
+_FALLBACK_DURATIONS = {
+    1:  {"months": 1,  "label": "1 месяц",    "price": 490},
     3:  {"months": 3,  "label": "3 месяца",   "price": 1290},
     6:  {"months": 6,  "label": "6 месяцев",  "price": 2290},
     12: {"months": 12, "label": "12 месяцев", "price": 3990},
 }
 CHANNEL_DISCOUNT_PERCENT = 10  # 10% скидка за каждый дополнительный канал
+
+
+async def get_duration_options() -> dict:
+    """Load tariffs from DB, fallback to hardcoded."""
+    try:
+        rows = await fetch_all("SELECT months, label, price FROM tariffs WHERE is_active = true ORDER BY months")
+        if rows:
+            return {r["months"]: {"months": r["months"], "label": r["label"], "price": r["price"]} for r in rows}
+    except Exception:
+        pass
+    return _FALLBACK_DURATIONS
 
 STAFF_ROLES = {
     "advertiser": {
@@ -42,10 +53,11 @@ STAFF_ROLES = {
 }
 
 
-def calculate_price(users: int, months: int, channels: int = 1) -> dict:
+async def calculate_price(users: int, months: int, channels: int = 1) -> dict:
     """Calculate total price for N users for M months with progressive channel discount.
     1st channel = full price, 2nd = -10%, 3rd = -20%, 4th = -30%, etc (max 90% discount).
     """
+    DURATION_OPTIONS = await get_duration_options()
     duration = DURATION_OPTIONS.get(months)
     if not duration:
         raise ValueError(f"Invalid duration: {months}")
@@ -101,9 +113,10 @@ def generate_tinkoff_token(params: dict) -> str:
 
 @public_router.get("/plans")
 async def get_plans():
+    durations = await get_duration_options()
     return {
         "success": True,
-        "durations": DURATION_OPTIONS,
+        "durations": durations,
         "channel_discount_percent": CHANNEL_DISCOUNT_PERCENT,
         "roles": STAFF_ROLES,
     }
@@ -183,11 +196,12 @@ async def tinkoff_webhook(request: Request):
 @router.get("/plans")
 async def get_plans_protected(user=Depends(get_current_user)):
     """Get pricing info."""
+    durations = await get_duration_options()
     channels = await fetch_all("SELECT id FROM channels WHERE user_id = $1", user["id"])
     channel_count = len(channels) if channels else 1
     return {
         "success": True,
-        "durations": {str(k): v for k, v in DURATION_OPTIONS.items()},
+        "durations": {str(k): v for k, v in durations.items()},
         "channel_discount_percent": CHANNEL_DISCOUNT_PERCENT,
         "channel_count": channel_count,
         "roles": STAFF_ROLES,
@@ -237,11 +251,12 @@ async def calculate(request: Request, user=Depends(get_current_user)):
     body = await request.json()
     users = max(1, int(body.get("users", 1)))
     months = int(body.get("months", 1))
-    if months not in DURATION_OPTIONS:
+    durations = await get_duration_options()
+    if months not in durations:
         raise HTTPException(status_code=400, detail="Неверный срок подписки")
     channels = await fetch_all("SELECT id FROM channels WHERE user_id = $1", user["id"])
     channel_count = len(channels) if channels else 1
-    price = calculate_price(users, months, channel_count)
+    price = await calculate_price(users, months, channel_count)
     return {"success": True, **price}
 
 
@@ -252,7 +267,8 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
     months = int(body.get("months", 1))
     channel_configs = body.get("channels", [])
 
-    if months not in DURATION_OPTIONS:
+    durations = await get_duration_options()
+    if months not in durations:
         raise HTTPException(status_code=400, detail="Неверный срок подписки")
     if not channel_configs:
         raise HTTPException(status_code=400, detail="Выберите хотя бы один канал")
@@ -270,7 +286,7 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
         resolved.append({"channel": channel, "users": ch_users, "tracking_code": tc})
 
     selected_count = len(resolved)
-    base_price = DURATION_OPTIONS[months]["price"]
+    base_price = durations[months]["price"]
 
     # Progressive discount per channel
     total = 0
@@ -311,7 +327,7 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
     for pid in payment_ids:
         await execute("UPDATE billing_payments SET payment_id = $1 WHERE id = $2", order_id, pid)
 
-    duration_label = DURATION_OPTIONS[months]["label"]
+    duration_label = durations[months]["label"]
     channel_titles = ", ".join(r["channel"].get("title", "") for r in resolved)
     description = f"Подписка {duration_label}, {total_users} польз. — {channel_titles}"
     if len(description) > 250:
@@ -420,7 +436,8 @@ async def create_payment(tracking_code: str, request: Request, user=Depends(get_
     users = max(1, int(body.get("users", 1)))
     months = int(body.get("months", 1))
 
-    if months not in DURATION_OPTIONS:
+    durations = await get_duration_options()
+    if months not in durations:
         raise HTTPException(status_code=400, detail="Неверный срок подписки")
 
     channel = await fetch_one(
@@ -433,7 +450,7 @@ async def create_payment(tracking_code: str, request: Request, user=Depends(get_
     # Count user's channels for discount
     all_channels = await fetch_all("SELECT id FROM channels WHERE user_id = $1", user["id"])
     channel_count = len(all_channels) if all_channels else 1
-    price_info = calculate_price(users, months, channel_count)
+    price_info = await calculate_price(users, months, channel_count)
     amount_kopeks = price_info["total"] * 100
 
     # Ensure billing record
@@ -459,7 +476,7 @@ async def create_payment(tracking_code: str, request: Request, user=Depends(get_
     order_id = f"ch{channel['id']}_p{payment_id}"
     await execute("UPDATE billing_payments SET payment_id = $1 WHERE id = $2", order_id, payment_id)
 
-    duration_label = DURATION_OPTIONS[months]["label"]
+    duration_label = durations[months]["label"]
     pay_description = f"Подписка {duration_label}, {users} польз. — {channel.get('title', '')}"
 
     user_email = body.get("email") or user.get("email") or ""

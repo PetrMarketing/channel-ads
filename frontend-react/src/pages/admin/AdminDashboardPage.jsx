@@ -19,6 +19,10 @@ export default function AdminDashboardPage() {
     { label: 'Подписчиков', value: stats.subscribers, color: '#e9c46a' },
     { label: 'Активных подписок', value: stats.activeBillings, color: '#f4a261' },
     { label: 'Лидов', value: stats.leads, color: '#e76f51' },
+    { label: 'Закрепов', value: stats.pins, color: '#264653' },
+    { label: 'Рассылок', value: stats.broadcasts, color: '#7b68ee' },
+    { label: 'Розыгрышей', value: stats.giveaways, color: '#e63946' },
+    { label: 'Лид-магнитов', value: stats.leadMagnets, color: '#a8dadc' },
   ];
 
   return (

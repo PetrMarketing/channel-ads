@@ -135,7 +135,7 @@ export default function LoginPage() {
       }}>
         {!showMerge ? (
           <>
-            <h1 style={{ fontSize: '1.5rem', marginBottom: '8px' }}>&#128226; Реклама канала</h1>
+            <h1 style={{ fontSize: '1.5rem', marginBottom: '8px' }}><img src="/logo-64.png" alt="PK" style={{ width: 32, height: 32, borderRadius: 6, verticalAlign: 'middle', marginRight: 8 }} />MAXМаркетинг</h1>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '30px', fontSize: '0.9rem' }}>
               Трекинг подписок из рекламы Яндекс
             </p>

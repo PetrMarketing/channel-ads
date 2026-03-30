@@ -26,6 +26,8 @@ const navItems = [
   { to: '/admin/channels', label: 'Каналы' },
   { to: '/admin/subscribers', label: 'Подписчики' },
   { to: '/admin/admins', label: 'Администраторы' },
+  { to: '/admin/tariffs', label: 'Тарифы' },
+  { to: '/admin/finance', label: 'Финансы' },
 ];
 
 export default function AdminLayout() {

@@ -104,6 +104,24 @@ app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 # Mount React SPA frontend (built by Vite)
 frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend-react", "dist")
 if os.path.isdir(frontend_dist):
+    from fastapi.responses import FileResponse
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def serve_favicon():
+        return FileResponse(os.path.join(frontend_dist, "favicon.ico"), media_type="image/x-icon")
+
+    @app.get("/apple-touch-icon.png", include_in_schema=False)
+    async def serve_apple_icon():
+        return FileResponse(os.path.join(frontend_dist, "apple-touch-icon.png"), media_type="image/png")
+
+    @app.get("/logo-64.png", include_in_schema=False)
+    async def serve_logo_64():
+        return FileResponse(os.path.join(frontend_dist, "logo-64.png"), media_type="image/png")
+
+    @app.get("/logo-192.png", include_in_schema=False)
+    async def serve_logo_192():
+        return FileResponse(os.path.join(frontend_dist, "logo-192.png"), media_type="image/png")
+
     # Serve assets
     assets_dir = os.path.join(frontend_dist, "assets")
     if os.path.isdir(assets_dir):

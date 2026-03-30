@@ -7,7 +7,7 @@ const ATTACH_TYPES = [
   { id: 'voice', label: '🎤 Голосовое', accept: 'audio/ogg,audio/mpeg,audio/mp4,audio/*', maxMb: 10, hint: 'OGG, MP3. До 10 МБ.' },
 ];
 
-export default function AttachmentPicker({ file, onFileChange, attachType, onAttachTypeChange, existingFileInfo, photoOnly }) {
+export default function AttachmentPicker({ file, onFileChange, attachType, onAttachTypeChange, existingFileInfo, existingFileUrl, photoOnly }) {
   const fileInputRef = useRef(null);
   const types = photoOnly ? ATTACH_TYPES.filter(t => t.id === 'photo') : ATTACH_TYPES;
   const currentType = types.find(t => t.id === attachType) || types[0];
@@ -86,9 +86,18 @@ export default function AttachmentPicker({ file, onFileChange, attachType, onAtt
         </div>
       )}
       {!file && existingFileInfo && (
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
-          Текущий файл: {existingFileInfo}. Загрузите новый для замены.
-        </p>
+        <div style={{ padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 6, border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>{existingFileInfo === 'photo' ? '📷' : existingFileInfo === 'video' ? '🎬' : existingFileInfo === 'voice' ? '🎤' : '📎'}</span>
+            <span>Прикреплён файл ({existingFileInfo})</span>
+          </div>
+          {existingFileUrl && existingFileInfo === 'photo' && (
+            <img src={existingFileUrl} alt="" style={{ maxWidth: '100%', maxHeight: 120, borderRadius: 6, marginTop: 6 }} />
+          )}
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+            Загрузите новый файл для замены
+          </p>
+        </div>
       )}
     </div>
   );

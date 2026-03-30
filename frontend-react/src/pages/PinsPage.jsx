@@ -8,6 +8,7 @@ import Modal from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
 import ButtonBuilder from '../components/ButtonBuilder';
 import AttachmentPicker from '../components/AttachmentPicker';
+import MessagePreview from '../components/MessagePreview';
 
 const STATUS_LABELS = { draft: 'Черновик', published: 'Опубликован' };
 const STATUS_COLORS = { draft: '#888', published: 'var(--success)' };
@@ -355,11 +356,10 @@ export default function PinsPage() {
                       </div>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                         <button className="btn btn-outline" style={btnSmall} onClick={() => openEditPin(pin)}>Ред.</button>
-                        {pin.status !== 'published' ? (
-                          <button className="btn btn-primary" style={btnSmall} onClick={() => handlePublishPin(pin)}>
-                            Опубликовать
-                          </button>
-                        ) : (
+                        <button className="btn btn-primary" style={btnSmall} onClick={() => handlePublishPin(pin)}>
+                          {pin.status === 'published' ? 'Обновить' : 'Опубликовать'}
+                        </button>
+                        {pin.status === 'published' && (
                           <button className="btn btn-outline" style={btnSmall} onClick={() => handleUnpinPin(pin)}>
                             Открепить
                           </button>
@@ -446,6 +446,7 @@ export default function PinsPage() {
                 attachType={pinForm.attach_type}
                 onAttachTypeChange={v => setPinForm(p => ({ ...p, attach_type: v }))}
                 existingFileInfo={editingPin?.file_type || ''}
+                existingFileUrl={editingPin?.file_path ? '/uploads/' + editingPin.file_path.split('/uploads/').pop() : ''}
               />
             </div>
             <div>
@@ -524,6 +525,15 @@ export default function PinsPage() {
                 </div>
               </div>
             )}
+            <MessagePreview
+              messageText={pinForm.message_text}
+              buttons={pinForm.inline_buttons}
+              file={pinFile}
+              fileUrl={!pinFile && editingPin?.file_path ? '/uploads/' + editingPin.file_path.split('/uploads/').pop() : ''}
+              tc={tc}
+              entityType="pin"
+              entityId={editingPin?.id}
+            />
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button className="btn btn-outline" onClick={() => setShowPinModal(false)}>Отмена</button>
               <button className="btn btn-primary" onClick={handleSavePin} disabled={saving}>
@@ -577,6 +587,13 @@ export default function PinsPage() {
                 onChange={e => setLmForm(p => ({ ...p, subscribers_only: e.target.checked }))} />
               Выдавать только подписчикам канала
             </label>
+            <MessagePreview
+              messageText={lmForm.message_text}
+              file={lmFile}
+              tc={tc}
+              entityType="lead_magnet"
+              entityId={editingLm?.id}
+            />
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button className="btn btn-outline" onClick={() => setShowLmModal(false)}>Отмена</button>
               <button className="btn btn-primary" onClick={handleSaveLm} disabled={saving}>
