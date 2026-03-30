@@ -460,7 +460,7 @@ async def cmd_channels(chat_id: int, tg_user: dict):
     if not channels:
         await _send_message(chat_id,
             "📭 У вас пока нет подключенных каналов.\n\n"
-            "Чтобы подключить канал, добавьте бота администратором в свой канал.")
+            f"Чтобы подключить канал:\nОткройте канал → Настройки → Администраторы → добавьте бота @{settings.BOT_USERNAME}")
         return
 
     lines = ["📺 <b>Ваши каналы:</b>\n"]
@@ -868,7 +868,7 @@ async def _start_flow(chat_id: int, tg_user: dict, flow: str):
     if not channels:
         await _send_message(chat_id,
             "📭 У вас пока нет подключенных каналов.\n\n"
-            "Чтобы подключить канал, добавьте бота администратором в свой канал.")
+            f"Чтобы подключить канал:\nОткройте канал → Настройки → Администраторы → добавьте бота @{settings.BOT_USERNAME}")
         return
 
     state = {"flow": flow, "token": token}
@@ -1038,7 +1038,8 @@ async def handle_my_chat_member(update: dict):
                     await _send_message(
                         owner["telegram_id"],
                         f"⚠️ Бот {reason} в канале «{channel.get('title', '')}».\n\n"
-                        f"Канал деактивирован. Чтобы снова подключить — добавьте бота администратором в канал.",
+                        f"Канал деактивирован. Чтобы снова подключить:\n"
+                        f"Откройте канал → Настройки → Администраторы → добавьте бота @{settings.BOT_USERNAME}",
                     )
                 except Exception as e:
                     print(f"[TG Bot] Notify owner on remove failed: {e}")
