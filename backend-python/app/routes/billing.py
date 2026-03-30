@@ -16,7 +16,7 @@ staff_invite_router = APIRouter()
 
 # --- Pricing model: fixed price per duration, per user, with channel discount ---
 DURATION_OPTIONS = {
-    1:  {"months": 1,  "label": "1 месяц",    "price": 490},
+    1:  {"months": 1,  "label": "1 месяц",    "price": 10},
     3:  {"months": 3,  "label": "3 месяца",   "price": 1290},
     6:  {"months": 6,  "label": "6 месяцев",  "price": 2290},
     12: {"months": 12, "label": "12 месяцев", "price": 3990},
@@ -338,11 +338,14 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
         "Email": user_email,
     }
 
+    notification_url = f"{settings.APP_URL}/api/billing/public/webhook/tinkoff"
+
     init_params = {
         "TerminalKey": settings.TINKOFF_TERMINAL_KEY,
         "Amount": amount_kopeks,
         "OrderId": order_id,
         "Description": description,
+        "NotificationURL": notification_url,
         "Receipt": receipt,
     }
     init_params["Token"] = generate_tinkoff_token(init_params)
@@ -480,11 +483,14 @@ async def create_payment(tracking_code: str, request: Request, user=Depends(get_
     }
 
     # Call Tinkoff Init
+    notification_url = f"{settings.APP_URL}/api/billing/public/webhook/tinkoff"
+
     init_params = {
         "TerminalKey": settings.TINKOFF_TERMINAL_KEY,
         "Amount": amount_kopeks,
         "OrderId": order_id,
         "Description": pay_description,
+        "NotificationURL": notification_url,
         "Receipt": receipt,
     }
     init_params["Token"] = generate_tinkoff_token(init_params)

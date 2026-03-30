@@ -98,7 +98,7 @@ export default function Header({ onToggleSidebar }) {
   const [unlinkCode, setUnlinkCode] = useState('');
   const [unlinkPlatform, setUnlinkPlatform] = useState('');
   const tgBot = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
-  const maxBot = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
+  const maxBot = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_3_bot';
 
   const handleUnlink = async (platform) => {
     try {
@@ -161,7 +161,12 @@ export default function Header({ onToggleSidebar }) {
       <Modal isOpen={unlinkModal} onClose={() => setUnlinkModal(false)} title={`Отвязка ${unlinkPlatform === 'telegram' ? 'Telegram' : 'MAX'}`}>
         <div style={{ textAlign: 'center', padding: '16px 0' }}>
           <p style={{ marginBottom: '16px', fontSize: '0.9rem' }}>
-            Отправьте этот код боту <strong>{unlinkPlatform === 'telegram' ? `@${tgBot}` : '@PKMarketing'}</strong>
+            Отправьте этот код боту{' '}
+            <strong
+              style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+              title="Нажмите, чтобы скопировать"
+              onClick={() => { const name = unlinkPlatform === 'telegram' ? `@${tgBot}` : `@${maxBot}`; navigator.clipboard.writeText(name); }}
+            >{unlinkPlatform === 'telegram' ? `@${tgBot}` : `@${maxBot}`}</strong>
             {unlinkPlatform === 'telegram' ? ' в Telegram' : ' в MAX'} для подтверждения отвязки:
           </p>
           <div style={{

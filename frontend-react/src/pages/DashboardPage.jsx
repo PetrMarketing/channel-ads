@@ -359,6 +359,7 @@ function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
   const ch = channel;
   const isDisconnected = ch.is_active === 0 || ch.is_active === false;
   const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
+  const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_3_bot';
   const platformColor = ch.platform === 'max' ? '#7B68EE' : '#2AABEE';
   const firstLetter = (ch.title || ch.channel_id || 'C')[0].toUpperCase();
 
@@ -442,7 +443,12 @@ function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
         {isDisconnected && (
           <div style={{ marginTop: '6px' }}>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 6px 0' }}>
-              Откройте канал → Настройки → Администраторы → добавьте бота <b>{ch.platform === 'max' ? '@PKMarketing' : '@' + tgBotUsername}</b>
+              Откройте канал → Настройки → Администраторы → добавьте бота{' '}
+              <b
+                style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+                title="Нажмите, чтобы скопировать"
+                onClick={(e) => { e.stopPropagation(); const name = ch.platform === 'max' ? `@${maxBotUsername}` : `@${tgBotUsername}`; navigator.clipboard.writeText(name); }}
+              >{ch.platform === 'max' ? '@' + maxBotUsername : '@' + tgBotUsername}</b>
             </p>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {ch.join_link && (

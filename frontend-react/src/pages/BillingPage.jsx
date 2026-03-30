@@ -5,7 +5,7 @@ import { useToast } from '../components/Toast';
 import Loading from '../components/Loading';
 
 const DURATION_OPTIONS = [
-  { months: 1, label: '1 месяц', price: 490 },
+  { months: 1, label: '1 месяц', price: 10 },
   { months: 3, label: '3 месяца', price: 1290 },
   { months: 6, label: '6 месяцев', price: 2290 },
   { months: 12, label: '12 месяцев', price: 3990 },

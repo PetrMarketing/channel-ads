@@ -501,7 +501,8 @@ async def _cmd_channels(max_api, chat_id: str, max_user_id: str):
     if not channels:
         await _send_to_chat(max_api, chat_id,
             "📭 У вас пока нет подключенных каналов.\n\n"
-            "Чтобы подключить канал, добавьте бота администратором в свой канал.")
+            f"Чтобы подключить канал:\n"
+            f"Откройте канал → Настройки → Администраторы → добавьте бота @{settings.MAX_BOT_USERNAME}")
         return
 
     lines = ["📺 **Ваши каналы:**\n"]
@@ -755,7 +756,7 @@ async def _cmd_newlink(max_api, chat_id: str, max_user_id: str):
     channels = await _get_user_channels(max_user_id)
     if not channels:
         await _send_to_chat(max_api, chat_id,
-            "⚠️ У вас нет активных каналов. Сначала добавьте бота в канал.")
+            f"⚠️ У вас нет активных каналов.\n\nОткройте канал → Настройки → Администраторы → добавьте бота @{settings.MAX_BOT_USERNAME}")
         return
 
     if len(channels) == 1:
@@ -789,7 +790,7 @@ async def _cmd_newgiveaway(max_api, chat_id: str, max_user_id: str):
     channels = await _get_user_channels(max_user_id)
     if not channels:
         await _send_to_chat(max_api, chat_id,
-            "⚠️ У вас нет активных каналов. Сначала добавьте бота в канал.")
+            f"⚠️ У вас нет активных каналов.\n\nОткройте канал → Настройки → Администраторы → добавьте бота @{settings.MAX_BOT_USERNAME}")
         return
 
     if len(channels) == 1:
@@ -823,7 +824,7 @@ async def _cmd_newpin(max_api, chat_id: str, max_user_id: str):
     channels = await _get_user_channels(max_user_id)
     if not channels:
         await _send_to_chat(max_api, chat_id,
-            "⚠️ У вас нет активных каналов. Сначала добавьте бота в канал.")
+            f"⚠️ У вас нет активных каналов.\n\nОткройте канал → Настройки → Администраторы → добавьте бота @{settings.MAX_BOT_USERNAME}")
         return
 
     if len(channels) == 1:
@@ -857,7 +858,7 @@ async def _cmd_newleadmagnet(max_api, chat_id: str, max_user_id: str):
     channels = await _get_user_channels(max_user_id)
     if not channels:
         await _send_to_chat(max_api, chat_id,
-            "⚠️ У вас нет активных каналов. Сначала добавьте бота в канал.")
+            f"⚠️ У вас нет активных каналов.\n\nОткройте канал → Настройки → Администраторы → добавьте бота @{settings.MAX_BOT_USERNAME}")
         return
 
     if len(channels) == 1:
@@ -1845,7 +1846,8 @@ async def process_max_update(body: dict):
                             ch_title = channel.get("title", "")
                             await _send_to_user_by_id(max_api, owner["max_user_id"],
                                 f"⚠️ Бот удалён из канала «{ch_title}».\n\n"
-                                f"Канал деактивирован. Чтобы снова подключить — добавьте бота администратором в канал.")
+                                f"Канал деактивирован. Чтобы снова подключить:\n"
+                                f"Откройте канал → Настройки → Администраторы → добавьте бота @{settings.MAX_BOT_USERNAME}")
                         except Exception as e:
                             print(f"[MAX Bot] Notify owner on remove failed: {e}")
 
