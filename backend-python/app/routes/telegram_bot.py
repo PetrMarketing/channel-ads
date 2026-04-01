@@ -1349,14 +1349,16 @@ async def process_update(update: dict):
             elif text == "/cancel":
                 await _send_message(chat_id, "❌ Действие отменено.")
             elif not text.startswith("/"):
-                # Non-command text: check conversation state
-                handled = await _handle_conversation(chat_id, tg_user, text)
-                if not handled:
-                    # Check if it's a 6-digit account link code
-                    if re.match(r'^\d{6}$', text):
-                        await _handle_link_code(chat_id, tg_user, text)
-                    else:
-                        await handle_start(chat_id, tg_user)
+                # Only handle non-command messages in private chats (positive chat_id)
+                if chat_id > 0:
+                    # Non-command text: check conversation state
+                    handled = await _handle_conversation(chat_id, tg_user, text)
+                    if not handled:
+                        # Check if it's a 6-digit account link code
+                        if re.match(r'^\d{6}$', text):
+                            await _handle_link_code(chat_id, tg_user, text)
+                        else:
+                            await handle_start(chat_id, tg_user)
 
         if "callback_query" in update:
             await _handle_callback_query(update["callback_query"])

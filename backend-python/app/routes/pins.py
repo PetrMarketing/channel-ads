@@ -363,6 +363,28 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
                 from ..services.file_storage import ensure_file
                 file_path = ensure_file(file_path, lm.get("file_data"))
 
+    elif entity_id and entity_type == "content":
+        post = await fetch_one("SELECT * FROM content_posts WHERE id = $1", int(entity_id))
+        if post:
+            message_text = post.get("message_text") or message_text
+            if not file_path:
+                file_path = post.get("file_path")
+                file_type = post.get("file_type")
+                max_file_token = post.get("max_file_token")
+                from ..services.file_storage import ensure_file
+                file_path = ensure_file(file_path, post.get("file_data"))
+
+    elif entity_id and entity_type == "giveaway":
+        gw = await fetch_one("SELECT * FROM giveaways WHERE id = $1", int(entity_id))
+        if gw:
+            message_text = gw.get("message_text") or message_text
+            if not file_path and gw.get("image_path"):
+                file_path = gw["image_path"]
+                file_type = "photo"
+                import os
+                if not os.path.exists(file_path):
+                    file_path = None
+
     # Send to user via bot
     from ..services.messenger import sanitize_html_for_telegram, html_to_max_markdown
 

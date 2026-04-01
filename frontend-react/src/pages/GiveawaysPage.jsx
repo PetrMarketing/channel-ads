@@ -7,6 +7,7 @@ import Loading from '../components/Loading';
 import Modal from '../components/Modal';
 import AttachmentPicker from '../components/AttachmentPicker';
 import RichTextEditor from '../components/RichTextEditor';
+import MessagePreview from '../components/MessagePreview';
 
 const STATUS_LABELS = { draft: 'Черновик', active: 'Активен', finished: 'Завершён' };
 const STATUS_COLORS = { draft: '#888', active: 'var(--success)', finished: '#3b82f6' };
@@ -392,6 +393,14 @@ export default function GiveawaysPage() {
                 onChange={e => setForm(p => ({ ...p, legal_info: e.target.value }))} />
               <div className="form-hint">Юридические данные рекламодателя (ИНН, название). Требуется по закону при рекламе.</div>
             </div>
+            <MessagePreview
+              messageText={form.message_text}
+              file={gwImage}
+              fileUrl={!gwImage && editingItem?.image_path ? `${API_BASE.replace('/api', '')}${editingItem.image_path}` : ''}
+              tc={tc}
+              entityType="giveaway"
+              entityId={editingItem?.id}
+            />
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button className="btn btn-outline" onClick={() => setShowModal(false)}>Отмена</button>
               <button className="btn btn-primary" onClick={handleSave} disabled={saving}>

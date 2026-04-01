@@ -82,14 +82,7 @@ export default function PaidChatPayPage() {
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
   // Auto-submit when all data is pre-filled from URL
-  const autoSubmitted = useRef(false);
-  useEffect(() => {
-    if (autoSubmitted.current || !autoFilled.current) return;
-    if (!info || !selectedPlan || !selectedChat || !contactId) return;
-    autoSubmitted.current = true;
-    // Small delay to let state settle
-    setTimeout(() => handlePay(), 300);
-  }, [info, selectedPlan, selectedChat, contactId]);
+  // Auto-fill fields from URL but do NOT auto-submit — let user review and click Pay
 
   // Poll for payment status after redirect back
   useEffect(() => {

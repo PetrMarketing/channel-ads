@@ -1440,9 +1440,11 @@ async def process_max_update(body: dict):
             cmd = text.split()[0].lower() if text else ""
             args = text[len(cmd):].strip() if cmd else ""
 
-            # Empty text or no command — treat as /start for returning users
+            # Empty text — only respond in dialog chats (not group/paid chats)
             if not text:
-                await _cmd_start(max_api, chat_id, max_user_id, first_name, "")
+                is_paid_chat = await fetch_one("SELECT id FROM paid_chats WHERE chat_id = $1", chat_id) if chat_id else None
+                if not is_paid_chat:
+                    await _cmd_start(max_api, chat_id, max_user_id, first_name, "")
                 return
 
             # Check conversation state first (for multi-step flows)
@@ -1510,9 +1512,14 @@ async def process_max_update(body: dict):
                     del _conversation_state[max_user_id]
                 await _send_to_chat(max_api, chat_id, "❌ Отменено.")
             elif not cmd.startswith("/"):
-                # User sent a non-command message and no active conversation
-                # Respond with help to avoid "nothing happens" experience
-                await _cmd_start(max_api, chat_id, max_user_id, first_name, "")
+                # Only respond in direct dialog chats, not in group/paid chats
+                chat_info = body.get("message", {}).get("recipient", {})
+                chat_type = chat_info.get("chat_type") or body.get("chat", {}).get("type", "")
+                is_dialog = chat_type == "dialog" or not chat_type
+                # Also check: if chat_id matches a paid_chat — skip
+                is_paid_chat = await fetch_one("SELECT id FROM paid_chats WHERE chat_id = $1", chat_id) if chat_id else None
+                if is_dialog and not is_paid_chat:
+                    await _cmd_start(max_api, chat_id, max_user_id, first_name, "")
 
         # === message_callback (inline button clicks) ===
         if update_type == "message_callback":

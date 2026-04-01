@@ -8,6 +8,7 @@ import Modal from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
 import ButtonBuilder from '../components/ButtonBuilder';
 import AttachmentPicker from '../components/AttachmentPicker';
+import MessagePreview from '../components/MessagePreview';
 
 const STATUS_LABELS = { draft: 'Черновик', scheduled: 'Запланировано', published: 'Опубликовано' };
 const STATUS_COLORS = { draft: '#888', scheduled: '#3b82f6', published: 'var(--success)' };
@@ -74,7 +75,7 @@ export default function ContentPage() {
   const [postFile, setPostFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [leadMagnets, setLeadMagnets] = useState([]);
-  const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
+  const [viewMode, setViewMode] = useState('calendar'); // 'list' | 'calendar'
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
   const [errors, setErrors] = useState({});
@@ -439,6 +440,7 @@ export default function ContentPage() {
                 attachType={form.attach_type}
                 onAttachTypeChange={v => setForm(p => ({ ...p, attach_type: v }))}
                 existingFileInfo={editingPost?.file_type || ''}
+                existingFileUrl={editingPost?.file_path ? '/uploads/' + editingPost.file_path.split('/uploads/').pop() : ''}
               />
               <div className="form-hint">Фото, видео или документ. Telegram: макс. 50 МБ, MAX: макс. 100 МБ.</div>
             </div>
@@ -458,6 +460,15 @@ export default function ContentPage() {
               />
               <div className="form-hint">Кнопки под постом: ссылки, выдача лид-магнитов и др.</div>
             </div>
+            <MessagePreview
+              messageText={form.message_text}
+              buttons={form.inline_buttons}
+              file={postFile}
+              fileUrl={!postFile && editingPost?.file_path ? '/uploads/' + editingPost.file_path.split('/uploads/').pop() : ''}
+              tc={tc}
+              entityType="content"
+              entityId={editingPost?.id}
+            />
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button className="btn btn-outline" onClick={() => setShowModal(false)}>Отмена</button>
               <button className="btn btn-primary" onClick={handleSave} disabled={saving}>

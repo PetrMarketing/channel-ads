@@ -14,25 +14,16 @@ router = APIRouter()
 public_router = APIRouter()
 staff_invite_router = APIRouter()
 
-# --- Pricing model: loaded from DB, with hardcoded fallback ---
-_FALLBACK_DURATIONS = {
-    1:  {"months": 1,  "label": "1 месяц",    "price": 490},
-    3:  {"months": 3,  "label": "3 месяца",   "price": 1290},
-    6:  {"months": 6,  "label": "6 месяцев",  "price": 2290},
-    12: {"months": 12, "label": "12 месяцев", "price": 3990},
-}
+# --- Pricing model: loaded from DB ---
 CHANNEL_DISCOUNT_PERCENT = 10  # 10% скидка за каждый дополнительный канал
 
 
 async def get_duration_options() -> dict:
-    """Load tariffs from DB, fallback to hardcoded."""
-    try:
-        rows = await fetch_all("SELECT months, label, price FROM tariffs WHERE is_active = true ORDER BY months")
-        if rows:
-            return {r["months"]: {"months": r["months"], "label": r["label"], "price": r["price"]} for r in rows}
-    except Exception:
-        pass
-    return _FALLBACK_DURATIONS
+    """Load tariffs from DB."""
+    rows = await fetch_all("SELECT months, label, price FROM tariffs WHERE is_active = true ORDER BY months")
+    if not rows:
+        raise HTTPException(status_code=500, detail="Тарифы не настроены. Добавьте тарифы в админ-панели.")
+    return {r["months"]: {"months": r["months"], "label": r["label"], "price": r["price"]} for r in rows}
 
 STAFF_ROLES = {
     "advertiser": {
