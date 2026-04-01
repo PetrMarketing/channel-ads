@@ -49,6 +49,14 @@ class MaxApi:
     async def get_chats(self) -> Dict[str, Any]:
         return await self._request("GET", "chats")
 
+    async def get_messages(self, chat_id: str, count: int = 50, from_ts: int = None, to_ts: int = None) -> Dict[str, Any]:
+        params = f"chat_id={chat_id}&count={count}"
+        if from_ts:
+            params += f"&from={from_ts}"
+        if to_ts:
+            params += f"&to={to_ts}"
+        return await self._request("GET", f"messages?{params}")
+
     async def send_message(
         self, chat_id: str, text: str,
         attachments: Optional[List] = None,

@@ -30,7 +30,6 @@ export default function AnalyticsPage() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '3rem', marginBottom: 16 }}>📢</div>
           <h3>Выберите канал</h3>
         </div>
       </div>
@@ -44,7 +43,6 @@ export default function AnalyticsPage() {
   const numStyle = { fontSize: '1.6rem', fontWeight: 700, color: 'var(--primary, #2AABEE)' };
   const labelStyle = { fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 4 };
 
-  // Simple SVG line chart
   const renderChart = (values, label, color = '#2AABEE') => {
     if (!values.length) return <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', padding: 20, textAlign: 'center' }}>Нет данных</div>;
     const max = Math.max(...values, 1);
@@ -69,8 +67,12 @@ export default function AnalyticsPage() {
   };
 
   const subscribers = data.map(d => d.subscribers_count || 0);
-  const reactions = data.map(d => d.reactions_count || 0);
+  const views = data.map(d => d.views_count || 0);
   const commentsByDay = data.map(d => d.comments_count || 0);
+  const erByDay = data.map(d => parseFloat(d.engagement_rate || 0));
+
+  // Subscriber dynamics table
+  const subsDynamics = [...data].reverse().slice(0, 14);
 
   return (
     <div>
@@ -78,7 +80,6 @@ export default function AnalyticsPage() {
         <h1>Аналитика</h1>
       </div>
 
-      {/* Period selector */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         {[7, 14, 30, 90].map(p => (
           <button key={p} className={`btn ${period === p ? 'btn-primary' : 'btn-outline'}`}
@@ -105,41 +106,73 @@ export default function AnalyticsPage() {
               )}
             </div>
             <div style={cardStyle}>
-              <div style={numStyle}>{summary?.views_24h || 0}</div>
-              <div style={labelStyle}>Просмотры 24ч</div>
+              <div style={numStyle}>{summary?.views_total?.toLocaleString('ru-RU') || 0}</div>
+              <div style={labelStyle}>Просмотры (сегодня)</div>
             </div>
             <div style={cardStyle}>
-              <div style={numStyle}>{summary?.views_48h || 0}</div>
-              <div style={labelStyle}>Просмотры 48ч</div>
-            </div>
-            <div style={cardStyle}>
-              <div style={numStyle}>{summary?.views_72h || 0}</div>
-              <div style={labelStyle}>Просмотры 72ч</div>
-            </div>
-            <div style={cardStyle}>
-              <div style={numStyle}>{summary?.engagement_rate?.toFixed(2) || 0}%</div>
-              <div style={labelStyle}>ER</div>
-            </div>
-            <div style={cardStyle}>
-              <div style={numStyle}>{summary?.avg_views || 0}</div>
-              <div style={labelStyle}>Ср. просмотров на пост</div>
-            </div>
-            <div style={cardStyle}>
-              <div style={numStyle}>{summary?.reactions_today || 0}</div>
-              <div style={labelStyle}>Реакции сегодня</div>
+              <div style={numStyle}>{summary?.engagement_rate?.toFixed(1) || 0}%</div>
+              <div style={labelStyle}>ER (охват)</div>
             </div>
             <div style={cardStyle}>
               <div style={numStyle}>{summary?.comments_today || 0}</div>
-              <div style={labelStyle}>Комментарии сегодня</div>
+              <div style={labelStyle}>Комментарии</div>
             </div>
           </div>
 
           {/* Charts */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, marginBottom: 24 }}>
             {renderChart(subscribers, 'Подписчики', '#2AABEE')}
-            {renderChart(reactions, 'Реакции по дням', '#7C3AED')}
-            {renderChart(commentsByDay, 'Комментарии по дням', '#059669')}
+            {renderChart(views, 'Просмотры', '#7C3AED')}
+            {renderChart(erByDay, 'ER %', '#059669')}
+            {renderChart(commentsByDay, 'Комментарии', '#f59e0b')}
           </div>
+
+          {/* Subscriber dynamics */}
+          {subsDynamics.length > 0 && (
+            <div style={{ ...cardStyle, textAlign: 'left', padding: 20 }}>
+              <h3 style={{ fontSize: '1rem', marginBottom: 12 }}>Динамика подписчиков</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {subsDynamics.map((d, i) => {
+                  const prev = subsDynamics[i + 1];
+                  const diff = prev ? (d.subscribers_count || 0) - (prev.subscribers_count || 0) : 0;
+                  return (
+                    <div key={d.snapshot_date} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                      <span>{d.snapshot_date}</span>
+                      <span>
+                        <strong>{(d.subscribers_count || 0).toLocaleString('ru-RU')}</strong>
+                        {diff !== 0 && (
+                          <span style={{ marginLeft: 8, color: diff > 0 ? '#2a9d8f' : '#e63946', fontWeight: 600 }}>
+                            {diff > 0 ? '+' : ''}{diff}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Top posts */}
+          {summary?.top_posts?.length > 0 && (
+            <div style={{ ...cardStyle, textAlign: 'left', padding: 20, marginTop: 16 }}>
+              <h3 style={{ fontSize: '1rem', marginBottom: 12 }}>Топ постов по просмотрам</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {summary.top_posts.map((p, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div>
+                      <span style={{ fontWeight: 500, fontSize: '0.9rem' }}>{p.title || 'Без названия'}</span>
+                      <span style={{ marginLeft: 8, fontSize: '0.72rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}>
+                        {p.post_type === 'content' ? 'Пост' : p.post_type === 'giveaway' ? 'Розыгрыш' : 'Закреп'}
+                      </span>
+                      {p.erid && <span style={{ marginLeft: 6, fontSize: '0.72rem', color: 'var(--success)' }}>ERID: {p.erid}</span>}
+                    </div>
+                    <span style={{ fontWeight: 700, fontSize: '1rem' }}>{(p.views_count || 0).toLocaleString('ru-RU')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
