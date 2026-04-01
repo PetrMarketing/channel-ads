@@ -106,10 +106,7 @@ async def create_post(tc: str, request: Request, user: Dict[str, Any] = Depends(
 
     scheduled_dt = _parse_scheduled_at(scheduled_at)
 
-    if "multipart/form-data" in content_type:
-        erid = form.get("erid") or None
-    else:
-        erid = body.get("erid") or None
+    erid = body.get("erid") if isinstance(body, dict) else None
 
     post_id = await execute_returning_id(
         """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, inline_buttons, status, file_path, file_type, file_data, attach_type, erid)
