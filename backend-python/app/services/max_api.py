@@ -84,7 +84,7 @@ class MaxApi:
         fmt: str = "markdown",
     ) -> Dict[str, Any]:
         body: Dict[str, Any] = {"text": text, "format": fmt}
-        if attachments:
+        if attachments is not None:
             body["attachments"] = list(attachments)
         if buttons:
             if buttons and isinstance(buttons[0], dict):

@@ -106,7 +106,10 @@ async def create_post(tc: str, request: Request, user: Dict[str, Any] = Depends(
 
     scheduled_dt = _parse_scheduled_at(scheduled_at)
 
-    erid = body.get("erid") if isinstance(body, dict) else None
+    if "multipart/form-data" in content_type:
+        erid = form.get("erid") or None
+    else:
+        erid = body.get("erid") or None
 
     post_id = await execute_returning_id(
         """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, inline_buttons, status, file_path, file_type, file_data, attach_type, erid)
@@ -237,6 +240,7 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
                 if max_api:
                     max_text = html_to_max_markdown(message_text)
                     attachments = None
+                    has_file = post.get("file_path") or post.get("max_file_token")
                     max_file_token = post.get("max_file_token")
                     _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
                     if max_file_token:
@@ -248,6 +252,9 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
                             if token:
                                 attachments = [{"type": _type_map.get(post.get("file_type", "file"), "file"), "payload": {"token": token}}]
                                 await execute("UPDATE content_posts SET max_file_token = $1 WHERE id = $2", token, post_id)
+                    # If file was removed, explicitly send empty attachments to remove from message
+                    if not has_file and attachments is None:
+                        attachments = []
                     max_buttons = build_max_inline_buttons(resolved_buttons)
                     result = await max_api.edit_message(existing_msg_id, max_text, attachments, max_buttons)
                     if result.get("success"):

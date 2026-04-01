@@ -495,6 +495,10 @@ async def publish_pin(tc: str, pin_id: int, user: Dict[str, Any] = Depends(get_c
                                 attachments = [{"type": _max_type_map.get(send_type, "file"), "payload": {"token": token}}]
                                 await execute("UPDATE pin_posts SET max_file_token = $1 WHERE id = $2", token, pin_id)
 
+                    # If file was removed, explicitly send empty attachments
+                    has_file = pin.get("file_path") or pin.get("max_file_token")
+                    if not has_file and attachments is None:
+                        attachments = []
                     max_buttons = build_max_inline_buttons(inline_buttons)
                     result = await max_api.edit_message(existing_msg_id, max_text, attachments, max_buttons)
                     if result.get("success"):
