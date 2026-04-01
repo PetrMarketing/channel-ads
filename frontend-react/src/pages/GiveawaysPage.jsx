@@ -8,6 +8,7 @@ import Modal from '../components/Modal';
 import AttachmentPicker from '../components/AttachmentPicker';
 import RichTextEditor from '../components/RichTextEditor';
 import MessagePreview from '../components/MessagePreview';
+import EridModal from '../components/EridModal';
 
 const STATUS_LABELS = { draft: 'Черновик', active: 'Активен', finished: 'Завершён' };
 const STATUS_COLORS = { draft: '#888', active: 'var(--success)', finished: '#3b82f6' };
@@ -40,6 +41,7 @@ export default function GiveawaysPage() {
   const [editingItem, setEditingItem] = useState(null);
   const [form, setForm] = useState({ ...DEFAULT_FORM });
   const [gwImage, setGwImage] = useState(null);
+  const [showEridModal, setShowEridModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [publishing, setPublishing] = useState(null);
@@ -383,9 +385,15 @@ export default function GiveawaysPage() {
             </div>
             <div>
               <label className="form-label">ERID (рекламный идентификатор)</label>
-              <input className="form-input" placeholder="Например: 2Vtzqx..." value={form.erid}
-                onChange={e => setForm(p => ({ ...p, erid: e.target.value }))} />
-              <div className="form-hint">Обязателен по ФЗ о рекламе, если розыгрыш содержит рекламу. Получите в ОРД.</div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input className="form-input" placeholder="Введите ERID или получите автоматически" value={form.erid}
+                  onChange={e => setForm(p => ({ ...p, erid: e.target.value }))} style={{ flex: 1 }} />
+                <button type="button" className="btn btn-outline" style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}
+                  onClick={() => setShowEridModal(true)}>
+                  Получить ERID
+                </button>
+              </div>
+              {form.erid && <div className="form-hint" style={{ color: 'var(--success)' }}>ERID: {form.erid}</div>}
             </div>
             <div>
               <label className="form-label">Юр. информация</label>
@@ -409,6 +417,14 @@ export default function GiveawaysPage() {
             </div>
           </div>
         </Modal>
+        <EridModal
+          isOpen={showEridModal}
+          onClose={() => setShowEridModal(false)}
+          tc={tc}
+          onEridReceived={(erid) => setForm(f => ({ ...f, erid }))}
+          defaultText={form.message_text?.replace(/<[^>]+>/g, '').slice(0, 200) || ''}
+          defaultName={form.title || ''}
+        />
       </div>
     </Paywall>
   );

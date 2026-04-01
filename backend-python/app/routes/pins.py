@@ -238,6 +238,21 @@ async def update_pin(tc: str, pin_id: int, body: dict, user: Dict[str, Any] = De
                     val = None
             params.append(val)
             idx += 1
+    # Handle file removal
+    if body.get("remove_file"):
+        fields.append(f"file_path = ${idx}")
+        params.append(None)
+        idx += 1
+        fields.append(f"file_type = ${idx}")
+        params.append(None)
+        idx += 1
+        fields.append(f"file_data = ${idx}")
+        params.append(None)
+        idx += 1
+        fields.append(f"max_file_token = ${idx}")
+        params.append(None)
+        idx += 1
+
     if not fields:
         return {"success": True}
     params.extend([pin_id, channel["id"]])

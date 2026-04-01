@@ -9,6 +9,7 @@ import RichTextEditor from '../components/RichTextEditor';
 import ButtonBuilder from '../components/ButtonBuilder';
 import AttachmentPicker from '../components/AttachmentPicker';
 import MessagePreview from '../components/MessagePreview';
+import EridModal from '../components/EridModal';
 
 const STATUS_LABELS = { draft: 'Черновик', scheduled: 'Запланировано', published: 'Опубликовано' };
 const STATUS_COLORS = { draft: '#888', scheduled: '#3b82f6', published: 'var(--success)' };
@@ -71,8 +72,10 @@ export default function ContentPage() {
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
-  const [form, setForm] = useState({ title: '', message_text: '', scheduled_at: '', inline_buttons: '', attach_type: '' });
+  const [form, setForm] = useState({ title: '', message_text: '', scheduled_at: '', inline_buttons: '', attach_type: '', erid: '' });
+  const [showEridModal, setShowEridModal] = useState(false);
   const [postFile, setPostFile] = useState(null);
+  const [removeExistingFile, setRemoveExistingFile] = useState(false);
   const [saving, setSaving] = useState(false);
   const [leadMagnets, setLeadMagnets] = useState([]);
   const [viewMode, setViewMode] = useState('calendar'); // 'list' | 'calendar'
@@ -112,17 +115,19 @@ export default function ContentPage() {
   const openCreate = (prefillDate) => {
     setEditingPost(null);
     setPostFile(null);
+    setRemoveExistingFile(false);
     setErrors({});
     const scheduledAt = prefillDate
       ? `${prefillDate}T10:00`
       : '';
-    setForm({ title: '', message_text: '', scheduled_at: scheduledAt, inline_buttons: '', attach_type: '' });
+    setForm({ title: '', message_text: '', scheduled_at: scheduledAt, inline_buttons: '', attach_type: '', erid: '' });
     setShowModal(true);
   };
 
   const openEdit = (post) => {
     setEditingPost(post);
     setPostFile(null);
+    setRemoveExistingFile(false);
     setErrors({});
     let btns = '';
     if (post.inline_buttons) {
@@ -134,6 +139,7 @@ export default function ContentPage() {
       scheduled_at: post.scheduled_at ? post.scheduled_at.slice(0, 16) : '',
       inline_buttons: btns,
       attach_type: post.attach_type || '',
+      erid: post.erid || '',
     });
     setShowModal(true);
   };
@@ -191,6 +197,8 @@ export default function ContentPage() {
           payload.inline_buttons = parsedButtons;
         }
         if (form.attach_type) payload.attach_type = form.attach_type;
+        if (form.erid) payload.erid = form.erid;
+        if (removeExistingFile) payload.remove_file = true;
 
         if (editingPost) {
           data = await api.put(`/content/${tc}/${editingPost.id}`, payload);
@@ -437,8 +445,9 @@ export default function ContentPage() {
                 onFileChange={setPostFile}
                 attachType={form.attach_type}
                 onAttachTypeChange={v => setForm(p => ({ ...p, attach_type: v }))}
-                existingFileInfo={editingPost?.file_type || ''}
-                existingFileUrl={editingPost?.file_path ? '/uploads/' + editingPost.file_path.split('/uploads/').pop() : ''}
+                existingFileInfo={!removeExistingFile ? (editingPost?.file_type || '') : ''}
+                existingFileUrl={!removeExistingFile && editingPost?.file_path ? '/uploads/' + editingPost.file_path.split('/uploads/').pop() : ''}
+                onRemoveExisting={editingPost?.file_path ? () => setRemoveExistingFile(true) : undefined}
               />
               <div className="form-hint">Фото, видео или документ. Telegram: макс. 50 МБ, MAX: макс. 100 МБ.</div>
             </div>
@@ -458,11 +467,27 @@ export default function ContentPage() {
               />
               <div className="form-hint">Кнопки под постом: ссылки, выдача лид-магнитов и др.</div>
             </div>
+            <div>
+              <label className="form-label">Маркировка рекламы (ERID)</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input className="form-input" placeholder="Введите ERID или получите автоматически" value={form.erid}
+                  onChange={e => setForm(p => ({ ...p, erid: e.target.value }))} style={{ flex: 1 }} />
+                <button type="button" className="btn btn-outline" style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}
+                  onClick={() => setShowEridModal(true)}>
+                  Получить ERID
+                </button>
+              </div>
+              {form.erid && (
+                <div className="form-hint" style={{ color: 'var(--success)' }}>
+                  ERID: {form.erid} — будет добавлен к посту при публикации
+                </div>
+              )}
+            </div>
             <MessagePreview
               messageText={form.message_text}
               buttons={form.inline_buttons}
               file={postFile}
-              fileUrl={!postFile && editingPost?.file_path ? '/uploads/' + editingPost.file_path.split('/uploads/').pop() : ''}
+              fileUrl={!postFile && !removeExistingFile && editingPost?.file_path ? '/uploads/' + editingPost.file_path.split('/uploads/').pop() : ''}
               tc={tc}
               entityType="content"
               entityId={editingPost?.id}
@@ -475,6 +500,14 @@ export default function ContentPage() {
             </div>
           </div>
         </Modal>
+        <EridModal
+          isOpen={showEridModal}
+          onClose={() => setShowEridModal(false)}
+          tc={tc}
+          onEridReceived={(erid) => setForm(f => ({ ...f, erid }))}
+          defaultText={form.message_text?.replace(/<[^>]+>/g, '').slice(0, 200) || ''}
+          defaultName={form.title || ''}
+        />
       </div>
     </Paywall>
   );

@@ -27,7 +27,7 @@ from ..database import fetch_one, fetch_all, execute, execute_returning_id
 
 router = APIRouter()
 
-_POST_COLS = "id, channel_id, title, message_text, file_path, file_type, telegram_file_id, telegram_message_id, status, scheduled_at, published_at, ai_generated, inline_buttons, attach_type, created_at"
+_POST_COLS = "id, channel_id, title, message_text, file_path, file_type, telegram_file_id, telegram_message_id, status, scheduled_at, published_at, ai_generated, inline_buttons, attach_type, erid, created_at"
 
 
 async def _get_owned_channel(tc: str, uid: int):
@@ -106,12 +106,14 @@ async def create_post(tc: str, request: Request, user: Dict[str, Any] = Depends(
 
     scheduled_dt = _parse_scheduled_at(scheduled_at)
 
+    erid = body.get("erid") if isinstance(body, dict) else None
+
     post_id = await execute_returning_id(
-        """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, inline_buttons, status, file_path, file_type, file_data, attach_type)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
+        """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, inline_buttons, status, file_path, file_type, file_data, attach_type, erid)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id""",
         channel["id"], title, message_text, scheduled_dt, inline_buttons,
         "scheduled" if scheduled_dt else "draft",
-        file_path, file_type, file_data, attach_type,
+        file_path, file_type, file_data, attach_type, erid,
     )
     post = await fetch_one(f"SELECT {_POST_COLS} FROM content_posts WHERE id = $1", post_id)
     return {"success": True, "post": post}
@@ -146,7 +148,7 @@ async def update_post(tc: str, post_id: int, request: Request, user: Dict[str, A
 
     fields, params = [], []
     idx = 1
-    for key in ("title", "message_text", "scheduled_at", "status", "inline_buttons", "attach_type"):
+    for key in ("title", "message_text", "scheduled_at", "status", "inline_buttons", "attach_type", "erid"):
         if key in body:
             fields.append(f"{key} = ${idx}")
             val = body[key]
@@ -167,6 +169,18 @@ async def update_post(tc: str, post_id: int, request: Request, user: Dict[str, A
         params.append(file_data)
         idx += 1
         # Reset cached platform file IDs so both platforms re-upload the new file
+        fields.append("telegram_file_id = NULL")
+        fields.append("max_file_token = NULL")
+    elif body.get("remove_file"):
+        fields.append(f"file_path = ${idx}")
+        params.append(None)
+        idx += 1
+        fields.append(f"file_type = ${idx}")
+        params.append(None)
+        idx += 1
+        fields.append(f"file_data = ${idx}")
+        params.append(None)
+        idx += 1
         fields.append("telegram_file_id = NULL")
         fields.append("max_file_token = NULL")
     if not fields:

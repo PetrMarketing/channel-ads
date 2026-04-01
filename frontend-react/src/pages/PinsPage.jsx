@@ -25,6 +25,7 @@ export default function PinsPage() {
   const [editingLm, setEditingLm] = useState(null);
   const [pinForm, setPinForm] = useState({ title: '', message_text: '', lead_magnet_id: '', inline_buttons: '', attach_type: '' });
   const [pinFile, setPinFile] = useState(null);
+  const [removeExistingFile, setRemoveExistingFile] = useState(false);
   const [lmForm, setLmForm] = useState({ title: '', message_text: '', attach_type: '', subscribers_only: false });
   const [lmFile, setLmFile] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -66,6 +67,7 @@ export default function PinsPage() {
     setEditingPin(null);
     setPinForm({ title: '', message_text: '', lead_magnet_id: '', inline_buttons: '', attach_type: '' });
     setPinFile(null);
+    setRemoveExistingFile(false);
     setShowInlineLm(false);
     setInlineLmForm({ title: '', message_text: '', attach_type: '' });
     setInlineLmFile(null);
@@ -88,6 +90,7 @@ export default function PinsPage() {
       attach_type: pin.attach_type || '',
     });
     setPinFile(null);
+    setRemoveExistingFile(false);
     setShowInlineLm(false);
     setInlineLmForm({ title: '', message_text: '' });
     setInlineLmFile(null);
@@ -139,6 +142,7 @@ export default function PinsPage() {
           payload.inline_buttons = parsedButtons;
         }
         if (formToSave.attach_type) payload.attach_type = formToSave.attach_type;
+        if (removeExistingFile) payload.remove_file = true;
         if (editingPin) {
           data = await api.put(`/pins/${tc}/${editingPin.id}`, payload);
         } else {
@@ -445,8 +449,9 @@ export default function PinsPage() {
                 onFileChange={setPinFile}
                 attachType={pinForm.attach_type}
                 onAttachTypeChange={v => setPinForm(p => ({ ...p, attach_type: v }))}
-                existingFileInfo={editingPin?.file_type || ''}
-                existingFileUrl={editingPin?.file_path ? '/uploads/' + editingPin.file_path.split('/uploads/').pop() : ''}
+                existingFileInfo={!removeExistingFile ? (editingPin?.file_type || '') : ''}
+                existingFileUrl={!removeExistingFile && editingPin?.file_path ? '/uploads/' + editingPin.file_path.split('/uploads/').pop() : ''}
+                onRemoveExisting={editingPin?.file_path ? () => setRemoveExistingFile(true) : undefined}
               />
             </div>
             <div>
@@ -529,7 +534,7 @@ export default function PinsPage() {
               messageText={pinForm.message_text}
               buttons={pinForm.inline_buttons}
               file={pinFile}
-              fileUrl={!pinFile && editingPin?.file_path ? '/uploads/' + editingPin.file_path.split('/uploads/').pop() : ''}
+              fileUrl={!pinFile && !removeExistingFile && editingPin?.file_path ? '/uploads/' + editingPin.file_path.split('/uploads/').pop() : ''}
               tc={tc}
               entityType="pin"
               entityId={editingPin?.id}

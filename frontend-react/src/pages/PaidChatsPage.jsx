@@ -757,9 +757,22 @@ export default function PaidChatsPage() {
               <li>Чат появится автоматически в списке выше</li>
             </ol>
           </div>
-          <button className="btn btn-primary" onClick={saveChat} disabled={savingChat} style={{ marginTop: 12 }}>
-            {savingChat ? 'Сохранение...' : 'Добавить'}
-          </button>
+          <div style={{ display: 'flex', gap: '8px', marginTop: 12 }}>
+            <button className="btn btn-primary" onClick={saveChat} disabled={savingChat}>
+              {savingChat ? 'Сохранение...' : 'Добавить'}
+            </button>
+            <button className="btn btn-outline" onClick={async () => {
+              try {
+                const data = await api.get(`/paid-chats/${tc}/available-chats`);
+                if (data.success) {
+                  setAvailableChats(data.chats || []);
+                  showToast(`Найдено чатов: ${(data.chats || []).length}`);
+                }
+              } catch { showToast('Ошибка проверки', 'error'); }
+            }}>
+              Проверить
+            </button>
+          </div>
         </div>
       </Modal>
 

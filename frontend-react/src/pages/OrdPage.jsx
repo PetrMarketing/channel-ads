@@ -45,6 +45,7 @@ export default function OrdPage() {
   const [creativeForm, setCreativeForm] = useState({ external_id: '', contract_external_id: '', person_external_id: '', form: 'text_block', texts: '', brand: '', target_urls: '', kktus: '1.1.1', name: '', self_promo: false });
 
   // Stats
+  const [markedPosts, setMarkedPosts] = useState([]);
   const [statsForm, setStatsForm] = useState({ creative_external_id: '', pad_external_id: '', date_start: '', date_end: '', shows_count: '' });
 
   const [saving, setSaving] = useState(false);
@@ -85,10 +86,19 @@ export default function OrdPage() {
     } catch {}
   }, [tc]);
 
+  const loadMarkedPosts = useCallback(async () => {
+    if (!tc) return;
+    try {
+      const data = await api.get(`/ord/${tc}/marked-posts`);
+      setMarkedPosts(data.posts || []);
+    } catch {}
+  }, [tc]);
+
   useEffect(() => { loadSettings(); }, [loadSettings]);
   useEffect(() => { if (tab === 'persons') loadPersons(); }, [tab, loadPersons]);
   useEffect(() => { if (tab === 'contracts') loadContracts(); }, [tab, loadContracts]);
   useEffect(() => { if (tab === 'creatives') loadCreatives(); }, [tab, loadCreatives]);
+  useEffect(() => { if (tab === 'stats') { loadMarkedPosts(); loadCreatives(); } }, [tab, loadMarkedPosts, loadCreatives]);
 
   const saveSettings = async () => {
     setSavingSettings(true);
@@ -330,11 +340,45 @@ export default function OrdPage() {
 
         {/* Statistics Tab */}
         {tab === 'stats' && (
-          <div style={{ maxWidth: 500 }}>
+          <div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: 16 }}>
-              Отправка данных о показах рекламы. Нужно отправлять ежемесячно до 30 числа следующего месяца.
+              Промаркированные посты. Отправляйте статистику показов ежемесячно до 30 числа следующего месяца.
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+            {/* Marked posts table */}
+            {markedPosts.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+                {markedPosts.map((p, i) => (
+                  <div key={i} style={{ padding: 14, background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                      <div>
+                        <span style={{ fontWeight: 600, fontSize: '0.92rem' }}>{p.title || 'Без названия'}</span>
+                        <span style={{ marginLeft: 8, fontSize: '0.72rem', padding: '2px 6px', borderRadius: 4, background: p.post_type === 'content' ? 'rgba(59,130,246,0.15)' : p.post_type === 'giveaway' ? 'rgba(239,68,68,0.15)' : 'rgba(139,92,246,0.15)', color: p.post_type === 'content' ? '#3b82f6' : p.post_type === 'giveaway' ? '#ef4444' : '#8b5cf6' }}>
+                          {p.post_type === 'content' ? 'Публикация' : p.post_type === 'giveaway' ? 'Розыгрыш' : 'Закреп'}
+                        </span>
+                      </div>
+                      <code style={{ padding: '2px 8px', background: 'rgba(42,157,143,0.1)', borderRadius: 4, fontSize: '0.82rem', color: 'var(--success)', cursor: 'pointer' }}
+                        onClick={() => { navigator.clipboard.writeText(p.erid); showToast('ERID скопирован'); }}>
+                        {p.erid}
+                      </code>
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                      <span>Просмотры: <b>{p.views_count || 0}</b></span>
+                      <span>Статус: {p.status}</span>
+                      {p.published_at && <span>Опубликован: {new Date(p.published_at).toLocaleDateString('ru')}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-secondary)', marginBottom: 24 }}>
+                Нет промаркированных постов. Добавьте ERID при создании публикации или розыгрыша.
+              </div>
+            )}
+
+            {/* Manual stats form */}
+            <h3 style={{ fontSize: '1rem', marginBottom: 12 }}>Отправить статистику вручную</h3>
+            <div style={{ maxWidth: 500, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <label className="form-label">ID креатива</label>
                 <select className="form-input" value={statsForm.creative_external_id}
@@ -368,7 +412,7 @@ export default function OrdPage() {
                   placeholder="15000" />
               </div>
               <button className="btn btn-primary" onClick={sendStats} disabled={saving}>
-                {saving ? 'Отправка...' : 'Отправить статистику'}
+                {saving ? 'Отправка...' : 'Отправить статистику в ORD'}
               </button>
             </div>
           </div>

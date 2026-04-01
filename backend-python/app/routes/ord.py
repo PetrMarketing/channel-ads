@@ -332,6 +332,48 @@ async def send_statistics(tc: str, request: Request, user: Dict = Depends(get_cu
     return {"success": True, "ord_response": result.get("data")}
 
 
+# ─── Marked posts (промаркированные посты) ───
+
+@router.get("/{tc}/marked-posts")
+async def list_marked_posts(tc: str, user: Dict = Depends(get_current_user)):
+    """Get all posts with ERID across content_posts, pin_posts, giveaways."""
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+
+    marked = []
+
+    # Content posts with erid
+    posts = await fetch_all(
+        "SELECT id, title, erid, status, telegram_message_id, published_at, created_at FROM content_posts WHERE channel_id = $1 AND erid IS NOT NULL AND erid != '' ORDER BY created_at DESC",
+        channel["id"],
+    )
+    for p in posts:
+        views = await fetch_one("SELECT views_count, checked_at FROM post_views WHERE channel_id = $1 AND post_type = 'content' AND post_id = $2", channel["id"], p["id"])
+        marked.append({**p, "post_type": "content", "views_count": views["views_count"] if views else 0, "views_checked_at": str(views["checked_at"]) if views else None})
+
+    # Pin posts with erid
+    pins = await fetch_all(
+        "SELECT id, title, erid, status, telegram_message_id, published_at, created_at FROM pin_posts WHERE channel_id = $1 AND erid IS NOT NULL AND erid != '' ORDER BY created_at DESC",
+        channel["id"],
+    )
+    for p in pins:
+        views = await fetch_one("SELECT views_count, checked_at FROM post_views WHERE channel_id = $1 AND post_type = 'pin' AND post_id = $2", channel["id"], p["id"])
+        marked.append({**p, "post_type": "pin", "views_count": views["views_count"] if views else 0, "views_checked_at": str(views["checked_at"]) if views else None})
+
+    # Giveaways with erid
+    gws = await fetch_all(
+        "SELECT id, title, erid, status, telegram_message_id, published_at, created_at FROM giveaways WHERE channel_id = $1 AND erid IS NOT NULL AND erid != '' ORDER BY created_at DESC",
+        channel["id"],
+    )
+    for g in gws:
+        views = await fetch_one("SELECT views_count, checked_at FROM post_views WHERE channel_id = $1 AND post_type = 'giveaway' AND post_id = $2", channel["id"], g["id"])
+        marked.append({**g, "post_type": "giveaway", "views_count": views["views_count"] if views else 0, "views_checked_at": str(views["checked_at"]) if views else None})
+
+    marked.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return {"success": True, "posts": marked}
+
+
 # ─── KKTU dictionary ───
 
 @router.get("/{tc}/kktu")

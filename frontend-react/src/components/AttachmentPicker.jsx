@@ -7,7 +7,7 @@ const ATTACH_TYPES = [
   { id: 'voice', label: '🎤 Голосовое', accept: 'audio/ogg,audio/mpeg,audio/mp4,audio/*', maxMb: 10, hint: 'OGG, MP3. До 10 МБ.' },
 ];
 
-export default function AttachmentPicker({ file, onFileChange, attachType, onAttachTypeChange, existingFileInfo, existingFileUrl, photoOnly }) {
+export default function AttachmentPicker({ file, onFileChange, attachType, onAttachTypeChange, existingFileInfo, existingFileUrl, photoOnly, onRemoveExisting }) {
   const fileInputRef = useRef(null);
   const types = photoOnly ? ATTACH_TYPES.filter(t => t.id === 'photo') : ATTACH_TYPES;
   const currentType = types.find(t => t.id === attachType) || types[0];
@@ -87,15 +87,24 @@ export default function AttachmentPicker({ file, onFileChange, attachType, onAtt
       )}
       {!file && existingFileInfo && (
         <div style={{ padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 6, border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>{existingFileInfo === 'photo' ? '📷' : existingFileInfo === 'video' ? '🎬' : existingFileInfo === 'voice' ? '🎤' : '📎'}</span>
-            <span>Прикреплён файл ({existingFileInfo})</span>
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>{existingFileInfo === 'photo' ? '📷' : existingFileInfo === 'video' ? '🎬' : existingFileInfo === 'voice' ? '🎤' : '📎'}</span>
+              <span>Прикреплён файл ({existingFileInfo})</span>
+            </div>
+            {onRemoveExisting && (
+              <button type="button" className="btn btn-danger"
+                style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                onClick={onRemoveExisting}>
+                Удалить
+              </button>
+            )}
           </div>
           {existingFileUrl && existingFileInfo === 'photo' && (
             <img src={existingFileUrl} alt="" style={{ maxWidth: '100%', maxHeight: 120, borderRadius: 6, marginTop: 6 }} />
           )}
           <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-            Загрузите новый файл для замены
+            Загрузите новый файл для замены или удалите текущий
           </p>
         </div>
       )}
