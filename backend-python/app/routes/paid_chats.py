@@ -116,7 +116,40 @@ async def save_payment_settings(tc: str, request: Request, user: Dict[str, Any] 
            RETURNING id""",
         channel["id"], provider, credentials, is_active,
     )
-    return {"success": True, "id": sid}
+
+    # Test payment: create a 10 RUB test order to verify credentials
+    test_result = None
+    if is_active:
+        try:
+            from .paid_chat_payments import (
+                _init_tinkoff_payment, _init_yoomoney_payment,
+                _init_prodamus_payment, _init_robokassa_payment, _init_getcourse_payment,
+            )
+            creds_dict = body.get("credentials", {})
+            test_order_id = f"test_{channel['id']}_{int(__import__('time').time())}"
+            test_desc = "Тестовый платёж (проверка подключения)"
+
+            if provider == "tinkoff":
+                test_url = await _init_tinkoff_payment(creds_dict, test_order_id, 10, test_desc, "", "")
+            elif provider == "yoomoney":
+                test_url = await _init_yoomoney_payment(creds_dict, test_order_id, 10, test_desc, "", "")
+            elif provider == "prodamus":
+                test_url = await _init_prodamus_payment(creds_dict, test_order_id, 10, test_desc, "", "", "")
+            elif provider == "robokassa":
+                test_url = await _init_robokassa_payment(creds_dict, test_order_id, 10, test_desc, "", "")
+            elif provider == "getcourse":
+                test_url = await _init_getcourse_payment(creds_dict, test_order_id, 10, test_desc, "Тест", "", "test@test.ru")
+            else:
+                test_url = None
+
+            if test_url:
+                test_result = {"success": True, "test_payment_url": test_url, "message": "Тестовый платёж на 10 ₽ создан. Перейдите по ссылке для проверки."}
+            else:
+                test_result = {"success": True, "message": "Настройки сохранены (тест недоступен для этого провайдера)"}
+        except Exception as e:
+            test_result = {"success": False, "message": f"Ошибка подключения: {e}"}
+
+    return {"success": True, "id": sid, "test": test_result}
 
 
 @router.delete("/{tc}/payment-settings/{setting_id}")

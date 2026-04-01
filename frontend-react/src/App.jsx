@@ -16,6 +16,7 @@ import PaidChatsPage from './pages/PaidChatsPage';
 import ServicesPage from './pages/ServicesPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import CommentsPage from './pages/CommentsPage';
+import OrdPage from './pages/OrdPage';
 
 // Public pages (standalone, no layout)
 import SubscribePage from './pages/public/SubscribePage';
@@ -92,6 +93,7 @@ export default function App() {
         <Route path="services" element={<ServicesPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="comments" element={<CommentsPage />} />
+        <Route path="ord" element={<OrdPage />} />
       </Route>
     </Routes>
   );

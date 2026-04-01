@@ -121,6 +121,7 @@ const menuItems = [
       { path: '/broadcasts', label: 'Рассылки', icon: icons.broadcasts },
       { path: '/funnels', label: 'Воронки', icon: icons.funnels },
       { path: '/analytics', label: 'Аналитика', icon: icons.analytics },
+      { path: '/ord', label: 'Отчёты о рекламе', icon: icons.analytics },
     ],
   },
   {

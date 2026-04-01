@@ -295,6 +295,74 @@ async def _init_robokassa_payment(creds: dict, order_id: str, amount_rub: float,
     return f"https://auth.robokassa.ru/Merchant/Index.aspx?{urlencode(params)}"
 
 
+async def _init_getcourse_payment(creds: dict, order_id: str, amount_rub: float, description: str, customer_name: str = "", customer_phone: str = "", customer_email: str = "") -> str:
+    """Create GetCourse deal via API and return payment link."""
+    import base64
+
+    account = creds.get("account", "") or creds.get("account_name", "")
+    secret_key = creds.get("secret_key", "")
+    offer_code = creds.get("offer_code", "")
+
+    if not account or not secret_key:
+        raise HTTPException(status_code=400, detail="GetCourse: не указан аккаунт или секретный ключ")
+
+    if not customer_email:
+        raise HTTPException(status_code=400, detail="GetCourse: email обязателен для создания заказа")
+
+    params = {
+        "user": {
+            "email": customer_email,
+            "phone": customer_phone,
+            "first_name": customer_name,
+        },
+        "system": {
+            "refresh_if_exists": 1,
+            "return_payment_link": 1,
+        },
+        "deal": {
+            "deal_cost": str(int(amount_rub) if amount_rub == int(amount_rub) else amount_rub),
+            "deal_status": "new",
+            "deal_is_paid": "no",
+            "deal_currency": "RUB",
+            "deal_comment": f"order_id: {order_id}",
+        },
+    }
+    if offer_code:
+        params["deal"]["offer_code"] = offer_code
+    else:
+        params["deal"]["product_title"] = description
+
+    params_b64 = base64.b64encode(json.dumps(params, ensure_ascii=False).encode()).decode()
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"https://{account}.getcourse.ru/pl/api/deals",
+            data={"action": "add", "key": secret_key, "params": params_b64},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        ) as resp:
+            result = await resp.json()
+
+    if not result.get("success"):
+        error_msg = result.get("error_message") or result.get("result", {}).get("error_message") or "Unknown error"
+        raise HTTPException(status_code=502, detail=f"GetCourse API error: {error_msg}")
+
+    deal_result = result.get("result", {})
+    payment_link = deal_result.get("payment_link", "")
+    deal_id = deal_result.get("deal_id")
+
+    if deal_id:
+        await execute(
+            "UPDATE paid_chat_payments SET provider_payment_id = $1 WHERE order_id = $2",
+            str(deal_id), order_id,
+        )
+
+    if not payment_link:
+        # Fallback: link to account page
+        payment_link = f"https://{account}.getcourse.ru"
+
+    return payment_link
+
+
 # ─────────────────────────────────────────────
 # Public endpoints
 # ─────────────────────────────────────────────
@@ -432,6 +500,8 @@ async def create_payment(tc: str, request: Request):
         payment_url = await _init_prodamus_payment(creds, order_id, amount, description, customer_name, customer_phone, customer_email)
     elif provider == "robokassa":
         payment_url = await _init_robokassa_payment(creds, order_id, amount, description, customer_phone, customer_email)
+    elif provider == "getcourse":
+        payment_url = await _init_getcourse_payment(creds, order_id, amount, description, customer_name, customer_phone, customer_email)
     else:
         raise HTTPException(status_code=400, detail=f"Неподдерживаемый провайдер: {provider}")
 
@@ -669,17 +739,32 @@ async def webhook_getcourse(tc: str, request: Request):
             raise HTTPException(status_code=403, detail="Invalid API key")
 
     if action == "payment_completed" or status in ("accepted", "paid", "completed"):
-        # Find or create payment
-        order_id = f"gc_{tc}_{payment_id}"
-        existing = await fetch_one("SELECT id FROM paid_chat_payments WHERE order_id = $1", order_id)
-        if not existing:
-            # Get first active plan
+        # Try to find existing payment created by bot (by provider_payment_id = deal_id)
+        existing = None
+        if payment_id:
+            existing = await fetch_one(
+                "SELECT * FROM paid_chat_payments WHERE provider_payment_id = $1 AND provider = 'getcourse' AND status != 'paid'",
+                str(payment_id),
+            )
+        # Also try by email match (bot stores max_user_id but GetCourse sends email)
+        if not existing and email:
+            existing = await fetch_one(
+                "SELECT * FROM paid_chat_payments WHERE channel_id = $1 AND provider = 'getcourse' AND status != 'paid' AND first_name = $2 ORDER BY created_at DESC LIMIT 1",
+                channel["id"], email,
+            )
+
+        if existing:
+            # Payment was created by bot — fulfill it
+            await _fulfill_payment(existing["order_id"], body)
+        else:
+            # Payment came from GetCourse directly (not via bot) — create new record
+            order_id = f"gc_{tc}_{payment_id}"
             plan = await fetch_one("SELECT * FROM paid_chat_plans WHERE channel_id = $1 AND is_active = 1 ORDER BY sort_order LIMIT 1", channel["id"])
             paid_chat = await fetch_one("SELECT * FROM paid_chats WHERE channel_id = $1 AND is_active = 1 LIMIT 1", channel["id"])
 
             await execute(
                 """INSERT INTO paid_chat_payments (channel_id, plan_id, paid_chat_id, provider, order_id, amount, currency, status, username, first_name, platform, provider_payment_id, gateway_response, paid_at)
-                   VALUES ($1, $2, $3, 'getcourse', $4, $5, 'RUB', 'paid', $6, $7, 'telegram', $8, $9, NOW())
+                   VALUES ($1, $2, $3, 'getcourse', $4, $5, 'RUB', 'paid', $6, $7, 'max', $8, $9, NOW())
                    ON CONFLICT(order_id) DO NOTHING""",
                 channel["id"],
                 plan["id"] if plan else None,

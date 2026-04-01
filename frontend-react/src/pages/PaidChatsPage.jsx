@@ -164,7 +164,16 @@ export default function PaidChatsPage() {
         is_active: 1,
       });
       if (data.success) {
-        showToast(`${selectedProvider.name} подключён`);
+        if (data.test?.test_payment_url) {
+          const goTest = window.confirm(
+            `${selectedProvider.name} подключён!\n\nСоздан тестовый платёж на 10 ₽ для проверки.\nОткрыть страницу тестового платежа?`
+          );
+          if (goTest) window.open(data.test.test_payment_url, '_blank');
+        } else if (data.test?.message) {
+          showToast(data.test.message, data.test.success ? 'success' : 'error');
+        } else {
+          showToast(`${selectedProvider.name} подключён`);
+        }
         setShowProviderModal(false);
         loadPaymentSettings();
         loadSetup();
@@ -432,7 +441,7 @@ export default function PaidChatsPage() {
       {/* Payment link */}
       {setup.has_payment && setup.has_plans && setup.has_chats && (() => {
         const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
-        const botLink = `https://max.ru/${maxBotUsername}?startapp=paid_${tc}`;
+        const botLink = `https://max.ru/${maxBotUsername}?start=paid_${tc}`;
         const webLink = `${window.location.origin}/pay/${tc}`;
         return (
         <div className="pc-info-box" style={{ marginBottom: 16 }}>
@@ -571,13 +580,15 @@ export default function PaidChatsPage() {
               Убедитесь, что указали корректные ключи для рабочего режима (не тестового).
             </div>
 
-            {['yoomoney', 'robokassa', 'getcourse'].includes(selectedProvider.id) && (
+            {selectedProvider && (
               <div style={{ marginBottom: 16, padding: '10px 14px', background: 'rgba(255,152,0,0.08)', border: '1px solid rgba(255,152,0,0.2)', borderRadius: '8px', fontSize: '0.82rem' }}>
-                <strong>⚠️ Важно — настройте webhook:</strong>
+                <strong>⚠️ Webhook URL для уведомлений об оплате:</strong>
                 <p style={{ margin: '6px 0 4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  {selectedProvider.id === 'yoomoney' && 'В личном кабинете ЮKassa → Настройки → HTTP-уведомления, укажите URL:'}
-                  {selectedProvider.id === 'robokassa' && 'В личном кабинете Робокассы → Технические настройки → Result URL, укажите:'}
-                  {selectedProvider.id === 'getcourse' && 'В настройках GetCourse → Уведомления об оплате, укажите URL:'}
+                  {selectedProvider.id === 'tinkoff' && 'Тинькофф: URL передаётся автоматически в каждом запросе. Дополнительно можно указать в ЛК → Магазины → Терминалы → Настроить:'}
+                  {selectedProvider.id === 'yoomoney' && 'ЮKassa: ЛК → Интеграция → HTTP-уведомления, укажите URL:'}
+                  {selectedProvider.id === 'prodamus' && 'Prodamus: Настройки платёжной страницы → URL для уведомлений:'}
+                  {selectedProvider.id === 'robokassa' && 'Robokassa: ЛК → Мои магазины → Технические настройки → Result URL (POST):'}
+                  {selectedProvider.id === 'getcourse' && 'GetCourse: Задачи → Процессы → создать процесс по «Заказам» → триггер «Заказ оплачен» → операция «Вызвать URL» (POST):'}
                 </p>
                 <code style={{ display: 'block', padding: '6px 8px', background: 'var(--bg-glass)', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', wordBreak: 'break-all' }}
                   onClick={() => {

@@ -1313,32 +1313,78 @@ async def _handle_conversation(max_api, chat_id: str, max_user_id: str, text: st
                 return True
             state["email"] = email
 
-            # All data collected — generate payment link
+            # All data collected — create payment directly via API
             plan = state["selected_plan"]
-            chat = state["selected_chat"]
+            chat_obj = state["selected_chat"]
             tc = state["tracking_code"]
-
-            from urllib.parse import urlencode, quote
-            pay_params = {
-                "platform": "max",
-                "mid": state["max_user_id"],
-                "name": state["name"],
-                "phone": state["phone"],
-                "email": state["email"],
-            }
-            pay_url = f"{settings.APP_URL}/pay/{tc}?{urlencode(pay_params)}"
+            channel_id = state["channel_id"]
 
             price_str = f"{int(plan['price']) if plan['price'] == int(plan['price']) else plan['price']} RUB"
             plan_name = plan.get("title") or "Подписка"
 
-            await _send_to_chat(max_api, chat_id,
-                f"✅ **Данные для оплаты:**\n\n"
-                f"📋 Тариф: {plan_name} — {price_str}\n"
-                f"📱 Телефон: {state['phone']}\n"
-                f"📧 Email: {state['email']}\n"
-                f"👤 Имя: {state['name']}\n\n"
-                f"Нажмите кнопку для перехода к оплате:",
-                buttons=[[{"type": "link", "text": f"💳 Оплатить {price_str}", "url": pay_url}]])
+            try:
+                from .paid_chat_payments import _get_active_provider, _generate_order_id
+                from .paid_chat_payments import _init_tinkoff_payment, _init_yoomoney_payment, _init_prodamus_payment, _init_robokassa_payment, _init_getcourse_payment
+                import json as _json
+
+                provider_row = await _get_active_provider(channel_id)
+                if not provider_row:
+                    await _send_to_chat(max_api, chat_id, "⚠️ Платёжная система не настроена. Обратитесь к владельцу канала.")
+                    del _conversation_state[max_user_id]
+                    return True
+
+                provider = provider_row["provider"]
+                creds = provider_row["credentials"]
+                if isinstance(creds, str):
+                    creds = _json.loads(creds)
+
+                amount = float(plan["price"])
+                order_id = _generate_order_id(channel_id)
+                description = f"{plan_name} — {chat_obj.get('title') or 'чат'}"
+
+                # Save payment record
+                await execute_returning_id(
+                    """INSERT INTO paid_chat_payments
+                         (channel_id, plan_id, paid_chat_id, provider, order_id, amount, currency,
+                          max_user_id, username, first_name, platform)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id""",
+                    channel_id, plan["id"], chat_obj["id"], provider, order_id, amount,
+                    plan.get("currency", "RUB"),
+                    str(max_user_id), "", state.get("name", ""), "max",
+                )
+
+                # Init payment with provider
+                customer_name = state.get("name", "")
+                customer_phone = state.get("phone", "")
+                customer_email = state.get("email", "")
+
+                if provider == "tinkoff":
+                    payment_url = await _init_tinkoff_payment(creds, order_id, amount, description, customer_phone, customer_email)
+                elif provider == "yoomoney":
+                    payment_url = await _init_yoomoney_payment(creds, order_id, amount, description, customer_phone, customer_email)
+                elif provider == "prodamus":
+                    payment_url = await _init_prodamus_payment(creds, order_id, amount, description, customer_name, customer_phone, customer_email)
+                elif provider == "robokassa":
+                    payment_url = await _init_robokassa_payment(creds, order_id, amount, description, customer_phone, customer_email)
+                elif provider == "getcourse":
+                    payment_url = await _init_getcourse_payment(creds, order_id, amount, description, customer_name, customer_phone, customer_email)
+                else:
+                    await _send_to_chat(max_api, chat_id, f"⚠️ Провайдер {provider} не поддерживается.")
+                    del _conversation_state[max_user_id]
+                    return True
+
+                await _send_to_chat(max_api, chat_id,
+                    f"✅ **Заказ создан!**\n\n"
+                    f"📋 Тариф: {plan_name} — {price_str}\n"
+                    f"📧 Email: {state['email']}\n\n"
+                    f"Нажмите кнопку для перехода к оплате:",
+                    buttons=[[{"type": "link", "text": f"💳 Оплатить {price_str}", "url": payment_url}]])
+
+            except Exception as e:
+                print(f"[MAX Bot] paid_chat_pay: payment creation failed: {e}")
+                import traceback
+                traceback.print_exc()
+                await _send_to_chat(max_api, chat_id, f"⚠️ Ошибка создания платежа: {e}")
 
             del _conversation_state[max_user_id]
             return True
