@@ -1430,17 +1430,30 @@ async def process_max_update(body: dict):
                 print(f"[MAX Bot] message_created: no chat_id")
                 return
 
-            # Save dialog chat_id to DB
+            # Determine if this is a direct (dialog) chat or a group chat
+            # In MAX, group chat_ids are typically negative; dialog chat_ids are positive
+            # Also check: if chat_id exists in bot_chats or paid_chats — it's a group
+            is_group = False
+            if chat_id and chat_id.lstrip('-').isdigit() and int(chat_id) < 0:
+                is_group = True
+            if not is_group and chat_id:
+                is_group_chat = await fetch_one(
+                    "SELECT id FROM bot_chats WHERE chat_id = $1 UNION SELECT id FROM paid_chats WHERE chat_id = $1 LIMIT 1",
+                    chat_id,
+                )
+                if is_group_chat:
+                    is_group = True
+
+            if is_group:
+                # Bot should NEVER respond in group chats — only in DMs
+                print(f"[MAX Bot] Ignoring message in group chat {chat_id}")
+                return
+
+            # Save dialog chat_id to DB (only for personal chats)
             await _save_dialog_chat_id(max_user_id, chat_id)
 
             # Ensure user exists and dialog_chat_id is saved
             await _find_or_create_max_user(max_user_id, first_name, dialog_chat_id=chat_id)
-
-            # Route commands
-            # Skip all bot responses in paid/group chats (except /start commands from DM)
-            is_paid_chat = await fetch_one("SELECT id FROM paid_chats WHERE chat_id = $1", chat_id) if chat_id else None
-            if is_paid_chat:
-                return
 
             cmd = text.split()[0].lower() if text else ""
             args = text[len(cmd):].strip() if cmd else ""

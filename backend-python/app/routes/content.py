@@ -206,29 +206,83 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
     if resolved_buttons:
         resolved_buttons = await _resolve_buttons(resolved_buttons, channel, post_id=post_id, post_type="content")
 
-    from ..services.messenger import send_to_channel
+    from ..services.messenger import send_to_channel, sanitize_html_for_telegram, html_to_max_markdown
     import traceback
-    try:
-        result = await send_to_channel(
-            channel, post.get("message_text", ""),
-            file_path=post_file_path, file_type=post.get("file_type"),
-            telegram_file_id=post.get("telegram_file_id"),
-            inline_buttons=resolved_buttons,
-            attach_type=post.get("attach_type"),
-            max_file_token=post.get("max_file_token"),
-        )
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
-    msg_id = None
-    if isinstance(result, dict):
-        msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
 
+    message_text = post.get("message_text", "")
+    existing_msg_id = post.get("telegram_message_id")
+    edited = False
+
+    # If already published — try to edit existing message
+    if existing_msg_id and post.get("status") == "published":
+        try:
+            if channel.get("platform") == "max":
+                from ..services.max_api import get_max_api
+                from ..services.messenger import build_max_inline_buttons, _extract_max_file_token
+                max_api = get_max_api()
+                if max_api:
+                    max_text = html_to_max_markdown(message_text)
+                    attachments = None
+                    max_file_token = post.get("max_file_token")
+                    _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
+                    if max_file_token:
+                        attachments = [{"type": _type_map.get(post.get("file_type", "file"), "file"), "payload": {"token": max_file_token}}]
+                    elif post_file_path:
+                        upload_result = await max_api.upload_file(post_file_path, post.get("file_type") or "file")
+                        if upload_result.get("success"):
+                            token = _extract_max_file_token(upload_result.get("data", {}))
+                            if token:
+                                attachments = [{"type": _type_map.get(post.get("file_type", "file"), "file"), "payload": {"token": token}}]
+                                await execute("UPDATE content_posts SET max_file_token = $1 WHERE id = $2", token, post_id)
+                    max_buttons = build_max_inline_buttons(resolved_buttons)
+                    result = await max_api.edit_message(existing_msg_id, max_text, attachments, max_buttons)
+                    if result.get("success"):
+                        edited = True
+            else:
+                import aiohttp
+                from ..config import settings
+                tg_text = sanitize_html_for_telegram(message_text)
+                token = settings.TELEGRAM_BOT_TOKEN
+                if token:
+                    url = f"https://api.telegram.org/bot{token}/editMessageText"
+                    payload = {"chat_id": channel["channel_id"], "message_id": int(existing_msg_id), "text": tg_text, "parse_mode": "HTML"}
+                    async with aiohttp.ClientSession() as session:
+                        resp = await session.post(url, json=payload)
+                        data = await resp.json()
+                        if data.get("ok"):
+                            edited = True
+        except Exception as e:
+            print(f"[Content] Edit failed, will send new: {e}")
+            traceback.print_exc()
+
+    # If edit failed or new post — send new message
+    msg_id = existing_msg_id
+    if not edited:
+        try:
+            result = await send_to_channel(
+                channel, message_text,
+                file_path=post_file_path, file_type=post.get("file_type"),
+                telegram_file_id=post.get("telegram_file_id"),
+                inline_buttons=resolved_buttons,
+                attach_type=post.get("attach_type"),
+                max_file_token=post.get("max_file_token"),
+            )
+        except Exception as e:
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
+        msg_id = None
+        if isinstance(result, dict):
+            msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
+            if not msg_id:
+                msg_data = result.get("message", {})
+                msg_id = msg_data.get("body", {}).get("mid")
+
+    msg_id_str = str(msg_id) if msg_id else None
     await execute(
         "UPDATE content_posts SET status = 'published', published_at = NOW(), telegram_message_id = $1 WHERE id = $2",
-        str(msg_id) if msg_id else None, post_id,
+        msg_id_str, post_id,
     )
-    return {"success": True, "messageId": msg_id}
+    return {"success": True, "messageId": msg_id_str, "edited": edited}
 
 
 @router.post("/{tc}/generate-plan")

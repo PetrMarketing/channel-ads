@@ -51,8 +51,18 @@ export default function ButtonBuilder({ value, onChange, leadMagnets = [], showL
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <select className="form-input" value={btn.type || 'url'} style={{ width: 'auto', minWidth: '140px' }}
               onChange={e => {
-                updateButton(idx, 'type', e.target.value);
-                if (e.target.value === 'comments' && !btn.text) updateButton(idx, 'text', 'Комментарии');
+                const newType = e.target.value;
+                const updated = buttons.map((b, i) => {
+                  if (i !== idx) return b;
+                  const patch = { ...b, type: newType };
+                  if (newType === 'comments') {
+                    patch.text = patch.text || 'Комментарии';
+                    patch.url = '';
+                    patch.lead_magnet_id = '';
+                  }
+                  return patch;
+                });
+                emit(updated);
               }}>
               <option value="url">Ссылка</option>
               {showLeadMagnet && <option value="lead_magnet">Лид-магнит</option>}

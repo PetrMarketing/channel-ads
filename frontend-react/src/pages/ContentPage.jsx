@@ -307,12 +307,10 @@ export default function ContentPage() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {post.status !== 'published' && (
-                  <>
-                    <button className="btn btn-outline" style={btnSmall} onClick={() => openEdit(post)}>Ред.</button>
-                    <button className="btn btn-primary" style={btnSmall} onClick={() => handlePublish(post)}>Опубликовать</button>
-                  </>
-                )}
+                <button className="btn btn-outline" style={btnSmall} onClick={() => openEdit(post)}>Ред.</button>
+                <button className="btn btn-primary" style={btnSmall} onClick={() => handlePublish(post)}>
+                  {post.status === 'published' ? 'Обновить' : 'Опубликовать'}
+                </button>
                 <button className="btn btn-danger" style={btnSmall} onClick={() => handleDelete(post.id)}>Удалить</button>
               </div>
             </div>
