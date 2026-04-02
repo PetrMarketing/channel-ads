@@ -94,6 +94,7 @@ export default function BillingPage() {
   const selectedCount = selectedChannels.length;
 
   const calcPrice = () => {
+    if (!durations.length) return { basePrice: 0, total: 0, fullPrice: 0, savings: 0, channelDiscountPct: 0, totalUsers: 0, breakdown: [] };
     const dur = durations.find(d => d.months === selectedMonths) || durations[0];
     const basePrice = dur.price;
     // Progressive discount: 1st channel full price, 2nd -10%, 3rd -20%, etc
