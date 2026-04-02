@@ -503,6 +503,7 @@ let maxUserId = '';
 let userPhoto = '';
 let channelTitle = '';
 let pc = '#4F46E5';
+let _settings = {{}};
 
 function esc(s) {{ return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }}
 
@@ -522,6 +523,7 @@ async function init() {{
     if (data.success) {{
       channelTitle = data.channel_title || '';
       const s = data.settings || {{}};
+      _settings = s;
       pc = s.primary_color || '#4F46E5';
       document.documentElement.style.setProperty('--pc', pc);
       render(data.comments || []);
@@ -535,11 +537,42 @@ async function init() {{
 
 function render(comments) {{
   const app = document.getElementById('app');
-  let h = '<div class="header" style="background:' + pc + '">';
-  h += '<h1>Комментарии</h1>';
+  // Build header background from settings
+  let headerBg = 'background:' + pc;
+  if (_settings.bg_type === 'gradient') {{
+    headerBg = 'background:linear-gradient(' + (_settings.gradient_direction||'135deg') + ',' + (_settings.gradient_from||pc) + ',' + (_settings.gradient_to||'#7C3AED') + ')';
+  }} else if (_settings.bg_type === 'image' && _settings.bg_image_url) {{
+    headerBg = 'background-image:url(' + _settings.bg_image_url + ');background-size:cover;background-position:center';
+  }} else if (_settings.bg_color) {{
+    headerBg = 'background:' + _settings.bg_color;
+  }}
+  // Page background
+  let pageBg = '';
+  if (_settings.page_bg_type === 'gradient') {{
+    pageBg = 'background:linear-gradient(' + (_settings.page_gradient_direction||'180deg') + ',' + (_settings.page_gradient_from||'#f5f5f5') + ',' + (_settings.page_gradient_to||'#e0e7ff') + ')';
+  }} else if (_settings.page_bg_type === 'color' && _settings.page_bg_color) {{
+    pageBg = 'background:' + _settings.page_bg_color;
+  }}
+  if (pageBg) document.querySelector('.app').style.cssText = pageBg;
+
+  let headerTitle = _settings.header_text || 'Комментарии';
+  const htc = _settings.header_text_color || '#fff';
+  const ptc = _settings.page_text_color || '#1f2937';
+  function hexToRgb(hex) {{ const m=(hex||'#000').replace('#','').match(/.{{2}}/g); return m?m.map(x=>parseInt(x,16)).join(','):'0,0,0'; }}
+  const oc = _settings.overlay_color || '#000000';
+
+  let h = '<div class="header" style="' + headerBg + ';position:relative;color:' + htc + '">';
+  if (_settings.bg_type === 'image' && _settings.bg_image_url) {{
+    h += '<div style="position:absolute;inset:0;background:rgba(' + hexToRgb(oc) + ',' + ((_settings.overlay_opacity||40)/100) + ')';
+    if (_settings.blur) h += ';backdrop-filter:blur(' + _settings.blur + 'px)';
+    h += '"></div>';
+  }}
+  h += '<div style="position:relative;z-index:1"><h1>' + esc(headerTitle) + '</h1>';
   if (channelTitle) h += '<p>' + esc(channelTitle) + '</p>';
-  h += '</div>';
-  h += '<div class="comments-list">';
+  h += '</div></div>';
+  // Apply page text color
+  document.documentElement.style.setProperty('--text-color', ptc);
+  h += '<div class="comments-list" style="color:' + ptc + '">';
   if (!comments.length) {{
     h += '<div class="empty">Пока нет комментариев. Будьте первым!</div>';
   }}
@@ -726,8 +759,29 @@ async function init() {{
 function render() {{
   const app = document.getElementById('app');
   const pc = appearance.primary_color || '#4F46E5';
-  let h = '<div class="header" style="background:' + pc + '">';
-  h += '<h1>' + (appearance.welcome_text || 'Запись на услугу') + '</h1></div>';
+  const a = appearance;
+  // Header background
+  let headerBg = 'background:' + pc;
+  if (a.bg_type === 'gradient') {{
+    headerBg = 'background:linear-gradient(' + (a.gradient_direction||'135deg') + ',' + (a.gradient_from||pc) + ',' + (a.gradient_to||'#7C3AED') + ')';
+  }} else if (a.bg_type === 'image' && a.bg_image_url) {{
+    headerBg = 'background-image:url(' + a.bg_image_url + ');background-size:cover;background-position:center';
+  }} else if (a.bg_color) {{
+    headerBg = 'background:' + a.bg_color;
+  }}
+  // Page background
+  if (a.page_bg_type === 'gradient') {{
+    document.querySelector('.app').style.background = 'linear-gradient(' + (a.page_gradient_direction||'180deg') + ',' + (a.page_gradient_from||'#f5f5f5') + ',' + (a.page_gradient_to||'#e0e7ff') + ')';
+  }} else if (a.page_bg_type === 'color' && a.page_bg_color) {{
+    document.querySelector('.app').style.background = a.page_bg_color;
+  }}
+  let h = '<div class="header" style="' + headerBg + ';position:relative">';
+  if (a.bg_type === 'image' && a.bg_image_url) {{
+    h += '<div style="position:absolute;inset:0;background:rgba(0,0,0,' + ((a.overlay_opacity||40)/100) + ')';
+    if (a.blur) h += ';backdrop-filter:blur(' + a.blur + 'px)';
+    h += '"></div>';
+  }}
+  h += '<div style="position:relative;z-index:1"><h1>' + (a.welcome_text || 'Запись на услугу') + '</h1></div></div>';
 
   // Cover image on services screen
   if (state.step === 'services' && appearance.logo_url) {{

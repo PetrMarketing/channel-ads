@@ -468,7 +468,47 @@ async def channel_paid_chats(channel_id: int, admin: Dict = Depends(get_current_
         )
     except Exception:
         chats, members, posts = [], [], []
-    return {"success": True, "chats": _strip_binary(chats), "members": _strip_binary(members), "posts": _strip_binary(posts)}
+
+    # Payment settings
+    try:
+        payment_settings = await fetch_all(
+            "SELECT * FROM paid_chat_payment_settings WHERE channel_id = $1",
+            channel_id,
+        )
+    except Exception:
+        payment_settings = []
+
+    # Plans
+    try:
+        plans = await fetch_all(
+            "SELECT * FROM paid_chat_plans WHERE channel_id = $1 ORDER BY sort_order, created_at",
+            channel_id,
+        )
+    except Exception:
+        plans = []
+
+    # Payments (recent 100)
+    try:
+        payments = await fetch_all(
+            """SELECT pcp.*, pc.title as chat_title, pp.title as plan_title
+               FROM paid_chat_payments pcp
+               LEFT JOIN paid_chats pc ON pc.id = pcp.paid_chat_id
+               LEFT JOIN paid_chat_plans pp ON pp.id = pcp.plan_id
+               WHERE pcp.channel_id = $1 ORDER BY pcp.created_at DESC LIMIT 100""",
+            channel_id,
+        )
+    except Exception:
+        payments = []
+
+    return {
+        "success": True,
+        "chats": _strip_binary(chats),
+        "members": _strip_binary(members),
+        "posts": _strip_binary(posts),
+        "payment_settings": payment_settings,
+        "plans": plans,
+        "payments": _strip_binary(payments),
+    }
 
 
 @router.get("/channels/{channel_id}/funnels")

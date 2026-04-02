@@ -173,30 +173,119 @@ export default function AdminChannelProfilePage() {
     const chats = tabData?.chats || [];
     const members = tabData?.members || [];
     const posts = tabData?.posts || [];
+    const paymentSettings = tabData?.payment_settings || [];
+    const plans = tabData?.plans || [];
+    const payments = tabData?.payments || [];
+    const statusBadge = (s) => {
+      const colors = { active: '#d4edda', paid: '#d4edda', pending: '#fff3cd', failed: '#f8d7da' };
+      const textColors = { active: '#155724', paid: '#155724', pending: '#856404', failed: '#721c24' };
+      return { display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: colors[s] || '#eee', color: textColors[s] || '#666' };
+    };
     return (
       <div>
+        {/* Payment Settings */}
+        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Эквайринги ({paymentSettings.length})</h4>
+        {paymentSettings.length > 0 ? (
+          <table style={{ ...tableStyle, marginBottom: 16 }}>
+            <thead><tr><th style={thS}>Провайдер</th><th style={thS}>Активен</th><th style={thS}>Ключи</th></tr></thead>
+            <tbody>{paymentSettings.map(ps => {
+              let creds = ps.credentials;
+              if (typeof creds === 'string') try { creds = JSON.parse(creds); } catch { creds = {}; }
+              const keys = Object.keys(creds || {}).filter(k => k !== 'password' && k !== 'secret_key').map(k => `${k}: ${String(creds[k]).slice(0, 20)}...`).join(', ');
+              return (
+                <tr key={ps.id}>
+                  <td style={{ ...tdS, fontWeight: 600 }}>{ps.provider}</td>
+                  <td style={tdS}><span style={statusBadge(ps.is_active ? 'active' : 'failed')}>{ps.is_active ? 'Да' : 'Нет'}</span></td>
+                  <td style={{ ...tdS, fontSize: 11, color: '#999' }}>{keys || '-'}</td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        ) : <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Не подключены</div>}
+
+        {/* Plans */}
+        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Тарифы ({plans.length})</h4>
+        {plans.length > 0 ? (
+          <table style={{ ...tableStyle, marginBottom: 16 }}>
+            <thead><tr><th style={thS}>ID</th><th style={thS}>Название</th><th style={thS}>Цена</th><th style={thS}>Тип</th><th style={thS}>Дни</th><th style={thS}>Активен</th></tr></thead>
+            <tbody>{plans.map(p => (
+              <tr key={p.id}>
+                <td style={tdS}>{p.id}</td>
+                <td style={tdS}>{p.title || '-'}</td>
+                <td style={{ ...tdS, fontWeight: 600 }}>{p.price} {p.currency || 'RUB'}</td>
+                <td style={tdS}>{p.plan_type === 'one_time' ? 'Разовый' : 'Подписка'}</td>
+                <td style={tdS}>{p.duration_days || '-'}</td>
+                <td style={tdS}><span style={statusBadge(p.is_active ? 'active' : 'failed')}>{p.is_active ? 'Да' : 'Нет'}</span></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        ) : <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Нет тарифов</div>}
+
+        {/* Chats */}
         <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Чаты ({chats.length})</h4>
-        <table style={{ ...tableStyle, marginBottom: 16 }}>
-          <thead><tr><th style={thS}>ID</th><th style={thS}>Название</th><th style={thS}>Цена</th><th style={thS}>Статус</th></tr></thead>
-          <tbody>{chats.map(c => (
-            <tr key={c.id}><td style={tdS}>{c.id}</td><td style={tdS}>{c.title || '-'}</td><td style={tdS}>{c.price || '-'}</td><td style={tdS}>{c.is_active ? 'Активен' : 'Неактивен'}</td></tr>
-          ))}</tbody>
-        </table>
+        {chats.length > 0 ? (
+          <table style={{ ...tableStyle, marginBottom: 16 }}>
+            <thead><tr><th style={thS}>ID</th><th style={thS}>Название</th><th style={thS}>Chat ID</th><th style={thS}>Статус</th></tr></thead>
+            <tbody>{chats.map(c => (
+              <tr key={c.id}>
+                <td style={tdS}>{c.id}</td>
+                <td style={tdS}>{c.title || '-'}</td>
+                <td style={{ ...tdS, fontSize: 11 }}>{c.chat_id}</td>
+                <td style={tdS}><span style={statusBadge(c.is_active ? 'active' : 'failed')}>{c.is_active ? 'Активен' : 'Неактивен'}</span></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        ) : <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Нет чатов</div>}
+
+        {/* Members */}
         <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Участники ({members.length})</h4>
-        <table style={{ ...tableStyle, marginBottom: 16 }}>
-          <thead><tr><th style={thS}>Чат</th><th style={thS}>User ID</th><th style={thS}>Статус</th><th style={thS}>Дата</th></tr></thead>
-          <tbody>{members.map((m, i) => (
-            <tr key={i}><td style={tdS}>{m.chat_title || m.paid_chat_id}</td><td style={tdS}>{m.telegram_id || m.max_user_id || '-'}</td><td style={tdS}>{m.status || '-'}</td><td style={tdS}>{fmtDate(m.joined_at)}</td></tr>
-          ))}</tbody>
-        </table>
-        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Публикации ({posts.length})</h4>
-        <table style={tableStyle}>
-          <thead><tr><th style={thS}>ID</th><th style={thS}>Чат</th><th style={thS}>Текст</th><th style={thS}>Дата</th></tr></thead>
-          <tbody>{posts.map(p => (
-            <tr key={p.id}><td style={tdS}>{p.id}</td><td style={tdS}>{p.chat_title || p.paid_chat_id}</td><td style={tdS}>{(p.message_text || '').slice(0, 60) || '-'}</td><td style={tdS}>{fmtDate(p.created_at)}</td></tr>
-          ))}</tbody>
-        </table>
-        {!chats.length && !members.length && !posts.length && <div style={{ color: '#aaa', textAlign: 'center', padding: 20 }}>Нет данных</div>}
+        {members.length > 0 ? (
+          <table style={{ ...tableStyle, marginBottom: 16 }}>
+            <thead><tr><th style={thS}>Чат</th><th style={thS}>User ID</th><th style={thS}>Имя</th><th style={thS}>Статус</th><th style={thS}>Истекает</th><th style={thS}>Дата</th></tr></thead>
+            <tbody>{members.map((m, i) => (
+              <tr key={i}>
+                <td style={tdS}>{m.chat_title || m.paid_chat_id}</td>
+                <td style={tdS}>{m.telegram_id || m.max_user_id || '-'}</td>
+                <td style={tdS}>{m.first_name || m.username || '-'}</td>
+                <td style={tdS}><span style={statusBadge(m.status)}>{m.status}</span></td>
+                <td style={tdS}>{m.expires_at ? fmtDate(m.expires_at) : 'Бессрочно'}</td>
+                <td style={tdS}>{fmtDate(m.joined_at || m.starts_at)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        ) : <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Нет участников</div>}
+
+        {/* Payments */}
+        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Платежи ({payments.length})</h4>
+        {payments.length > 0 ? (
+          <table style={{ ...tableStyle, marginBottom: 16 }}>
+            <thead><tr><th style={thS}>ID</th><th style={thS}>Дата</th><th style={thS}>Провайдер</th><th style={thS}>Тариф</th><th style={thS}>Сумма</th><th style={thS}>Статус</th><th style={thS}>User</th></tr></thead>
+            <tbody>{payments.map(p => (
+              <tr key={p.id}>
+                <td style={tdS}>{p.id}</td>
+                <td style={tdS}>{fmtDate(p.created_at)}</td>
+                <td style={tdS}>{p.provider}</td>
+                <td style={tdS}>{p.plan_title || '-'}</td>
+                <td style={{ ...tdS, fontWeight: 600 }}>{p.amount} {p.currency || 'RUB'}</td>
+                <td style={tdS}><span style={statusBadge(p.status)}>{p.status}</span></td>
+                <td style={{ ...tdS, fontSize: 11 }}>{p.first_name || p.username || p.telegram_id || p.max_user_id || '-'}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        ) : <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Нет платежей</div>}
+
+        {/* Posts */}
+        {posts.length > 0 && (
+          <>
+            <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Публикации ({posts.length})</h4>
+            <table style={tableStyle}>
+              <thead><tr><th style={thS}>ID</th><th style={thS}>Чат</th><th style={thS}>Текст</th><th style={thS}>Дата</th></tr></thead>
+              <tbody>{posts.map(p => (
+                <tr key={p.id}><td style={tdS}>{p.id}</td><td style={tdS}>{p.chat_title || p.paid_chat_id}</td><td style={tdS}>{(p.message_text || '').slice(0, 60) || '-'}</td><td style={tdS}>{fmtDate(p.created_at)}</td></tr>
+              ))}</tbody>
+            </table>
+          </>
+        )}
       </div>
     );
   };

@@ -573,7 +573,17 @@ async def get_settings(tc: str, user=Depends(get_current_user)):
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
     s = await fetch_one("SELECT * FROM service_settings WHERE channel_id = $1", channel["id"])
-    return {"success": True, "settings": _strip_binary(s)}
+    result = _strip_binary(s)
+    # Merge extra JSON settings into result
+    if result and result.get("settings"):
+        import json
+        extra = result["settings"]
+        if isinstance(extra, str):
+            try: extra = json.loads(extra)
+            except: extra = {}
+        if isinstance(extra, dict):
+            result.update(extra)
+    return {"success": True, "settings": result}
 
 
 @router.post("/{tc}/settings")
@@ -583,20 +593,30 @@ async def save_settings(tc: str, request: Request, user=Depends(get_current_user
         raise HTTPException(status_code=404, detail="Канал не найден")
     body = await request.json()
     existing = await fetch_one("SELECT id FROM service_settings WHERE channel_id = $1", channel["id"])
+    import json
+    # Extra settings (bg_type, gradients, etc.) stored as JSON
+    extra_keys = {"bg_type", "bg_color", "gradient_from", "gradient_to", "gradient_direction",
+                  "bg_image_url", "overlay_opacity", "blur",
+                  "page_bg_type", "page_bg_color", "page_gradient_from", "page_gradient_to",
+                  "page_gradient_direction", "page_bg_image_url", "page_overlay_opacity", "page_blur"}
+    extra = {k: v for k, v in body.items() if k in extra_keys}
+    extra_json = json.dumps(extra, ensure_ascii=False)
+
     if existing:
         await execute(
-            """UPDATE service_settings SET primary_color=$1, welcome_text=$2, min_booking_hours=$3, slot_step_minutes=$4
-               WHERE channel_id = $5""",
+            """UPDATE service_settings SET primary_color=$1, welcome_text=$2, min_booking_hours=$3, slot_step_minutes=$4, settings=$5
+               WHERE channel_id = $6""",
             body.get("primary_color", "#4F46E5"), body.get("welcome_text", ""),
             int(body.get("min_booking_hours", 2)), int(body.get("slot_step_minutes", 30)),
-            channel["id"],
+            extra_json, channel["id"],
         )
     else:
         await execute(
-            """INSERT INTO service_settings (channel_id, primary_color, welcome_text, min_booking_hours, slot_step_minutes)
-               VALUES ($1,$2,$3,$4,$5)""",
+            """INSERT INTO service_settings (channel_id, primary_color, welcome_text, min_booking_hours, slot_step_minutes, settings)
+               VALUES ($1,$2,$3,$4,$5,$6)""",
             channel["id"], body.get("primary_color", "#4F46E5"), body.get("welcome_text", ""),
             int(body.get("min_booking_hours", 2)), int(body.get("slot_step_minutes", 30)),
+            extra_json,
         )
     return {"success": True}
 
@@ -836,8 +856,17 @@ async def public_appearance(tc: str):
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
     s = await fetch_one("SELECT * FROM service_settings WHERE channel_id = $1", channel["id"])
+    result = _strip_binary(s) or {"primary_color": "#4F46E5", "welcome_text": ""}
+    if result and result.get("settings"):
+        import json
+        extra = result["settings"]
+        if isinstance(extra, str):
+            try: extra = json.loads(extra)
+            except: extra = {}
+        if isinstance(extra, dict):
+            result.update(extra)
     return {
         "success": True,
         "channel_title": channel.get("title", ""),
-        "settings": _strip_binary(s) or {"primary_color": "#4F46E5", "welcome_text": ""},
+        "settings": result,
     }
