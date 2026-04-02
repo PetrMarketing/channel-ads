@@ -13,12 +13,13 @@ const tdS = { padding: '8px 10px', borderBottom: '1px solid #f5f5f5' };
 const btnDanger = { background: '#e63946', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12 };
 const btnEdit = { background: '#f4a261', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12, marginRight: 4 };
 
+// editable: which fields can be edited; deleteEndpoint: endpoint suffix for DELETE
 const TAB_CONFIG = {
-  pins: { endpoint: 'pins', key: 'pins', label: 'Закрепы', cols: ['id', 'title', 'status', 'created_at'] },
-  leadMagnets: { endpoint: 'lead-magnets', key: 'leadMagnets', label: 'Лид-магниты', cols: ['id', 'name', 'status', 'created_at'] },
-  content: { endpoint: 'content', key: 'posts', label: 'Посты', cols: ['id', 'title', 'status', 'created_at'] },
-  broadcasts: { endpoint: 'broadcasts', key: 'broadcasts', label: 'Рассылки', cols: ['id', 'title', 'status', 'created_at'] },
-  giveaways: { endpoint: 'giveaways', key: 'giveaways', label: 'Розыгрыши', cols: ['id', 'title', 'status', 'created_at'] },
+  pins: { endpoint: 'pins', key: 'pins', label: 'Закрепы', cols: ['id', 'title', 'status', 'created_at'], editable: ['title', 'message_text', 'status', 'erid'], deleteEndpoint: 'pins' },
+  leadMagnets: { endpoint: 'lead-magnets', key: 'leadMagnets', label: 'Лид-магниты', cols: ['id', 'name', 'status', 'created_at'], editable: ['name', 'title', 'message_text'], deleteEndpoint: 'lead-magnets' },
+  content: { endpoint: 'content', key: 'posts', label: 'Посты', cols: ['id', 'title', 'status', 'created_at'], editable: ['title', 'message_text', 'status', 'scheduled_at', 'erid'], deleteEndpoint: 'content' },
+  broadcasts: { endpoint: 'broadcasts', key: 'broadcasts', label: 'Рассылки', cols: ['id', 'title', 'status', 'created_at'], editable: ['title', 'message_text', 'status'], deleteEndpoint: 'broadcasts' },
+  giveaways: { endpoint: 'giveaways', key: 'giveaways', label: 'Розыгрыши', cols: ['id', 'title', 'status', 'created_at'], editable: ['title', 'message_text', 'status', 'erid', 'legal_info'], deleteEndpoint: 'giveaways' },
   funnels: { endpoint: 'funnels', key: 'funnels', label: 'Воронки', cols: ['id', 'name', 'delay_minutes', 'step_order'] },
   subscribers: { endpoint: 'subscribers', key: 'subscribers', label: 'Подписчики' },
   paidChats: { endpoint: 'paid-chats', key: null, label: 'Платные чаты' },
@@ -34,6 +35,9 @@ export default function AdminChannelProfilePage() {
   const [tab, setTab] = useState('pins');
   const [tabData, setTabData] = useState(null);
   const [editLink, setEditLink] = useState(null);
+  const [editItem, setEditItem] = useState(null); // { ...item, _tab: 'pins' }
+  const [editForm, setEditForm] = useState({});
+  const [previewMode, setPreviewMode] = useState(false);
 
   useEffect(() => { adminApi.get(`/channels/${channelId}`).then(d => { if (d) setData(d); }).catch(() => {}); }, [channelId]);
 
@@ -63,13 +67,45 @@ export default function AdminChannelProfilePage() {
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('ru') : '-';
 
+  const reloadTab = () => {
+    const cfg = TAB_CONFIG[tab];
+    if (!cfg) return;
+    adminApi.get(`/channels/${channelId}/${cfg.endpoint}`).then(d => { if (d) setTabData(d); }).catch(() => {});
+  };
+
+  const handleDeleteItem = async (itemId) => {
+    const cfg = TAB_CONFIG[tab];
+    if (!cfg?.deleteEndpoint || !confirm('Удалить?')) return;
+    await adminApi.delete(`/channels/${channelId}/${cfg.deleteEndpoint}/${itemId}`);
+    reloadTab();
+  };
+
+  const handleSaveItem = async () => {
+    if (!editItem) return;
+    const cfg = TAB_CONFIG[editItem._tab];
+    if (!cfg?.deleteEndpoint) return;
+    await adminApi.put(`/channels/${channelId}/${cfg.deleteEndpoint}/${editItem.id}`, editForm);
+    setEditItem(null);
+    reloadTab();
+  };
+
+  const openEditItem = (item) => {
+    const cfg = TAB_CONFIG[tab];
+    const form = {};
+    (cfg.editable || []).forEach(f => { form[f] = item[f] || ''; });
+    setEditForm(form);
+    setEditItem({ ...item, _tab: tab });
+    setPreviewMode(false);
+  };
+
   const renderGenericTable = () => {
     const cfg = TAB_CONFIG[tab];
     if (!cfg?.cols) return null;
     const rows = tabData?.[cfg.key] || [];
+    const hasActions = cfg.editable || cfg.deleteEndpoint;
     return (
       <table style={tableStyle}>
-        <thead><tr>{cfg.cols.map(c => <th key={c} style={thS}>{c}</th>)}</tr></thead>
+        <thead><tr>{cfg.cols.map(c => <th key={c} style={thS}>{c}</th>)}{hasActions && <th style={thS}></th>}</tr></thead>
         <tbody>
           {rows.map(item => (
             <tr key={item.id}>
@@ -77,12 +113,19 @@ export default function AdminChannelProfilePage() {
                 <td key={c} style={tdS}>
                   {c === 'created_at' ? fmtDate(item[c]) :
                    c === 'text' ? (item[c]?.slice(0, 80) || '-') :
+                   c === 'message_text' ? (item[c]?.replace(/<[^>]+>/g, '').slice(0, 60) || '-') :
                    (item[c] ?? '-')}
                 </td>
               ))}
+              {hasActions && (
+                <td style={tdS}>
+                  {cfg.editable && <button style={btnEdit} onClick={() => openEditItem(item)}>Ред.</button>}
+                  {cfg.deleteEndpoint && <button style={btnDanger} onClick={() => handleDeleteItem(item.id)}>Удалить</button>}
+                </td>
+              )}
             </tr>
           ))}
-          {!rows.length && <tr><td colSpan={cfg.cols.length} style={{ ...tdS, textAlign: 'center', color: '#aaa' }}>Нет данных</td></tr>}
+          {!rows.length && <tr><td colSpan={cfg.cols.length + (hasActions ? 1 : 0)} style={{ ...tdS, textAlign: 'center', color: '#aaa' }}>Нет данных</td></tr>}
         </tbody>
       </table>
     );
@@ -251,6 +294,70 @@ export default function AdminChannelProfilePage() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={handleSaveLink} style={{ background: '#4361ee', color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px', cursor: 'pointer' }}>Сохранить</button>
               <button onClick={() => setEditLink(null)} style={{ padding: '8px 16px', border: '1px solid #ddd', borderRadius: 4, background: '#fff', cursor: 'pointer' }}>Отмена</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Item Modal */}
+      {editItem && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 500, maxHeight: '80vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0 }}>Редактировать #{editItem.id}</h3>
+              {editForm.message_text !== undefined && (
+                <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#666' }}>
+                  <input type="checkbox" checked={previewMode} onChange={e => setPreviewMode(e.target.checked)} />
+                  Предпросмотр
+                </label>
+              )}
+            </div>
+            {Object.keys(editForm).map(field => (
+              <div key={field} style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 2 }}>{field}</label>
+                {field === 'message_text' ? (
+                  previewMode ? (
+                    <div
+                      style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 6, minHeight: 100, fontSize: 14, lineHeight: 1.6, background: '#fafafa', whiteSpace: 'pre-wrap' }}
+                      dangerouslySetInnerHTML={{ __html: (editForm[field] || '')
+                        .replace(/<br[^>]*\/?>/gi, '\n')
+                        .replace(/<\/(?:div|p)>/gi, '\n')
+                        .replace(/<(?:div|p|span)[^>]*>/gi, '')
+                        .replace(/<\/?span[^>]*>/gi, '')
+                      }}
+                    />
+                  ) : (
+                    <textarea
+                      value={editForm[field] || ''}
+                      onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}
+                      style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 6, fontSize: 13, boxSizing: 'border-box', minHeight: 100 }}
+                    />
+                  )
+                ) : field === 'status' ? (
+                  <select
+                    value={editForm[field] || ''}
+                    onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}
+                    style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 6, fontSize: 13 }}
+                  >
+                    <option value="draft">Черновик</option>
+                    <option value="scheduled">Запланирован</option>
+                    <option value="published">Опубликован</option>
+                    <option value="active">Активен</option>
+                    <option value="finished">Завершён</option>
+                    <option value="sent">Отправлено</option>
+                  </select>
+                ) : (
+                  <input
+                    value={editForm[field] || ''}
+                    onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}
+                    style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+                  />
+                )}
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button onClick={handleSaveItem} style={{ background: '#4361ee', color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px', cursor: 'pointer' }}>Сохранить</button>
+              <button onClick={() => setEditItem(null)} style={{ padding: '8px 16px', border: '1px solid #ddd', borderRadius: 4, background: '#fff', cursor: 'pointer' }}>Отмена</button>
             </div>
           </div>
         </div>

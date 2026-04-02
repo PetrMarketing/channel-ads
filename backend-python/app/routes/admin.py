@@ -491,6 +491,123 @@ async def channel_subscribers(channel_id: int, admin: Dict = Depends(get_current
     return {"success": True, "subscribers": rows}
 
 
+# ─── Channel content CRUD (admin editing) ───
+
+@router.put("/channels/{channel_id}/pins/{item_id}")
+async def edit_channel_pin(channel_id: int, item_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    fields, params = [], []
+    idx = 1
+    for key in ("title", "message_text", "status", "erid"):
+        if key in body:
+            fields.append(f"{key} = ${idx}")
+            params.append(body[key])
+            idx += 1
+    if not fields:
+        return {"success": True}
+    params.extend([item_id, channel_id])
+    await execute(f"UPDATE pin_posts SET {', '.join(fields)} WHERE id = ${idx} AND channel_id = ${idx+1}", *params)
+    return {"success": True}
+
+
+@router.delete("/channels/{channel_id}/pins/{item_id}")
+async def delete_channel_pin(channel_id: int, item_id: int, admin: Dict = Depends(get_current_admin)):
+    await execute("DELETE FROM pin_posts WHERE id = $1 AND channel_id = $2", item_id, channel_id)
+    return {"success": True}
+
+
+@router.put("/channels/{channel_id}/content/{item_id}")
+async def edit_channel_content(channel_id: int, item_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    fields, params = [], []
+    idx = 1
+    for key in ("title", "message_text", "status", "scheduled_at", "erid"):
+        if key in body:
+            fields.append(f"{key} = ${idx}")
+            params.append(body[key])
+            idx += 1
+    if not fields:
+        return {"success": True}
+    params.extend([item_id, channel_id])
+    await execute(f"UPDATE content_posts SET {', '.join(fields)} WHERE id = ${idx} AND channel_id = ${idx+1}", *params)
+    return {"success": True}
+
+
+@router.delete("/channels/{channel_id}/content/{item_id}")
+async def delete_channel_content(channel_id: int, item_id: int, admin: Dict = Depends(get_current_admin)):
+    await execute("DELETE FROM content_posts WHERE id = $1 AND channel_id = $2", item_id, channel_id)
+    return {"success": True}
+
+
+@router.put("/channels/{channel_id}/broadcasts/{item_id}")
+async def edit_channel_broadcast(channel_id: int, item_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    fields, params = [], []
+    idx = 1
+    for key in ("title", "message_text", "status"):
+        if key in body:
+            fields.append(f"{key} = ${idx}")
+            params.append(body[key])
+            idx += 1
+    if not fields:
+        return {"success": True}
+    params.extend([item_id, channel_id])
+    await execute(f"UPDATE broadcasts SET {', '.join(fields)} WHERE id = ${idx} AND channel_id = ${idx+1}", *params)
+    return {"success": True}
+
+
+@router.delete("/channels/{channel_id}/broadcasts/{item_id}")
+async def delete_channel_broadcast(channel_id: int, item_id: int, admin: Dict = Depends(get_current_admin)):
+    await execute("DELETE FROM broadcasts WHERE id = $1 AND channel_id = $2", item_id, channel_id)
+    return {"success": True}
+
+
+@router.put("/channels/{channel_id}/giveaways/{item_id}")
+async def edit_channel_giveaway(channel_id: int, item_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    fields, params = [], []
+    idx = 1
+    for key in ("title", "message_text", "status", "erid", "legal_info"):
+        if key in body:
+            fields.append(f"{key} = ${idx}")
+            params.append(body[key])
+            idx += 1
+    if not fields:
+        return {"success": True}
+    params.extend([item_id, channel_id])
+    await execute(f"UPDATE giveaways SET {', '.join(fields)} WHERE id = ${idx} AND channel_id = ${idx+1}", *params)
+    return {"success": True}
+
+
+@router.delete("/channels/{channel_id}/giveaways/{item_id}")
+async def delete_channel_giveaway(channel_id: int, item_id: int, admin: Dict = Depends(get_current_admin)):
+    await execute("DELETE FROM giveaways WHERE id = $1 AND channel_id = $2", item_id, channel_id)
+    return {"success": True}
+
+
+@router.put("/channels/{channel_id}/lead-magnets/{item_id}")
+async def edit_channel_lm(channel_id: int, item_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    fields, params = [], []
+    idx = 1
+    for key in ("title", "name", "message_text"):
+        if key in body:
+            fields.append(f"{key} = ${idx}")
+            params.append(body[key])
+            idx += 1
+    if not fields:
+        return {"success": True}
+    params.extend([item_id, channel_id])
+    await execute(f"UPDATE lead_magnets SET {', '.join(fields)} WHERE id = ${idx} AND channel_id = ${idx+1}", *params)
+    return {"success": True}
+
+
+@router.delete("/channels/{channel_id}/lead-magnets/{item_id}")
+async def delete_channel_lm(channel_id: int, item_id: int, admin: Dict = Depends(get_current_admin)):
+    await execute("DELETE FROM lead_magnets WHERE id = $1 AND channel_id = $2", item_id, channel_id)
+    return {"success": True}
+
+
 @router.get("/channels/{channel_id}/logs")
 async def channel_logs(channel_id: int, admin: Dict = Depends(get_current_admin)):
     """Activity log for channel: visits, clicks, subscriptions."""

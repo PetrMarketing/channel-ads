@@ -286,6 +286,70 @@ def _get_chat_id(body: dict) -> Optional[str]:
 
 # ---- Bot command handlers ----
 
+async def _handle_staff_invite(max_api, chat_id: str, max_user_id: str, first_name: str, invite_token: str):
+    """Accept staff invite via MAX bot."""
+    from datetime import datetime
+
+    invite = await fetch_one(
+        """SELECT si.*, c.title as channel_title, c.tracking_code
+           FROM staff_invites si JOIN channels c ON c.id = si.channel_id
+           WHERE si.token = $1""",
+        invite_token,
+    )
+    if not invite:
+        await _send_to_chat(max_api, chat_id, "Приглашение не найдено или ссылка некорректна.")
+        return
+    if invite.get("accepted"):
+        await _send_to_chat(max_api, chat_id, "Это приглашение уже было принято.")
+        return
+    if invite.get("expires_at") and invite["expires_at"] < datetime.utcnow():
+        await _send_to_chat(max_api, chat_id, "Приглашение истекло.")
+        return
+
+    # Find or create user
+    user = await _find_or_create_max_user(max_user_id, first_name, dialog_chat_id=chat_id)
+    if not user:
+        await _send_to_chat(max_api, chat_id, "Ошибка создания пользователя.")
+        return
+
+    user_id = user["id"]
+
+    if invite["invited_by"] == user_id:
+        await _send_to_chat(max_api, chat_id, "Вы не можете принять собственное приглашение.")
+        return
+
+    # Check if already staff
+    existing = await fetch_one(
+        "SELECT id FROM channel_staff WHERE channel_id = $1 AND user_id = $2",
+        invite["channel_id"], user_id,
+    )
+    if existing:
+        await _send_to_chat(max_api, chat_id, f"Вы уже являетесь сотрудником канала «{invite['channel_title']}».")
+        return
+
+    # Add as staff
+    await execute_returning_id(
+        "INSERT INTO channel_staff (channel_id, user_id, role) VALUES ($1, $2, $3) RETURNING id",
+        invite["channel_id"], user_id, invite["role"],
+    )
+
+    # Mark invite as accepted
+    await execute(
+        "UPDATE staff_invites SET accepted = true, accepted_by = $1, accepted_at = NOW() WHERE id = $2",
+        user_id, invite["id"],
+    )
+
+    from ..routes.billing import STAFF_ROLES
+    role_name = STAFF_ROLES.get(invite["role"], {}).get("name", invite["role"])
+
+    await _send_to_chat(max_api, chat_id,
+        f"Вы приняли приглашение!\n\n"
+        f"Канал: **{invite['channel_title']}**\n"
+        f"Роль: **{role_name}**\n\n"
+        f"Теперь вы можете управлять каналом в личном кабинете.",
+        buttons=[[{"type": "link", "text": "Открыть кабинет", "url": f"{settings.APP_URL}"}]])
+
+
 async def handle_paid_chat_max(max_api, chat_id: str, max_user_id: str, tracking_code: str):
     """Show paid chat info in MAX bot."""
     from ..database import fetch_one, fetch_all
@@ -456,6 +520,9 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
     if payload.startswith("paid_"):
         await _find_or_create_max_user(max_user_id, first_name, dialog_chat_id=chat_id)
         await handle_paid_chat_max(max_api, chat_id, max_user_id, payload[5:])
+        return
+    if payload.startswith("invite_"):
+        await _handle_staff_invite(max_api, chat_id, max_user_id, first_name, payload[7:])
         return
     if payload.startswith("go_"):
         await _handle_go_link(max_api, chat_id, max_user_id, first_name, payload[3:])
@@ -1543,6 +1610,8 @@ async def process_max_update(body: dict):
                         print(f"[MAX Bot] message_callback: handle_paid_chat_max FAILED: {e}")
                 elif payload.startswith("go_"):
                     await _handle_go_link(max_api, chat_id, max_user_id, first_name, payload[3:])
+                elif payload.startswith("invite_"):
+                    await _handle_staff_invite(max_api, chat_id, max_user_id, first_name, payload[7:])
                 else:
                     await _cmd_start(max_api, chat_id, max_user_id, first_name, payload)
             elif cmd == "/login":
@@ -1701,15 +1770,21 @@ async def process_max_update(body: dict):
                            user_id = COALESCE(bot_chats.user_id, EXCLUDED.user_id)""",
                         str(raw_chat_id), chat_title, bind_user_id, is_admin, chat_link, chat_avatar,
                     )
-                    print(f"[MAX Bot] bot_added: saved chat '{chat_title}' ({raw_chat_id}), is_admin={is_admin}")
-                    # Only notify when bot is admin
-                    if is_admin and bind_user_id and inviter_id:
-                        from ..middleware.auth import create_jwt
-                        _token = create_jwt(bind_user_id)
-                        _url = f"{settings.APP_URL}/login?token={_token}"
-                        await _send_to_user_by_id(max_api, str(inviter_id),
-                            f"✅ Бот добавлен администратором в чат «{chat_title}».\n\nВы можете подключить его как платный чат в личном кабинете.",
-                            buttons=[[{"type": "link", "text": "🔑 Перейти в кабинет", "url": _url}]])
+                    print(f"[MAX Bot] bot_added: saved chat '{chat_title}' ({raw_chat_id}), is_admin={is_admin}, inviter={inviter_id}, bind_user={bind_user_id}")
+                    # Notify inviter
+                    if inviter_id:
+                        if is_admin:
+                            msg = f"✅ Бот добавлен администратором в чат «{chat_title}».\n\nВы можете подключить его как платный чат в личном кабинете."
+                        else:
+                            msg = f"✅ Бот добавлен в чат «{chat_title}».\n\n⚠️ Бот пока не является администратором. Дайте боту права администратора для полного функционала."
+                        if bind_user_id:
+                            from ..middleware.auth import create_jwt
+                            _token = create_jwt(bind_user_id)
+                            _url = f"{settings.APP_URL}/login?token={_token}"
+                            await _send_to_user_by_id(max_api, str(inviter_id), msg,
+                                buttons=[[{"type": "link", "text": "🔑 Перейти в кабинет", "url": _url}]])
+                        else:
+                            await _send_to_user_by_id(max_api, str(inviter_id), msg)
                 except Exception as e:
                     print(f"[MAX Bot] bot_added: save chat error: {e}")
                 return
@@ -1889,30 +1964,53 @@ async def process_max_update(body: dict):
         if update_type == "bot_removed":
             removed_chat_id = str(body.get("chat_id") or body.get("chat", {}).get("chat_id") or "")
             if removed_chat_id:
+                # Check if it's a channel
                 channel = await fetch_one(
                     "SELECT id, title, user_id FROM channels WHERE max_chat_id = $1", removed_chat_id
                 )
-                await execute("""
-                    UPDATE channels SET is_active = 0, max_connected = 0
-                    WHERE max_chat_id = $1
-                """, removed_chat_id)
-                print(f"[MAX Bot] Channel deactivated: {removed_chat_id}")
+                if channel:
+                    await execute(
+                        "UPDATE channels SET is_active = 0, max_connected = 0 WHERE max_chat_id = $1",
+                        removed_chat_id)
+                    print(f"[MAX Bot] Channel deactivated: {removed_chat_id}")
 
-                # Notify owner
-                if channel and channel.get("user_id"):
-                    owner = await fetch_one(
-                        "SELECT max_user_id FROM users WHERE id = $1 AND max_user_id IS NOT NULL",
-                        channel["user_id"],
-                    )
-                    if owner and max_api:
-                        try:
-                            ch_title = channel.get("title", "")
-                            await _send_to_user_by_id(max_api, owner["max_user_id"],
-                                f"⚠️ Бот удалён из канала «{ch_title}».\n\n"
-                                f"Канал деактивирован. Чтобы снова подключить:\n"
-                                f"Откройте канал → Настройки → Администраторы → добавьте бота @{settings.MAX_BOT_USERNAME}")
-                        except Exception as e:
-                            print(f"[MAX Bot] Notify owner on remove failed: {e}")
+                    if channel.get("user_id"):
+                        owner = await fetch_one(
+                            "SELECT max_user_id FROM users WHERE id = $1 AND max_user_id IS NOT NULL",
+                            channel["user_id"])
+                        if owner and max_api:
+                            try:
+                                await _send_to_user_by_id(max_api, owner["max_user_id"],
+                                    f"⚠️ Бот удалён из канала «{channel.get('title', '')}».\n\n"
+                                    f"Канал деактивирован. Чтобы снова подключить:\n"
+                                    f"Откройте канал → Настройки → Администраторы → добавьте бота @{settings.MAX_BOT_USERNAME}")
+                            except Exception as e:
+                                print(f"[MAX Bot] Notify owner on channel remove failed: {e}")
+
+                # Check if it's a chat (bot_chats)
+                bot_chat = await fetch_one(
+                    "SELECT id, title, user_id FROM bot_chats WHERE chat_id = $1", removed_chat_id
+                )
+                if bot_chat:
+                    await execute("DELETE FROM bot_chats WHERE chat_id = $1", removed_chat_id)
+                    print(f"[MAX Bot] Chat removed: {removed_chat_id} ({bot_chat.get('title')})")
+
+                    # Deactivate paid chat if exists
+                    await execute(
+                        "UPDATE paid_chats SET is_active = 0 WHERE chat_id = $1", removed_chat_id)
+
+                    if bot_chat.get("user_id") and max_api:
+                        owner = await fetch_one(
+                            "SELECT max_user_id FROM users WHERE id = $1 AND max_user_id IS NOT NULL",
+                            bot_chat["user_id"])
+                        if owner:
+                            try:
+                                await _send_to_user_by_id(max_api, owner["max_user_id"],
+                                    f"⚠️ Бот удалён из чата «{bot_chat.get('title', '')}».\n\n"
+                                    f"Чат деактивирован. Чтобы снова подключить:\n"
+                                    f"Откройте чат → Настройки → Администраторы → добавьте бота @{settings.MAX_BOT_USERNAME}")
+                            except Exception as e:
+                                print(f"[MAX Bot] Notify owner on chat remove failed: {e}")
 
         # === user_added / chat_member_joined ===
         if update_type in ("user_added", "chat_member_joined"):

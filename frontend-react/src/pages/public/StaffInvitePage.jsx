@@ -130,14 +130,26 @@ export default function StaffInvitePage() {
               </div>
             </div>
 
-            <button
-              className="btn btn-primary"
-              onClick={handleAccept}
-              disabled={accepting}
-              style={{ padding: '14px 24px', width: '100%', fontSize: '1rem', fontWeight: 600 }}
-            >
-              {!authToken ? 'Войти и принять' : accepting ? 'Принятие...' : 'Принять приглашение'}
-            </button>
+            {authToken ? (
+              <button
+                className="btn btn-primary"
+                onClick={handleAccept}
+                disabled={accepting}
+                style={{ padding: '14px 24px', width: '100%', fontSize: '1rem', fontWeight: 600 }}
+              >
+                {accepting ? 'Принятие...' : 'Принять приглашение'}
+              </button>
+            ) : (
+              <a
+                href={`https://max.ru/${import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}?start=invite_${inviteToken}`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-primary"
+                style={{ padding: '14px 24px', width: '100%', fontSize: '1rem', fontWeight: 600, display: 'block', textDecoration: 'none', textAlign: 'center' }}
+              >
+                Принять через MAX бота
+              </a>
+            )}
           </div>
         )}
       </div>
