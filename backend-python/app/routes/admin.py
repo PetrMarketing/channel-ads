@@ -77,6 +77,13 @@ async def dashboard_stats(admin: Dict = Depends(get_current_admin)):
         lead_magnets = await fetch_one("SELECT COUNT(*) as c FROM lead_magnets")
     except Exception:
         pins = broadcasts = giveaways = lead_magnets = {"c": 0}
+    # Total revenue
+    try:
+        revenue = await fetch_one("SELECT COALESCE(SUM(amount), 0) as total FROM billing_payments WHERE status = 'paid'")
+        total_revenue = float(revenue["total"]) if revenue else 0
+    except Exception:
+        total_revenue = 0
+
     return {
         "success": True,
         "users": users["c"] if users else 0,
@@ -88,6 +95,31 @@ async def dashboard_stats(admin: Dict = Depends(get_current_admin)):
         "broadcasts": broadcasts["c"] if broadcasts else 0,
         "giveaways": giveaways["c"] if giveaways else 0,
         "leadMagnets": lead_magnets["c"] if lead_magnets else 0,
+        "totalRevenue": total_revenue,
+    }
+
+
+@router.get("/dashboard/charts")
+async def dashboard_charts(days: int = Query(30), admin: Dict = Depends(get_current_admin)):
+    """Get daily user registrations and revenue for charts."""
+    from datetime import datetime, timedelta
+    since = (datetime.utcnow() - timedelta(days=days)).date()
+
+    users_by_day = await fetch_all(
+        "SELECT created_at::date as day, COUNT(*) as cnt FROM users WHERE created_at::date >= $1 GROUP BY day ORDER BY day",
+        since,
+    )
+    revenue_by_day = await fetch_all(
+        """SELECT created_at::date as day, COALESCE(SUM(amount), 0) as total, COUNT(*) as cnt
+           FROM billing_payments WHERE status = 'paid' AND created_at::date >= $1
+           GROUP BY day ORDER BY day""",
+        since,
+    )
+
+    return {
+        "success": True,
+        "users_chart": [{"date": str(r["day"]), "count": r["cnt"]} for r in users_by_day],
+        "revenue_chart": [{"date": str(r["day"]), "amount": float(r["total"]), "count": r["cnt"]} for r in revenue_by_day],
     }
 
 
@@ -123,7 +155,12 @@ async def list_users(
                FROM users u ORDER BY u.created_at DESC LIMIT $1 OFFSET $2""",
             limit, offset,
         )
-    return {"success": True, "users": rows, "total": total["c"] if total else 0, "page": page, "limit": limit}
+    # Strip binary fields
+    clean = []
+    for r in rows:
+        d = {k: v for k, v in dict(r).items() if not isinstance(v, (bytes, bytearray, memoryview))}
+        clean.append(d)
+    return {"success": True, "users": clean, "total": total["c"] if total else 0, "page": page, "limit": limit}
 
 
 @router.get("/users/{user_id}")
@@ -200,6 +237,34 @@ async def user_lead_magnets(user_id: int, admin: Dict = Depends(get_current_admi
         user_id,
     )
     return {"success": True, "leadMagnets": _strip_binary(rows)}
+
+
+@router.get("/users/{user_id}/referrals")
+async def user_referrals(user_id: int, admin: Dict = Depends(get_current_admin)):
+    # Links
+    links = await fetch_all("SELECT * FROM referral_links WHERE user_id = $1 ORDER BY created_at", user_id)
+    # Signups
+    signups = await fetch_all(
+        """SELECT rs.*, u.first_name as referred_name, u.username as referred_username, u.created_at as user_created
+           FROM referral_signups rs
+           LEFT JOIN users u ON u.id = rs.referred_user_id
+           WHERE rs.referrer_user_id = $1 ORDER BY rs.created_at DESC""",
+        user_id,
+    )
+    # Earnings
+    earnings = await fetch_all(
+        "SELECT * FROM referral_earnings WHERE referrer_user_id = $1 ORDER BY created_at DESC LIMIT 50",
+        user_id,
+    )
+    # Balance
+    user = await fetch_one("SELECT referral_balance FROM users WHERE id = $1", user_id)
+    return {
+        "success": True,
+        "links": links,
+        "signups": signups,
+        "earnings": earnings,
+        "balance": float(user.get("referral_balance", 0)) if user else 0,
+    }
 
 
 @router.put("/users/{user_id}/extend-tariff")

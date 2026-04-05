@@ -468,7 +468,7 @@ async def comments_app_page(request: Request, params: str = ""):
 <html><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<script src="https://st.max.ru/js/max-web-app.js"></script>
+<script src="https://st.max.ru/js/max-web-app.js" async></script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#1f2937}}
@@ -510,14 +510,22 @@ let _settings = {{}};
 function esc(s) {{ return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }}
 
 async function init() {{
-  if (window.WebApp) {{
-    try {{ window.WebApp.ready(); }} catch(e) {{}}
-    const u = window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user;
-    if (u) {{
-      userName = ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
-      maxUserId = String(u.user_id || u.id || '');
-      userPhoto = u.avatar_url || u.photo_url || '';
+  // Try WebApp bridge (may not be available if opened via direct link)
+  try {{
+    if (window.WebApp) {{
+      window.WebApp.ready();
+      const u = window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user;
+      if (u) {{
+        userName = ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
+        maxUserId = String(u.user_id || u.id || '');
+        userPhoto = u.avatar_url || u.photo_url || '';
+      }}
     }}
+  }} catch(e) {{ console.log('WebApp not available:', e); }}
+
+  if (!POST_ID) {{
+    document.getElementById('app').innerHTML = '<div class="empty">Комментарии не найдены. Откройте ссылку из поста канала.</div>';
+    return;
   }}
   try {{
     const r = await fetch(API + '/' + POST_TYPE + '/' + POST_ID);
@@ -591,7 +599,11 @@ function render(comments) {{
     }}
     h += '<div><span class="comment-author">' + esc(c.user_name || 'Аноним') + '</span>';
     h += '<span class="comment-time">' + time + '</span>';
+    if (c.reply_to_name) {{
+      h += '<div style="font-size:0.75rem;color:#9ca3af;margin-top:2px">↩ ' + esc(c.reply_to_name) + '</div>';
+    }}
     h += '<div class="comment-text">' + esc(c.comment_text) + '</div>';
+    h += '<span class="reply-btn" data-id="' + c.id + '" data-name="' + esc(c.user_name || 'Аноним') + '" style="font-size:0.72rem;color:' + pc + ';cursor:pointer;margin-top:2px;display:inline-block" onclick="setReply(' + c.id + ',\'' + esc(c.user_name || 'Аноним').replace(/'/g, "\\\\'") + '\')">Ответить</span>';
     h += '</div></div></div>';
   }});
   h += '</div>';
@@ -606,6 +618,35 @@ function render(comments) {{
   }});
 }}
 
+let replyToId = null;
+let replyToName = '';
+
+function setReply(id, name) {{
+  replyToId = id;
+  replyToName = name;
+  const input = document.getElementById('c-input');
+  input.placeholder = '↩ Ответ для ' + name + '...';
+  input.focus();
+  // Show cancel
+  let cancel = document.getElementById('reply-cancel');
+  if (!cancel) {{
+    cancel = document.createElement('div');
+    cancel.id = 'reply-cancel';
+    cancel.style.cssText = 'font-size:0.75rem;color:#9ca3af;padding:4px 16px;cursor:pointer;background:#f9fafb;border-top:1px solid #e5e7eb';
+    cancel.onclick = function() {{ clearReply(); }};
+    document.querySelector('.compose').before(cancel);
+  }}
+  cancel.innerHTML = '↩ Ответ для <b>' + name + '</b> <span style="margin-left:8px;color:#e63946">✕</span>';
+}}
+
+function clearReply() {{
+  replyToId = null;
+  replyToName = '';
+  document.getElementById('c-input').placeholder = 'Написать комментарий...';
+  const cancel = document.getElementById('reply-cancel');
+  if (cancel) cancel.remove();
+}}
+
 async function send() {{
   const input = document.getElementById('c-input');
   const btn = document.getElementById('c-btn');
@@ -613,19 +654,20 @@ async function send() {{
   if (!text) return;
   btn.disabled = true;
   try {{
+    const payload = {{comment_text: text, user_name: userName, max_user_id: maxUserId, user_avatar: userPhoto}};
+    if (replyToId) payload.parent_id = replyToId;
     const r = await fetch(API + '/' + POST_TYPE + '/' + POST_ID, {{
       method: 'POST',
       headers: {{'Content-Type':'application/json'}},
-      body: JSON.stringify({{comment_text: text, user_name: userName, max_user_id: maxUserId, user_avatar: userPhoto}})
+      body: JSON.stringify(payload)
     }});
     const data = await r.json();
     if (data.success) {{
       input.value = '';
-      // Reload comments
+      clearReply();
       const r2 = await fetch(API + '/' + POST_TYPE + '/' + POST_ID);
       const d2 = await r2.json();
       if (d2.success) render(d2.comments || []);
-      // Scroll to bottom
       window.scrollTo(0, document.body.scrollHeight);
     }} else {{
       alert(data.detail || 'Ошибка');

@@ -28,10 +28,10 @@ export default function AdminUserProfilePage() {
     const endpoints = {
       channels: `/users/${userId}/channels`, pins: `/users/${userId}/pins`,
       broadcasts: `/users/${userId}/broadcasts`, giveaways: `/users/${userId}/giveaways`,
-      leadMagnets: `/users/${userId}/lead-magnets`,
+      leadMagnets: `/users/${userId}/lead-magnets`, referrals: `/users/${userId}/referrals`,
     };
     adminApi.get(endpoints[tab]).then(d => {
-      if (d) setTabData(d.channels || d.pins || d.broadcasts || d.giveaways || d.leadMagnets || []);
+      if (d) setTabData(d.channels || d.pins || d.broadcasts || d.giveaways || d.leadMagnets || d);
     }).catch(() => setTabData([]));
   }, [tab, userId]);
 
@@ -53,7 +53,7 @@ export default function AdminUserProfilePage() {
   const tabs = [
     { key: 'channels', label: 'Каналы' }, { key: 'pins', label: 'Закрепы' },
     { key: 'leadMagnets', label: 'Лид-магниты' }, { key: 'broadcasts', label: 'Рассылки' },
-    { key: 'giveaways', label: 'Розыгрыши' },
+    { key: 'giveaways', label: 'Розыгрыши' }, { key: 'referrals', label: 'Рефералы' },
   ];
 
   return (
@@ -139,6 +139,57 @@ export default function AdminUserProfilePage() {
             </tr>
           ))}</tbody>
         </table>
+      )}
+
+      {tab === 'referrals' && tabData && (
+        <div>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
+            <div style={{ padding: '12px 20px', background: '#f0fdf4', borderRadius: 8, borderLeft: '3px solid #22c55e' }}>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>{(tabData.balance || 0).toLocaleString('ru-RU')} ₽</div>
+              <div style={{ fontSize: 12, color: '#888' }}>Баланс</div>
+            </div>
+            <div style={{ padding: '12px 20px', background: '#f0f9ff', borderRadius: 8, borderLeft: '3px solid #3b82f6' }}>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>{tabData.signups?.length || 0}</div>
+              <div style={{ fontSize: 12, color: '#888' }}>Рефералов</div>
+            </div>
+          </div>
+          {tabData.links?.length > 0 && (
+            <>
+              <h4 style={{ fontSize: 14, marginBottom: 8 }}>Ссылки</h4>
+              <table style={tableStyle}>
+                <thead><tr><th style={thS}>Код</th><th style={thS}>Название</th><th style={thS}>Дата</th></tr></thead>
+                <tbody>{tabData.links.map(l => (
+                  <tr key={l.id}><td style={tdS}>{l.code}</td><td style={tdS}>{l.name || '—'}</td><td style={tdS}>{l.created_at ? new Date(l.created_at).toLocaleDateString('ru') : '—'}</td></tr>
+                ))}</tbody>
+              </table>
+            </>
+          )}
+          {tabData.signups?.length > 0 && (
+            <>
+              <h4 style={{ fontSize: 14, margin: '16px 0 8px' }}>Приглашённые</h4>
+              <table style={tableStyle}>
+                <thead><tr><th style={thS}>Имя</th><th style={thS}>Username</th><th style={thS}>Дата</th></tr></thead>
+                <tbody>{tabData.signups.map(s => (
+                  <tr key={s.id}><td style={tdS}>{s.referred_name || '—'}</td><td style={tdS}>{s.referred_username || '—'}</td><td style={tdS}>{s.created_at ? new Date(s.created_at).toLocaleDateString('ru') : '—'}</td></tr>
+                ))}</tbody>
+              </table>
+            </>
+          )}
+          {tabData.earnings?.length > 0 && (
+            <>
+              <h4 style={{ fontSize: 14, margin: '16px 0 8px' }}>Начисления</h4>
+              <table style={tableStyle}>
+                <thead><tr><th style={thS}>Сумма</th><th style={thS}>Комиссия</th><th style={thS}>Дата</th></tr></thead>
+                <tbody>{tabData.earnings.map(e => (
+                  <tr key={e.id}><td style={tdS}>{e.amount} ₽</td><td style={{ ...tdS, color: '#22c55e', fontWeight: 600 }}>+{e.commission_amount} ₽ ({e.commission_percent}%)</td><td style={tdS}>{e.created_at ? new Date(e.created_at).toLocaleDateString('ru') : '—'}</td></tr>
+                ))}</tbody>
+              </table>
+            </>
+          )}
+          {!tabData.links?.length && !tabData.signups?.length && (
+            <div style={{ color: '#aaa', textAlign: 'center', padding: 20 }}>Нет реферальных данных</div>
+          )}
+        </div>
       )}
 
       {extendModal && (

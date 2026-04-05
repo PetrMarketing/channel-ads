@@ -49,6 +49,29 @@ async def delete_comment(tc: str, comment_id: int, user=Depends(get_current_user
     return {"success": True}
 
 
+@router.post("/{tc}/{comment_id}/reply")
+async def reply_comment(tc: str, comment_id: int, request: Request, user=Depends(get_current_user)):
+    """Reply to a comment from dashboard (as channel owner)."""
+    ch = await _get_channel(tc, user["id"])
+    if not ch:
+        raise HTTPException(404, "Канал не найден")
+    parent = await fetch_one("SELECT * FROM post_comments WHERE id = $1 AND channel_id = $2", comment_id, ch["id"])
+    if not parent:
+        raise HTTPException(404, "Комментарий не найден")
+    body = await request.json()
+    text = body.get("text", "").strip()
+    if not text:
+        raise HTTPException(400, "Текст ответа обязателен")
+    reply_name = user.get("first_name") or user.get("username") or "Автор"
+    rid = await execute_returning_id(
+        """INSERT INTO post_comments (channel_id, post_type, post_id, user_name, comment_text, parent_id, reply_to_name)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id""",
+        ch["id"], parent["post_type"], parent["post_id"],
+        reply_name, text, comment_id, parent.get("user_name", ""),
+    )
+    return {"success": True, "id": rid}
+
+
 @router.get("/{tc}/settings")
 async def get_comment_settings(tc: str, user=Depends(get_current_user)):
     ch = await _get_channel(tc, user["id"])
@@ -125,7 +148,7 @@ async def public_get_comments(post_type: str, post_id: int):
         raise HTTPException(404, "Пост не найден")
     ch = await fetch_one("SELECT title, comment_settings FROM channels WHERE id = $1", post["channel_id"])
     comments = await fetch_all(
-        "SELECT id, user_name, user_avatar, max_user_id, comment_text, created_at FROM post_comments WHERE post_type = $1 AND post_id = $2 ORDER BY created_at",
+        "SELECT id, user_name, user_avatar, max_user_id, comment_text, parent_id, reply_to_name, created_at FROM post_comments WHERE post_type = $1 AND post_id = $2 ORDER BY created_at",
         post_type, post_id)
     return {
         "success": True,
@@ -157,8 +180,40 @@ async def public_add_comment(post_type: str, post_id: int, request: Request):
         raise HTTPException(400, "Неизвестный тип поста")
     if not post:
         raise HTTPException(404, "Пост не найден")
+    parent_id = body.get("parent_id")
+    reply_to_name = ""
+    if parent_id:
+        parent = await fetch_one("SELECT user_name FROM post_comments WHERE id = $1", int(parent_id))
+        reply_to_name = parent.get("user_name", "") if parent else ""
+
     cid = await execute_returning_id(
-        "INSERT INTO post_comments (channel_id, post_type, post_id, max_user_id, user_name, user_avatar, comment_text) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id",
+        """INSERT INTO post_comments (channel_id, post_type, post_id, max_user_id, user_name, user_avatar, comment_text, parent_id, reply_to_name)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id""",
         post["channel_id"], post_type, post_id,
-        str(max_user_id) if max_user_id else None, user_name, user_avatar or None, text)
+        str(max_user_id) if max_user_id else None, user_name, user_avatar or None, text,
+        int(parent_id) if parent_id else None, reply_to_name or None,
+    )
+
+    # Notify channel owner if enabled
+    try:
+        ch = await fetch_one("SELECT user_id, title, comment_settings FROM channels WHERE id = $1", post["channel_id"])
+        if ch:
+            settings = ch.get("comment_settings") or {}
+            if isinstance(settings, str):
+                settings = json.loads(settings)
+            if settings.get("notify_comments"):
+                owner = await fetch_one("SELECT max_user_id FROM users WHERE id = $1", ch["user_id"])
+                if owner and owner.get("max_user_id"):
+                    from ..services.max_api import get_max_api
+                    from ..routes.max_webhook import _send_to_user_by_id
+                    max_api = get_max_api()
+                    if max_api:
+                        reply_info = f"\nОтвет на: {reply_to_name}" if reply_to_name else ""
+                        await _send_to_user_by_id(max_api, owner["max_user_id"],
+                            f"💬 Новый комментарий в канале «{ch.get('title', '')}»\n\n"
+                            f"От: **{user_name}**{reply_info}\n"
+                            f"Комментарий: {text[:200]}")
+    except Exception as e:
+        print(f"[Comments] Notify error: {e}")
+
     return {"success": True, "id": cid}

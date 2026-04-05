@@ -11,6 +11,9 @@ export default function CommentsPage() {
   const [tab, setTab] = useState('comments');
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [replyTo, setReplyTo] = useState(null); // { id, user_name }
+  const [replyText, setReplyText] = useState('');
+  const [replying, setReplying] = useState(false);
   const [settings, setSettings] = useState({
     primary_color: '#4F46E5', header_text: '',
     header_text_color: '#ffffff', page_text_color: '#1f2937',
@@ -66,6 +69,19 @@ export default function CommentsPage() {
       showToast('Комментарий удалён');
       loadComments();
     } catch (e) { showToast(e.message || 'Ошибка', 'error'); }
+  };
+
+  const sendReply = async () => {
+    if (!replyTo || !replyText.trim()) return;
+    setReplying(true);
+    try {
+      await api.post(`/comments/${tc}/${replyTo.id}/reply`, { text: replyText });
+      showToast('Ответ отправлен');
+      setReplyTo(null);
+      setReplyText('');
+      loadComments();
+    } catch (e) { showToast(e.message || 'Ошибка', 'error'); }
+    finally { setReplying(false); }
   };
 
   const saveSettings = async () => {
@@ -147,10 +163,36 @@ export default function CommentsPage() {
                         </div>
                         <button className="btn btn-danger" style={{ padding: '2px 8px', fontSize: '0.72rem' }} onClick={() => deleteComment(c.id)}>Удалить</button>
                       </div>
+                      {c.reply_to_name && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                          ↩ Ответ для {c.reply_to_name}
+                        </div>
+                      )}
                       <div style={{ fontSize: '0.88rem', marginTop: 4, lineHeight: 1.5 }}>{c.comment_text}</div>
-                      {c.post_title && (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-                          Пост: {c.post_title}
+                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                        {c.post_title && (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            Пост: {c.post_title}
+                          </span>
+                        )}
+                        <button style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.75rem', cursor: 'pointer', padding: 0 }}
+                          onClick={() => { setReplyTo({ id: c.id, user_name: c.user_name }); setReplyText(''); }}>
+                          Ответить
+                        </button>
+                      </div>
+                      {replyTo?.id === c.id && (
+                        <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+                          <input className="form-input" style={{ flex: 1, padding: '6px 10px', fontSize: '0.85rem' }}
+                            placeholder={`Ответ для ${c.user_name}...`}
+                            value={replyText} onChange={e => setReplyText(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') sendReply(); }}
+                            autoFocus />
+                          <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.82rem' }}
+                            onClick={sendReply} disabled={replying || !replyText.trim()}>
+                            {replying ? '...' : '→'}
+                          </button>
+                          <button className="btn btn-outline" style={{ padding: '6px 10px', fontSize: '0.82rem' }}
+                            onClick={() => setReplyTo(null)}>✕</button>
                         </div>
                       )}
                     </div>
@@ -159,6 +201,24 @@ export default function CommentsPage() {
               })}
             </div>
           )}
+
+          {/* Notification toggle */}
+          <div style={{ marginTop: 20, padding: '14px 16px', background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <label style={{ fontSize: '0.9rem', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={settings.notify_comments || false}
+                  onChange={async (e) => {
+                    const val = e.target.checked;
+                    setSettings(s => ({ ...s, notify_comments: val }));
+                    try { await api.put(`/comments/${tc}/settings`, { ...settings, notify_comments: val }); showToast(val ? 'Уведомления включены' : 'Уведомления выключены'); } catch {}
+                  }} />
+                Уведомлять о новых комментариях
+              </label>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2, marginLeft: 24 }}>
+                Новые комментарии будут приходить в MAX бота
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
