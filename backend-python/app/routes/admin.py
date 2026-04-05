@@ -1052,7 +1052,32 @@ async def finance_overview(
 @router.get("/landings")
 async def list_landings(admin: Dict = Depends(get_current_admin)):
     rows = await fetch_all("SELECT * FROM landing_pages_v2 ORDER BY created_at")
-    return {"success": True, "landings": rows}
+    result = []
+    for r in rows:
+        d = dict(r)
+        # Count users from this landing
+        try:
+            users_from = await fetch_one(
+                "SELECT COUNT(*) as cnt FROM users WHERE source_landing = $1", r["slug"]
+            )
+            paid_from = await fetch_one(
+                """SELECT COUNT(DISTINCT bp.id) as cnt, COALESCE(SUM(bp.amount), 0) as total
+                   FROM billing_payments bp
+                   JOIN channel_billing cb ON cb.id = bp.channel_billing_id
+                   JOIN channels c ON c.id = cb.channel_id
+                   JOIN users u ON u.id = c.user_id
+                   WHERE u.source_landing = $1 AND bp.status = 'paid'""",
+                r["slug"],
+            )
+            d["users_from_landing"] = users_from["cnt"] if users_from else 0
+            d["payments_from_landing"] = paid_from["cnt"] if paid_from else 0
+            d["revenue_from_landing"] = float(paid_from["total"]) if paid_from else 0
+        except Exception:
+            d["users_from_landing"] = 0
+            d["payments_from_landing"] = 0
+            d["revenue_from_landing"] = 0
+        result.append(d)
+    return {"success": True, "landings": result}
 
 
 @router.put("/landings/{landing_id}")

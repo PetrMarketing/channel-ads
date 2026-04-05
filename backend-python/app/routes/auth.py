@@ -18,6 +18,16 @@ async def get_me(user: Dict[str, Any] = Depends(get_current_user)):
     return {"success": True, "user": user}
 
 
+@router.post("/set-source")
+async def set_source(request: Request, user: Dict[str, Any] = Depends(get_current_user)):
+    """Set source_landing for user (from landing page)."""
+    body = await request.json()
+    source = body.get("source", "")
+    if source and not user.get("source_landing"):
+        await execute("UPDATE users SET source_landing = $1 WHERE id = $2", source, user["id"])
+    return {"success": True}
+
+
 @router.post("/telegram")
 async def auth_telegram(request: Request):
     """Authenticate via Telegram WebApp initData."""

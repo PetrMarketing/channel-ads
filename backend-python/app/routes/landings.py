@@ -149,7 +149,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <div class="hero-badge">{data["hero_badge"]}</div>
         <h1>{data["title"]}</h1>
         <p>{data["subtitle"]}</p>
-        <a href="/login" class="cta-btn" onclick="trackClick()">Попробовать бесплатно</a>
+        <a href="/login?from={slug}" class="cta-btn" onclick="trackClick()">Попробовать бесплатно</a>
     </div>
 </div>
 
@@ -175,7 +175,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
     <div class="container">
         <h2>Начните прямо сейчас</h2>
         <p>Подключите канал за 2 минуты. Без VPN, без заграничных карт.</p>
-        <a href="/login" class="cta-btn" onclick="trackClick()">Подключить канал</a>
+        <a href="/login?from={slug}" class="cta-btn" onclick="trackClick()">Подключить канал</a>
     </div>
 </div>
 

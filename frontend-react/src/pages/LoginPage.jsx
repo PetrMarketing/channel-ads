@@ -85,6 +85,18 @@ export default function LoginPage() {
         } catch {}
       }
 
+      // Track landing source
+      const fromLanding = searchParams.get('from');
+      if (fromLanding) {
+        try {
+          await fetch(`${API_BASE}/auth/set-source`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${botToken}` },
+            body: JSON.stringify({ source: fromLanding }),
+          });
+        } catch {}
+      }
+
       const redirectTo = searchParams.get('redirect') || '/';
       navigate(redirectTo, { replace: true });
     })();
