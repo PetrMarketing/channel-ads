@@ -284,29 +284,56 @@ async def process_scheduled_posts():
     from .file_storage import ensure_file
     for post in posts:
         try:
+            # Atomically mark as 'publishing' to prevent duplicate sends
+            result_row = await fetch_one(
+                "UPDATE content_posts SET status = 'publishing' WHERE id = $1 AND status = 'scheduled' RETURNING id",
+                post["id"],
+            )
+            if not result_row:
+                continue  # Already picked up by another cycle
+
             channel = {
                 "channel_id": post["channel_id"],
                 "platform": post.get("platform", "telegram"),
                 "max_chat_id": post.get("max_chat_id"),
             }
             post_file_path = ensure_file(post.get("file_path"), post.get("file_data"))
+
+            # Resolve buttons
+            resolved_buttons = post.get("inline_buttons")
+            if resolved_buttons:
+                try:
+                    from ..routes.pins import _resolve_buttons
+                    ch_full = await fetch_one("SELECT * FROM channels WHERE id = $1", post["channel_id"])
+                    if ch_full:
+                        resolved_buttons = await _resolve_buttons(resolved_buttons, ch_full, post_id=post["id"], post_type="content")
+                except Exception:
+                    pass
+
             result = await send_to_channel(
                 channel, post.get("message_text", ""),
                 file_path=post_file_path,
                 file_type=post.get("file_type"),
                 telegram_file_id=post.get("telegram_file_id"),
-                inline_buttons=post.get("inline_buttons"),
+                inline_buttons=resolved_buttons,
                 attach_type=post.get("attach_type"),
                 max_file_token=post.get("max_file_token"),
             )
             msg_id = None
             if isinstance(result, dict):
                 msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
+                if not msg_id:
+                    msg_id = result.get("message", {}).get("body", {}).get("mid")
             await execute(
                 "UPDATE content_posts SET status = 'published', published_at = NOW(), telegram_message_id = $1 WHERE id = $2",
                 str(msg_id) if msg_id else None, post["id"],
             )
         except Exception as e:
+            # Revert to scheduled so it can retry later
+            await execute(
+                "UPDATE content_posts SET status = 'scheduled' WHERE id = $1 AND status = 'publishing'",
+                post["id"],
+            )
             print(f"[FunnelProcessor] Post {post['id']} error: {e}")
 
 

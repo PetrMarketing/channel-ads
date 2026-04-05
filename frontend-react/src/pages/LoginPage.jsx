@@ -72,6 +72,19 @@ export default function LoginPage() {
 
       // No conflict — log in
       login(botToken, newUserData);
+
+      // Register referral if ref code present
+      const refCode = searchParams.get('ref');
+      if (refCode) {
+        try {
+          await fetch(`${API_BASE}/referrals/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${botToken}` },
+            body: JSON.stringify({ ref_code: refCode }),
+          });
+        } catch {}
+      }
+
       const redirectTo = searchParams.get('redirect') || '/';
       navigate(redirectTo, { replace: true });
     })();

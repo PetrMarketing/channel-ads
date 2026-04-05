@@ -166,6 +166,20 @@ async def tinkoff_webhook(request: Request):
                        WHERE id = $2""",
                     new_expires, billing["id"],
                 )
+        # Process referral commission
+        try:
+            from .referrals import process_referral_commission
+            for pay in all_payments:
+                if billing:
+                    months = billing.get("billing_months") or 1
+                    amount = float(pay.get("amount", 0))
+                    ch = await fetch_one("SELECT user_id FROM channels WHERE id = $1",
+                                         billing.get("channel_id") or pay.get("channel_id"))
+                    if ch and amount > 0:
+                        await process_referral_commission(ch["user_id"], amount, months)
+        except Exception as e:
+            print(f"[Billing] Referral commission error: {e}")
+
     elif status == "REJECTED" or status == "CANCELED":
         all_payments = await fetch_all(
             "SELECT * FROM billing_payments WHERE payment_id = $1", order_id

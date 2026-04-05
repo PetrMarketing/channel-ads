@@ -29,7 +29,7 @@ from .routes import (
     auth, channels, links, tracking, billing, pins, broadcasts,
     funnels, content, giveaways, notifications, payments,
     max_routes, telegram_bot, max_webhook,
-    admin, paid_chats, paid_chat_payments, services, ord,
+    admin, paid_chats, paid_chat_payments, services, ord, referrals,
 )
 
 
@@ -146,6 +146,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(paid_chats.router, prefix="/api/paid-chats", tags=["paid-chats"])
 app.include_router(services.router, prefix="/api/services", tags=["services"])
 app.include_router(ord.router, prefix="/api/ord", tags=["ord"])
+app.include_router(referrals.router, prefix="/api/referrals", tags=["referrals"])
 from .routes import analytics, comments
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(comments.router, prefix="/api/comments", tags=["comments"])

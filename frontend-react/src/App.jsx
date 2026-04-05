@@ -17,6 +17,7 @@ import ServicesPage from './pages/ServicesPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import CommentsPage from './pages/CommentsPage';
 import OrdPage from './pages/OrdPage';
+import ReferralPage from './pages/ReferralPage';
 
 // Public pages (standalone, no layout)
 import SubscribePage from './pages/public/SubscribePage';
@@ -88,6 +89,7 @@ export default function App() {
         <Route path="content" element={<ContentPage />} />
         <Route path="giveaways" element={<GiveawaysPage />} />
         <Route path="billing" element={<BillingPage />} />
+        <Route path="referrals" element={<ReferralPage />} />
         <Route path="staff" element={<StaffPage />} />
         <Route path="paid-chats" element={<PaidChatsPage />} />
         <Route path="services" element={<ServicesPage />} />

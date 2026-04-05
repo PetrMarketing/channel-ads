@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../../services/api';
 import Loading from '../../components/Loading';
@@ -85,22 +85,25 @@ export default function SubscribePage() {
     };
   }, [info]);
 
-  // Poll for subscription confirmation
+  // Poll for subscription confirmation — fire goals exactly ONCE
+  const goalFired = useRef(false);
   useEffect(() => {
     if (!visitId || subscribed) return;
     const interval = setInterval(async () => {
+      if (goalFired.current) return;
       try {
         const data = await api.get(`/track/check-subscription-by-visit?visit_id=${visitId}`);
-        if (data.subscribed) {
+        if (data.subscribed && !goalFired.current) {
+          goalFired.current = true;
           setSubscribed(true);
           clearInterval(interval);
-          // Fire Yandex Metrika goal
+          // Fire Yandex Metrika goal (once)
           const counterId = info?.ym_counter_id || info?.yandex_metrika_id;
           const goalName = info?.ym_goal_name || 'subscribe_channel';
           if (counterId && window.ym) {
             try { window.ym(Number(counterId), 'reachGoal', goalName); } catch {}
           }
-          // Fire VK Pixel goal
+          // Fire VK Pixel goal (once)
           const vkPixelId = info?.vk_pixel_id;
           const vkGoalName = info?.vk_goal_name || 'subscribe_channel';
           if (vkPixelId && window._tmr) {

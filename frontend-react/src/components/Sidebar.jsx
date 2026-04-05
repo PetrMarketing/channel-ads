@@ -140,7 +140,13 @@ const menuItems = [
     ],
   },
   { path: '/staff', label: 'Сотрудники', icon: icons.staff, standalone: true },
-  { path: '/billing', label: 'Подписка', icon: icons.billing, standalone: true },
+  {
+    category: 'billing', label: 'Подписка', icon: icons.billing,
+    items: [
+      { path: '/billing', label: 'Тарифы', icon: icons.billing },
+      { path: '/referrals', label: 'Реферальная система', icon: icons.links },
+    ],
+  },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
