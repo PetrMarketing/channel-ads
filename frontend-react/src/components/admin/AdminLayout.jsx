@@ -28,6 +28,7 @@ const navItems = [
   { to: '/admin/admins', label: 'Администраторы' },
   { to: '/admin/tariffs', label: 'Тарифы' },
   { to: '/admin/finance', label: 'Финансы' },
+  { to: '/admin/landings', label: 'Лендинги' },
 ];
 
 export default function AdminLayout() {

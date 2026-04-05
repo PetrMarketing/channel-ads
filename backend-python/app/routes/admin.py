@@ -1043,3 +1043,61 @@ async def finance_overview(
         },
         "period": period,
     }
+
+
+# ===========================
+# Landing Pages
+# ===========================
+
+@router.get("/landings")
+async def list_landings(admin: Dict = Depends(get_current_admin)):
+    rows = await fetch_all("SELECT * FROM landing_pages_v2 ORDER BY created_at")
+    return {"success": True, "landings": rows}
+
+
+@router.put("/landings/{landing_id}")
+async def update_landing(landing_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    fields, params = [], []
+    idx = 1
+    for key in ("title", "slug", "is_active", "ym_counter_id", "vk_pixel_id", "ym_goal_register", "ym_goal_payment"):
+        if key in body:
+            fields.append(f"{key} = ${idx}")
+            params.append(body[key])
+            idx += 1
+    if not fields:
+        return {"success": True}
+    fields.append("updated_at = NOW()")
+    params.append(landing_id)
+    await execute(f"UPDATE landing_pages_v2 SET {', '.join(fields)} WHERE id = ${idx}", *params)
+    return {"success": True}
+
+
+@router.post("/landings")
+async def create_landing(request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    lid = await execute_returning_id(
+        "INSERT INTO landing_pages_v2 (slug, title) VALUES ($1, $2) RETURNING id",
+        body.get("slug", ""), body.get("title", ""),
+    )
+    return {"success": True, "id": lid}
+
+
+@router.delete("/landings/{landing_id}")
+async def delete_landing(landing_id: int, admin: Dict = Depends(get_current_admin)):
+    await execute("DELETE FROM landing_pages_v2 WHERE id = $1", landing_id)
+    return {"success": True}
+
+
+@router.post("/landings/{landing_id}/track")
+async def track_landing_event(landing_id: int, request: Request):
+    """Public: track view/click on landing."""
+    body = await request.json()
+    event = body.get("event", "view")
+    if event == "view":
+        await execute("UPDATE landing_pages_v2 SET views_count = views_count + 1 WHERE id = $1", landing_id)
+    elif event == "click":
+        await execute("UPDATE landing_pages_v2 SET clicks_count = clicks_count + 1 WHERE id = $1", landing_id)
+    elif event == "register":
+        await execute("UPDATE landing_pages_v2 SET registrations_count = registrations_count + 1 WHERE id = $1", landing_id)
+    return {"success": True}
