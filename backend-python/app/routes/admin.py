@@ -1191,3 +1191,67 @@ async def track_landing_event(landing_id: int, request: Request):
     elif event == "register":
         await execute("UPDATE landing_pages_v2 SET registrations_count = registrations_count + 1 WHERE id = $1", landing_id)
     return {"success": True}
+
+
+@router.post("/fix-comment-buttons")
+async def fix_comment_buttons(admin: Dict = Depends(get_current_admin)):
+    """Update old comment buttons from startapp to direct URLs."""
+    import json as _json
+    from ..config import settings
+    from ..services.max_api import get_max_api
+    from ..services.messenger import html_to_max_markdown, build_max_inline_buttons
+
+    max_api = get_max_api()
+    results = []
+
+    for table, post_type in [("pin_posts", "pin"), ("content_posts", "content")]:
+        posts = await fetch_all(f"""
+            SELECT p.id, p.channel_id, p.telegram_message_id, p.message_text, p.inline_buttons,
+                   p.file_type, p.max_file_token, c.platform, c.max_chat_id
+            FROM {table} p JOIN channels c ON c.id = p.channel_id
+            WHERE p.status = 'published' AND p.telegram_message_id IS NOT NULL
+              AND (p.inline_buttons LIKE '%comments%' OR p.inline_buttons LIKE '%startapp%')
+        """)
+
+        for post in posts:
+            try:
+                buttons = _json.loads(post["inline_buttons"]) if isinstance(post["inline_buttons"], str) else post["inline_buttons"]
+                if not isinstance(buttons, list):
+                    continue
+
+                needs_update = False
+                new_buttons = []
+                for btn in buttons:
+                    url = btn.get("url", "")
+                    if btn.get("type") == "comments" or ("comments_" in url and "comments-app" in url):
+                        # Restore startapp URL for MAX MiniApp
+                        from ..routes.pins import _get_max_bot_link_id
+                        bot_link_id = await _get_max_bot_link_id()
+                        startapp_url = f"https://max.ru/id{bot_link_id}_bot?startapp=comments_{post_type}_{post['id']}"
+                        new_buttons.append({"text": btn.get("text", "Комментарии"), "type": "link", "url": startapp_url})
+                        needs_update = True
+                    else:
+                        new_buttons.append(btn)
+
+                if not needs_update:
+                    continue
+
+                msg_id = post["telegram_message_id"]
+                ok = False
+
+                if post.get("platform") == "max" and msg_id and max_api:
+                    max_text = html_to_max_markdown(post.get("message_text", ""))
+                    max_btns = build_max_inline_buttons(_json.dumps(new_buttons))
+                    attachments = None
+                    if post.get("max_file_token"):
+                        _m = {"photo": "image", "video": "video", "audio": "audio"}
+                        attachments = [{"type": _m.get(post.get("file_type", "file"), "file"), "payload": {"token": post["max_file_token"]}}]
+                    result = await max_api.edit_message(msg_id, max_text, attachments, max_btns)
+                    ok = result.get("success", False)
+
+                await execute(f"UPDATE {table} SET inline_buttons = $1 WHERE id = $2", _json.dumps(new_buttons), post["id"])
+                results.append({"post_id": post["id"], "type": post_type, "updated_in_channel": ok})
+            except Exception as e:
+                results.append({"post_id": post["id"], "type": post_type, "error": str(e)})
+
+    return {"success": True, "results": results}

@@ -11,7 +11,7 @@ import AttachmentPicker from '../components/AttachmentPicker';
 import MessagePreview from '../components/MessagePreview';
 import EridModal from '../components/EridModal';
 
-const STATUS_LABELS = { draft: 'Черновик', scheduled: 'Запланировано', published: 'Опубликовано' };
+const STATUS_LABELS = { draft: 'Черновик', scheduled: 'Ожидает публикации', publishing: 'Публикуется...', published: 'Опубликовано' };
 const STATUS_COLORS = { draft: '#888', scheduled: '#3b82f6', published: 'var(--success)' };
 
 const btnSmall = { padding: '4px 10px', fontSize: '0.8rem' };
@@ -117,9 +117,14 @@ export default function ContentPage() {
     setPostFile(null);
     setRemoveExistingFile(false);
     setErrors({});
-    const scheduledAt = prefillDate
-      ? `${prefillDate}T10:00`
-      : '';
+    let scheduledAt;
+    if (prefillDate) {
+      scheduledAt = `${prefillDate}T10:00`;
+    } else {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() + 30); // Default: 30 min from now
+      scheduledAt = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}T${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    }
     setForm({ title: '', message_text: '', scheduled_at: scheduledAt, inline_buttons: '', attach_type: '', erid: '' });
     setShowModal(true);
   };

@@ -631,13 +631,15 @@ async def _resolve_buttons(inline_buttons_json, channel, post_id=None, post_type
                     if deep_url:
                         resolved.append({"text": btn.get("text", "Получить"), "type": "url", "url": deep_url})
         elif btn_type == "comments" and post_id:
-            from ..config import settings as app_settings
-            # Direct link to comments miniapp (works in both MAX and TG)
-            deep_url = f"{app_settings.APP_URL}/comments-app/comments_{post_type}_{post_id}"
             if is_max:
+                bot_link_id = await _get_max_bot_link_id()
+                deep_url = f"https://max.ru/id{bot_link_id}_bot?startapp=comments_{post_type}_{post_id}"
                 resolved.append({"text": btn.get("text", "Комментарии"), "type": "link", "url": deep_url})
             else:
-                resolved.append({"text": btn.get("text", "Комментарии"), "type": "url", "url": deep_url})
+                bot_username = await _get_tg_bot_username()
+                deep_url = f"https://t.me/{bot_username}?start=comments_{post_type}_{post_id}" if bot_username else ""
+                if deep_url:
+                    resolved.append({"text": btn.get("text", "Комментарии"), "type": "url", "url": deep_url})
         elif btn.get("url"):
             resolved.append(btn)
 

@@ -290,10 +290,9 @@ async def miniapp_page(request: Request, code: str = ""):
     # Also check query param
     if not code:
         code = request.query_params.get("WebAppStartParam", "") or request.query_params.get("code", "")
-    # Handle comments_ prefix — redirect to comments miniapp
+    # Handle comments_ prefix — render comments app directly (no redirect)
     if code.startswith("comments_"):
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(f"/comments-app/{code}", status_code=302)
+        return await comments_app_page(request, code)
     # Handle book_ prefix — redirect to booking miniapp
     if code.startswith("book_"):
         from fastapi.responses import RedirectResponse
@@ -311,7 +310,15 @@ async def miniapp_page(request: Request, code: str = ""):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 __META_REFRESH__
-<script src="https://st.max.ru/js/max-web-app.js"></script>
+<script>
+// Load WebApp bridge with timeout
+var _waLoaded=false;
+var s=document.createElement('script');s.src='https://st.max.ru/js/max-web-app.js';
+s.onload=function(){_waLoaded=true;try{window.WebApp.ready()}catch(e){}};
+s.onerror=function(){_waLoaded=true};
+document.head.appendChild(s);
+setTimeout(function(){if(!_waLoaded){_waLoaded=true;console.log('WebApp bridge timeout')}},3000);
+</script>
 <style>
 body{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f5f5f5}
 .c{text-align:center;padding:24px}
@@ -468,7 +475,18 @@ async def comments_app_page(request: Request, params: str = ""):
 <html><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<script src="https://st.max.ru/js/max-web-app.js" async></script>
+<script>
+var _waReady=false;
+var _s=document.createElement('script');_s.src='https://st.max.ru/js/max-web-app.js';
+_s.onload=function(){{
+  _waReady=true;
+  try{{window.WebApp.ready()}}catch(e){{}}
+  if(window._pendingInit)window._pendingInit();
+}};
+_s.onerror=function(){{_waReady=true;if(window._pendingInit)window._pendingInit();}};
+document.head.appendChild(_s);
+setTimeout(function(){{if(!_waReady){{_waReady=true;if(window._pendingInit)window._pendingInit();}}}},2000);
+</script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#1f2937}}
@@ -505,6 +523,7 @@ let maxUserId = '';
 let userPhoto = '';
 let channelTitle = '';
 let pc = '#4F46E5';
+let _pt = POST_TYPE, _pi = POST_ID;
 let _settings = {{}};
 
 function esc(s) {{ return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }}
@@ -523,12 +542,31 @@ async function init() {{
     }}
   }} catch(e) {{ console.log('WebApp not available:', e); }}
 
-  if (!POST_ID) {{
+  // If no POST_ID from server, try getting from WebApp start_param
+  if (!_pi && window.WebApp && window.WebApp.initDataUnsafe) {{
+    let sp = window.WebApp.initDataUnsafe.start_param || '';
+    if (sp.startsWith('comments_')) {{
+      const parts = sp.slice(9).split('_');
+      if (parts.length >= 2) {{ _pt = parts[0]; _pi = parts[1]; }}
+      else if (parts.length === 1) {{ _pi = parts[0]; }}
+    }}
+  }}
+  // Also try URL params
+  if (!_pi) {{
+    const urlP = new URLSearchParams(window.location.search);
+    const sp2 = urlP.get('WebAppStartParam') || urlP.get('startapp') || '';
+    if (sp2.startsWith('comments_')) {{
+      const parts = sp2.slice(9).split('_');
+      if (parts.length >= 2) {{ _pt = parts[0]; _pi = parts[1]; }}
+      else if (parts.length === 1) {{ _pi = parts[0]; }}
+    }}
+  }}
+  if (!_pi) {{
     document.getElementById('app').innerHTML = '<div class="empty">Комментарии не найдены. Откройте ссылку из поста канала.</div>';
     return;
   }}
   try {{
-    const r = await fetch(API + '/' + POST_TYPE + '/' + POST_ID);
+    const r = await fetch(API + '/' + _pt + '/' + _pi);
     const data = await r.json();
     if (data.success) {{
       channelTitle = data.channel_title || '';
@@ -603,7 +641,7 @@ function render(comments) {{
       h += '<div style="font-size:0.75rem;color:#9ca3af;margin-top:2px">↩ ' + esc(c.reply_to_name) + '</div>';
     }}
     h += '<div class="comment-text">' + esc(c.comment_text) + '</div>';
-    h += '<span class="reply-btn" data-id="' + c.id + '" data-name="' + esc(c.user_name || 'Аноним') + '" style="font-size:0.72rem;color:' + pc + ';cursor:pointer;margin-top:2px;display:inline-block" onclick="setReply(' + c.id + ',\'' + esc(c.user_name || 'Аноним').replace(/'/g, "\\\\'") + '\')">Ответить</span>';
+    h += '<span class="reply-btn" data-id="' + c.id + '" data-name="' + esc(c.user_name || 'Аноним') + '" style="font-size:0.72rem;color:' + pc + ';cursor:pointer;margin-top:2px;display:inline-block" onclick="setReply(this.dataset.id,this.dataset.name)">Ответить</span>';
     h += '</div></div></div>';
   }});
   h += '</div>';
@@ -656,7 +694,7 @@ async function send() {{
   try {{
     const payload = {{comment_text: text, user_name: userName, max_user_id: maxUserId, user_avatar: userPhoto}};
     if (replyToId) payload.parent_id = replyToId;
-    const r = await fetch(API + '/' + POST_TYPE + '/' + POST_ID, {{
+    const r = await fetch(API + '/' + _pt + '/' + _pi, {{
       method: 'POST',
       headers: {{'Content-Type':'application/json'}},
       body: JSON.stringify(payload)
@@ -665,7 +703,7 @@ async function send() {{
     if (data.success) {{
       input.value = '';
       clearReply();
-      const r2 = await fetch(API + '/' + POST_TYPE + '/' + POST_ID);
+      const r2 = await fetch(API + '/' + _pt + '/' + _pi);
       const d2 = await r2.json();
       if (d2.success) render(d2.comments || []);
       window.scrollTo(0, document.body.scrollHeight);
@@ -676,7 +714,8 @@ async function send() {{
   finally {{ btn.disabled = false; }}
 }}
 
-init();
+// Wait for WebApp bridge then init
+if (_waReady) {{ init(); }} else {{ window._pendingInit = function(){{ init(); }}; }}
 </script>
 </body></html>"""
     return HTMLResponse(html)
@@ -703,7 +742,11 @@ async def booking_page(request: Request, params: str = ""):
 <html><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<script src="https://st.max.ru/js/max-web-app.js"></script>
+<script>
+var _s=document.createElement('script');_s.src='https://st.max.ru/js/max-web-app.js';
+_s.onload=function(){{try{{window.WebApp.ready()}}catch(e){{}}}};
+document.head.appendChild(_s);
+</script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#1f2937}}

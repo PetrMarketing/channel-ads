@@ -17,6 +17,11 @@ def _parse_scheduled_at(val):
         return None
     if isinstance(val, datetime):
         return val
+    # Handle ISO format with Z suffix (from toISOString())
+    if isinstance(val, str) and val.endswith("Z"):
+        val = val[:-1]  # Remove Z
+    if isinstance(val, str) and "." in val:
+        val = val.split(".")[0]  # Remove milliseconds
     for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
         try:
             return datetime.strptime(val, fmt)
