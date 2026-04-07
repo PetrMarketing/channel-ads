@@ -321,11 +321,32 @@ async def handle_paid_chat(chat_id: int, tg_user: dict, tracking_code: str):
 
     text = "\n".join(lines)
 
-    app_url = settings.APP_URL
-    from urllib.parse import urlencode
-    pay_params = urlencode({"platform": "telegram", "tid": tg_user["id"], "name": tg_user.get("first_name", ""), "user": tg_user.get("username", "")})
-    pay_url = f"{app_url}/pay/{tracking_code}?{pay_params}"
-    keyboard = {"inline_keyboard": [[{"text": "Оплатить", "url": pay_url}]]}
+    # Start payment conversation if plans exist
+    if plans:
+        chats = await fetch_all(
+            "SELECT id, title FROM paid_chats WHERE channel_id = $1 AND is_active = 1 ORDER BY created_at",
+            channel["id"],
+        )
+        selected_plan = plans[0] if len(plans) == 1 else None
+        selected_chat = chats[0] if len(chats) == 1 else None
+
+        _conversation_state[tg_user["id"]] = {
+            "action": "paid_chat_pay",
+            "step": "email" if (selected_plan and selected_chat) else ("select_plan" if len(plans) > 1 else "select_chat"),
+            "tracking_code": tracking_code,
+            "channel_id": channel["id"],
+            "plans": plans,
+            "chats": chats,
+            "selected_plan": selected_plan,
+            "selected_chat": selected_chat,
+            "telegram_id": tg_user["id"],
+            "name": tg_user.get("first_name", ""),
+            "username": tg_user.get("username", ""),
+            "email": None,
+        }
+        state = _conversation_state[tg_user["id"]]
+
+    keyboard = None
 
     file_path = None
     if notif and notif.get("file_path"):
@@ -340,6 +361,27 @@ async def handle_paid_chat(chat_id: int, tg_user: dict, tracking_code: str):
         await send_telegram_photo(chat_id, file_path, caption=text, reply_markup=keyboard)
     else:
         await _send_message(chat_id, text, reply_markup=keyboard)
+
+    # Prompt next step
+    if plans and tg_user["id"] in _conversation_state:
+        state = _conversation_state[tg_user["id"]]
+        if state.get("step") == "select_plan":
+            lines = ["\nВыберите тариф:\n"]
+            for i, p in enumerate(plans, 1):
+                price = f"{int(p['price']) if p['price'] == int(p['price']) else p['price']} RUB"
+                name = p.get("title") or f"Тариф #{i}"
+                lines.append(f"{i}. {name} — {price}")
+            lines.append("\nВведите номер:")
+            await _send_message(chat_id, "\n".join(lines))
+        elif state.get("step") == "select_chat":
+            chats = state["chats"]
+            lines = ["\nВыберите чат:\n"]
+            for i, c in enumerate(chats, 1):
+                lines.append(f"{i}. {c.get('title', c['id'])}")
+            lines.append("\nВведите номер:")
+            await _send_message(chat_id, "\n".join(lines))
+        elif state.get("step") == "email":
+            await _send_message(chat_id, "📧 Введите ваш email для оплаты:")
 
 
 # ---- /start handler ----
@@ -637,14 +679,133 @@ async def _handle_conversation(chat_id: int, tg_user: dict, text: str) -> bool:
     if not state:
         return False
 
-    flow = state["flow"]
-    step = state["step"]
+    action = state.get("action")
+    flow = state.get("flow", "")
+    step = state.get("step", "")
 
     # Cancel
     if text.lower() in ("отмена", "отменить"):
         _conversation_state.pop(uid, None)
         await _send_message(chat_id, "❌ Действие отменено.")
         return True
+
+    # --- Paid chat payment flow ---
+    if action == "paid_chat_pay":
+        if step == "select_plan":
+            try:
+                idx = int(text) - 1
+                plans = state["plans"]
+                if 0 <= idx < len(plans):
+                    state["selected_plan"] = plans[idx]
+                    chats = state["chats"]
+                    if len(chats) == 1:
+                        state["selected_chat"] = chats[0]
+                        state["step"] = "email"
+                        await _send_message(chat_id, "📧 Введите ваш email для оплаты:")
+                    else:
+                        state["step"] = "select_chat"
+                        lines = ["Выберите чат:\n"]
+                        for i, c in enumerate(chats, 1):
+                            lines.append(f"{i}. {c.get('title', c['id'])}")
+                        lines.append("\nВведите номер:")
+                        await _send_message(chat_id, "\n".join(lines))
+                else:
+                    await _send_message(chat_id, f"Введите число от 1 до {len(plans)}")
+            except ValueError:
+                await _send_message(chat_id, "Введите номер тарифа")
+            return True
+
+        if step == "select_chat":
+            try:
+                idx = int(text) - 1
+                chats = state["chats"]
+                if 0 <= idx < len(chats):
+                    state["selected_chat"] = chats[idx]
+                    state["step"] = "email"
+                    await _send_message(chat_id, "📧 Введите ваш email для оплаты:")
+                else:
+                    await _send_message(chat_id, f"Введите число от 1 до {len(chats)}")
+            except ValueError:
+                await _send_message(chat_id, "Введите номер чата")
+            return True
+
+        if step == "email":
+            email = text.strip()
+            if "@" not in email:
+                await _send_message(chat_id, "Введите корректный email:")
+                return True
+            state["email"] = email
+
+            # Create payment
+            plan = state["selected_plan"]
+            chat_obj = state["selected_chat"]
+            tc = state["tracking_code"]
+            channel_id = state["channel_id"]
+
+            try:
+                from .paid_chat_payments import _get_active_provider, _generate_order_id
+                from .paid_chat_payments import _init_tinkoff_payment, _init_yoomoney_payment, _init_prodamus_payment, _init_robokassa_payment, _init_getcourse_payment
+                import json as _json
+
+                provider_row = await _get_active_provider(channel_id)
+                if not provider_row:
+                    await _send_message(chat_id, "⚠️ Платёжная система не настроена.")
+                    _conversation_state.pop(uid, None)
+                    return True
+
+                provider = provider_row["provider"]
+                creds = provider_row["credentials"]
+                if isinstance(creds, str):
+                    creds = _json.loads(creds)
+
+                amount = float(plan["price"])
+                order_id = _generate_order_id(channel_id)
+                description = f"{plan.get('title') or 'Подписка'} — {chat_obj.get('title') or 'чат'}"
+
+                await execute_returning_id(
+                    """INSERT INTO paid_chat_payments
+                         (channel_id, plan_id, paid_chat_id, provider, order_id, amount, currency,
+                          telegram_id, username, first_name, platform)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id""",
+                    channel_id, plan["id"], chat_obj["id"], provider, order_id, amount,
+                    plan.get("currency", "RUB"),
+                    state["telegram_id"], state.get("username", ""), state.get("name", ""), "telegram",
+                )
+
+                customer_email = state["email"]
+                customer_name = state.get("name", "")
+
+                if provider == "tinkoff":
+                    payment_url = await _init_tinkoff_payment(creds, order_id, amount, description, "", customer_email)
+                elif provider == "yoomoney":
+                    payment_url = await _init_yoomoney_payment(creds, order_id, amount, description, "", customer_email)
+                elif provider == "prodamus":
+                    payment_url = await _init_prodamus_payment(creds, order_id, amount, description, customer_name, "", customer_email)
+                elif provider == "robokassa":
+                    payment_url = await _init_robokassa_payment(creds, order_id, amount, description, "", customer_email)
+                elif provider == "getcourse":
+                    payment_url = await _init_getcourse_payment(creds, order_id, amount, description, customer_name, "", customer_email)
+                else:
+                    await _send_message(chat_id, f"⚠️ Провайдер {provider} не поддерживается.")
+                    _conversation_state.pop(uid, None)
+                    return True
+
+                price_str = f"{int(plan['price']) if plan['price'] == int(plan['price']) else plan['price']} RUB"
+                plan_name = plan.get("title") or "Подписка"
+                keyboard = {"inline_keyboard": [[{"text": f"💳 Оплатить {price_str}", "url": payment_url}]]}
+                await _send_message(chat_id,
+                    f"✅ <b>Заказ создан!</b>\n\n"
+                    f"📋 Тариф: {plan_name} — {price_str}\n"
+                    f"📧 Email: {customer_email}\n\n"
+                    f"Нажмите кнопку для оплаты:",
+                    reply_markup=keyboard)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                await _send_message(chat_id, f"⚠️ Ошибка: {e}")
+
+            _conversation_state.pop(uid, None)
+            return True
 
     # --- Channel selection step (shared by all flows) ---
     if step == "select_channel":

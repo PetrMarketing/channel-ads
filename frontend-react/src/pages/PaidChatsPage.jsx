@@ -440,8 +440,10 @@ export default function PaidChatsPage() {
 
       {/* Payment link */}
       {setup.has_payment && setup.has_plans && setup.has_chats && (() => {
-        const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
-        const botLink = `https://max.ru/${maxBotUsername}?start=paid_${tc}`;
+        const isMax = currentChannel?.platform === 'max';
+        const botLink = isMax
+          ? `https://max.ru/${import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}?start=paid_${tc}`
+          : `https://t.me/${import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot'}?start=paid_${tc}`;
         const webLink = `${window.location.origin}/pay/${tc}`;
         return (
         <div className="pc-info-box" style={{ marginBottom: 16 }}>
@@ -751,9 +753,17 @@ export default function PaidChatsPage() {
             <h4 style={{ margin: '0 0 8px', fontSize: '0.92rem' }}>Как добавить чат</h4>
             <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.88rem' }}>
               <li>Откройте ваш чат → <b>Настройки</b> → <b>Администраторы</b></li>
-              <li>Добавьте бота: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg)', borderRadius: '4px' }}
-                onClick={() => { navigator.clipboard.writeText(`@${import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}`); }}>
-                @{import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}</code></li>
+              <li>
+                {currentChannel?.platform === 'telegram' ? (
+                  <>Добавьте бота: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg)', borderRadius: '4px' }}
+                    onClick={() => { navigator.clipboard.writeText(`@${import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot'}`); }}>
+                    @{import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot'}</code></>
+                ) : (
+                  <>Добавьте бота: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg)', borderRadius: '4px' }}
+                    onClick={() => { navigator.clipboard.writeText(`@${import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}`); }}>
+                    @{import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}</code></>
+                )}
+              </li>
               <li>Чат появится автоматически в списке выше</li>
             </ol>
           </div>
