@@ -330,12 +330,12 @@ async def process_scheduled_posts():
         except Exception as e:
             import traceback
             traceback.print_exc()
-            # Revert to scheduled so it can retry later
+            # Mark as failed instead of reverting to scheduled (prevents infinite loop)
             await execute(
-                "UPDATE content_posts SET status = 'scheduled' WHERE id = $1 AND status = 'publishing'",
+                "UPDATE content_posts SET status = 'draft' WHERE id = $1 AND status = 'publishing'",
                 post["id"],
             )
-            print(f"[FunnelProcessor] Post {post['id']} error: {e}")
+            print(f"[FunnelProcessor] Post {post['id']} FAILED, set to draft: {e}")
 
 
 async def process_automation_queue():
