@@ -92,15 +92,15 @@ export default function LeadMagnetLandingPage() {
 
   const getBotUrl = () => {
     if (!info) return null;
-    const lmId = info.lm_lead_magnet_id;
-    if (!lmId) return null;
+    const lmCode = info.lm_code;
+    if (!lmCode) return null;
     const platform = info.platform;
     if (platform === 'max') {
       const maxBot = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
-      return `https://max.ru/${maxBot}?start=lm_${lmId}`;
+      return `https://max.ru/${maxBot}?start=lm_${lmCode}`;
     }
     const tgBot = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
-    return `https://t.me/${tgBot}?start=lm_${lmId}`;
+    return `https://t.me/${tgBot}?start=lm_${lmCode}`;
   };
 
   if (loading) return (
@@ -154,29 +154,15 @@ export default function LeadMagnetLandingPage() {
             </div>
           ) : (
             <div>
-              {/* CTA — go to channel to subscribe */}
-              {(() => {
-                const joinLink = info?.join_link;
-                const platform = info?.platform;
-                const username = info?.channel_username || info?.username;
-                const maxChatId = info?.max_chat_id;
-                let subscribeUrl = joinLink;
-                if (!subscribeUrl) {
-                  if (platform === 'max' && maxChatId) {
-                    subscribeUrl = maxChatId.startsWith('http') ? maxChatId : `https://max.ru/chats/${maxChatId}`;
-                  } else if (username) {
-                    subscribeUrl = `https://t.me/${username}`;
-                  }
-                }
-                return subscribeUrl ? (
-                  <a href={subscribeUrl} target="_blank" rel="noreferrer"
+              {/* CTA — go to bot (bot checks subscription and delivers lead magnet) */}
+              {botUrl ? (
+                  <a href={botUrl} target="_blank" rel="noreferrer"
                     style={{ display: 'block', padding: '16px 24px', background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', color: '#fff', borderRadius: 12, textDecoration: 'none', fontWeight: 700, fontSize: '1.05rem', textAlign: 'center', transition: 'transform 0.2s' }}>
                     {info?.lm_button_text || 'Получить бесплатно'}
                   </a>
-                ) : null;
-              })()}
+              ) : null}
               <p style={{ fontSize: '0.78rem', color: '#9ca3af', textAlign: 'center', marginTop: 12 }}>
-                Подпишитесь на канал и оставайтесь на этой странице — материал появится автоматически
+                Нажмите кнопку — бот проверит подписку на канал и выдаст материал
               </p>
             </div>
           )}

@@ -21,6 +21,7 @@ export default function LinksPage() {
   const [form, setForm] = useState({ name: '', link_type: 'landing', utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '', lm_title: '', lm_description: '', lm_description_align: 'left', lm_button_text: 'Получить бесплатно', lm_lead_magnet_id: '' });
   const [saving, setSaving] = useState(false);
   const [leadMagnets, setLeadMagnets] = useState([]);
+  const [lmImageFile, setLmImageFile] = useState(null);
 
   const tc = currentChannel?.tracking_code;
 
@@ -45,7 +46,8 @@ export default function LinksPage() {
 
   const openCreate = () => {
     setEditingLink(null);
-    setForm({ name: '', link_type: 'landing', utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' });
+    setLmImageFile(null);
+    setForm({ name: '', link_type: 'landing', utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '', lm_title: '', lm_description: '', lm_description_align: 'left', lm_button_text: 'Получить бесплатно', lm_lead_magnet_id: '' });
     setShowModal(true);
   };
 
@@ -59,6 +61,11 @@ export default function LinksPage() {
       utm_campaign: link.utm_campaign || '',
       utm_content: link.utm_content || '',
       utm_term: link.utm_term || '',
+      lm_title: link.lm_title || '',
+      lm_description: link.lm_description || '',
+      lm_description_align: link.lm_description_align || 'left',
+      lm_button_text: link.lm_button_text || 'Получить бесплатно',
+      lm_lead_magnet_id: link.lm_lead_magnet_id || '',
     });
     setShowModal(true);
   };
@@ -82,12 +89,22 @@ export default function LinksPage() {
     setSaving(true);
     try {
       let data;
+      const cleanForm = { ...form };
       if (editingLink) {
-        data = await api.put(`/links/${tc}/${editingLink.id}`, form);
+        data = await api.put(`/links/${tc}/${editingLink.id}`, cleanForm);
       } else {
-        data = await api.post(`/links/${tc}`, form);
+        data = await api.post(`/links/${tc}`, cleanForm);
       }
       if (data.success) {
+        // Upload image if selected
+        const linkId = data.link?.id || editingLink?.id;
+        if (lmImageFile && linkId) {
+          try {
+            const fd = new FormData(); fd.append('file', lmImageFile);
+            await api.upload(`/links/${tc}/${linkId}/lm-image`, fd);
+          } catch {}
+          setLmImageFile(null);
+        }
         showToast(editingLink ? 'Ссылка обновлена' : 'Ссылка создана');
         setShowModal(false);
         loadLinks();
@@ -314,6 +331,18 @@ export default function LinksPage() {
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: 0 }}>
                   Страница с описанием лид-магнита. После подписки на канал пользователь получает материал через бота.
                 </p>
+                <div>
+                  <label className="form-label">Изображение</label>
+                  {(editingLink?.lm_image_url) && (
+                    <img src={editingLink.lm_image_url} alt="" style={{ width: 120, height: 80, objectFit: 'cover', borderRadius: 8, marginBottom: 8, border: '1px solid var(--border)' }} />
+                  )}
+                  {lmImageFile && (
+                    <img src={URL.createObjectURL(lmImageFile)} alt="" style={{ width: 120, height: 80, objectFit: 'cover', borderRadius: 8, marginBottom: 8, border: '1px solid var(--border)' }} />
+                  )}
+                  <input type="file" accept="image/*" className="form-input" style={{ padding: 8 }}
+                    onChange={e => setLmImageFile(e.target.files?.[0] || null)} />
+                  <div className="form-hint">JPG, PNG, WebP. Отображается вверху страницы лид-магнита.</div>
+                </div>
                 <div>
                   <label className="form-label">Заголовок</label>
                   <input className="form-input" placeholder="Бесплатный гайд по маркетингу" value={form.lm_title || ''}

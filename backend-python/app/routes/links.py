@@ -1,7 +1,7 @@
 import secrets
 import string
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Dict, Any
 
 from ..middleware.auth import get_current_user
@@ -96,7 +96,11 @@ async def update_link(tracking_code: str, link_id: int, body: dict, user: Dict[s
                  "lm_title", "lm_description", "lm_description_align", "lm_button_text", "lm_lead_magnet_id"):
         if key in body:
             fields.append(f"{key} = ${idx}")
-            params.append(body[key])
+            val = body[key]
+            if key == "lm_lead_magnet_id" and val:
+                try: val = int(val)
+                except: val = None
+            params.append(val)
             idx += 1
 
     if not fields:
@@ -124,9 +128,8 @@ async def update_metrika(tracking_code: str, link_id: int, body: dict, user: Dic
 
 
 @router.post("/{tracking_code}/{link_id}/lm-image")
-async def upload_lm_image(tracking_code: str, link_id: int, request, user: Dict[str, Any] = Depends(get_current_user)):
+async def upload_lm_image(tracking_code: str, link_id: int, request: Request, user: Dict[str, Any] = Depends(get_current_user)):
     """Upload image for lead magnet landing page."""
-    from fastapi import Request
     channel = await _get_owned_channel(tracking_code, user["id"])
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")

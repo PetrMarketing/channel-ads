@@ -73,9 +73,10 @@ async def get_link_info(short_code: str):
     link = await fetch_one("""
         SELECT tl.*, c.tracking_code, c.channel_id, c.title as channel_title, c.platform,
             c.username as channel_username, c.max_chat_id, c.yandex_metrika_id, c.vk_pixel_id,
-            c.join_link
+            c.join_link, lm.code as lm_code
         FROM tracking_links tl
         JOIN channels c ON c.id = tl.channel_id
+        LEFT JOIN lead_magnets lm ON lm.id = tl.lm_lead_magnet_id
         WHERE tl.short_code = $1
     """, short_code)
     if not link:
