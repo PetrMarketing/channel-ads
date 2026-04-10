@@ -1197,8 +1197,13 @@ async def redirect_tracking_link(code: str, request: Request):
     ua = request.headers.get("user-agent", "")
     await execute("INSERT INTO clicks (link_id, ip_address, user_agent) VALUES ($1,$2,$3)", link["id"], ip, ua)
 
-    # Also record a visit for direct links (no landing page to do it)
+    # Lead magnet landing — redirect to /lm/ page
     link_type = link.get("link_type", "landing")
+    if link_type == "lm_landing":
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(f"/lm/{code}", status_code=302)
+
+    # Also record a visit for direct links (no landing page to do it)
     if link_type == "direct":
         await execute_returning_id(
             """INSERT INTO visits (tracking_link_id, channel_id, ip_address, user_agent,

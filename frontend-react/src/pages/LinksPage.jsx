@@ -18,8 +18,9 @@ export default function LinksPage() {
   const [editingLink, setEditingLink] = useState(null);
   const [metrikaLink, setMetrikaLink] = useState(null);
   const [metrikaForm, setMetrikaForm] = useState({ ym_counter_id: '', ym_goal_name: '', vk_pixel_id: '', vk_goal_name: '' });
-  const [form, setForm] = useState({ name: '', link_type: 'landing', utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' });
+  const [form, setForm] = useState({ name: '', link_type: 'landing', utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '', lm_title: '', lm_description: '', lm_description_align: 'left', lm_button_text: 'Получить бесплатно', lm_lead_magnet_id: '' });
   const [saving, setSaving] = useState(false);
+  const [leadMagnets, setLeadMagnets] = useState([]);
 
   const tc = currentChannel?.tracking_code;
 
@@ -37,6 +38,10 @@ export default function LinksPage() {
   }, [tc]);
 
   useEffect(() => { loadLinks(); }, [loadLinks]);
+  useEffect(() => {
+    if (!tc) return;
+    api.get(`/pins/${tc}/lead-magnets`).then(d => { if (d.success) setLeadMagnets(d.lead_magnets || d.leadMagnets || []); }).catch(() => {});
+  }, [tc]);
 
   const openCreate = () => {
     setEditingLink(null);
@@ -174,10 +179,10 @@ export default function LinksPage() {
                       <span style={{
                         display: 'inline-block', padding: '2px 8px', borderRadius: '12px',
                         fontSize: '0.72rem', fontWeight: 500,
-                        background: link.link_type === 'direct' ? 'rgba(59,130,246,0.15)' : 'rgba(139,92,246,0.15)',
-                        color: link.link_type === 'direct' ? '#3b82f6' : '#8b5cf6',
+                        background: link.link_type === 'direct' ? 'rgba(59,130,246,0.15)' : link.link_type === 'lm_landing' ? 'rgba(34,197,94,0.15)' : 'rgba(139,92,246,0.15)',
+                        color: link.link_type === 'direct' ? '#3b82f6' : link.link_type === 'lm_landing' ? '#22c55e' : '#8b5cf6',
                       }}>
-                        {link.link_type === 'direct' ? 'Прямая' : 'Лендинг'}
+                        {link.link_type === 'direct' ? 'Прямая' : link.link_type === 'lm_landing' ? 'Лид-магнит' : 'Лендинг'}
                       </span>
                       {link.is_paused ? (
                         <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
@@ -218,7 +223,7 @@ export default function LinksPage() {
                     <button className="btn btn-outline" style={btnSmall} onClick={() => openEdit(link)}>
                       Ред.
                     </button>
-                    {link.link_type === 'landing' && (
+                    {(link.link_type === 'landing' || link.link_type === 'lm_landing') && (
                       <button className="btn btn-outline" style={btnSmall} onClick={() => openMetrika(link)}>
                         Пиксели
                       </button>
@@ -278,6 +283,21 @@ export default function LinksPage() {
                       Переход в канал, внутренняя статистика
                     </span>
                   </label>
+                  <label style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+                    padding: '14px 10px', borderRadius: 'var(--radius)',
+                    border: `2px solid ${form.link_type === 'lm_landing' ? 'var(--primary)' : 'var(--border)'}`,
+                    cursor: 'pointer', background: form.link_type === 'lm_landing' ? 'rgba(34,197,94,0.08)' : 'transparent',
+                    transition: 'all 0.2s',
+                  }}>
+                    <input type="radio" name="link_type" value="lm_landing" checked={form.link_type === 'lm_landing'}
+                      onChange={() => setForm(p => ({ ...p, link_type: 'lm_landing' }))} style={{ display: 'none' }} />
+                    <span style={{ fontSize: '1.5rem' }}>🎁</span>
+                    <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>Лид-магнит</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                      Страница с подарком + подписка
+                    </span>
+                  </label>
                 </div>
               </div>
             )}
@@ -285,8 +305,50 @@ export default function LinksPage() {
               <div style={{ padding: '12px', background: 'rgba(139,92,246,0.06)', borderRadius: 'var(--radius)', border: '1px solid rgba(139,92,246,0.15)' }}>
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: 0 }}>
                   Лендинг-ссылка откроет страницу подписки. Для отслеживания конверсий через Яндекс Метрику
-                  укажите ID счётчика в настройках канала или на конкретной ссылке (кнопка «Метрика»).
+                  укажите ID счётчика в настройках канала или на конкретной ссылке (кнопка «Пиксели»).
                 </p>
+              </div>
+            )}
+            {form.link_type === 'lm_landing' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '14px', background: 'rgba(34,197,94,0.06)', borderRadius: 'var(--radius)', border: '1px solid rgba(34,197,94,0.15)' }}>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: 0 }}>
+                  Страница с описанием лид-магнита. После подписки на канал пользователь получает материал через бота.
+                </p>
+                <div>
+                  <label className="form-label">Заголовок</label>
+                  <input className="form-input" placeholder="Бесплатный гайд по маркетингу" value={form.lm_title || ''}
+                    onChange={e => setForm(p => ({ ...p, lm_title: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Описание</label>
+                  <textarea className="form-input" rows={4} placeholder="Описание того, что получит пользователь..." value={form.lm_description || ''}
+                    onChange={e => setForm(p => ({ ...p, lm_description: e.target.value }))} />
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                    {['left', 'center', 'right'].map(a => (
+                      <button key={a} type="button" className={`btn ${(form.lm_description_align || 'left') === a ? 'btn-primary' : 'btn-outline'}`}
+                        style={{ padding: '3px 10px', fontSize: '0.75rem' }}
+                        onClick={() => setForm(p => ({ ...p, lm_description_align: a }))}>
+                        {a === 'left' ? '⬅' : a === 'center' ? '⬛' : '➡'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label">Текст на кнопке</label>
+                  <input className="form-input" placeholder="Получить бесплатно" value={form.lm_button_text || ''}
+                    onChange={e => setForm(p => ({ ...p, lm_button_text: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Лид-магнит (выдаётся после подписки)</label>
+                  <select className="form-input" value={form.lm_lead_magnet_id || ''}
+                    onChange={e => setForm(p => ({ ...p, lm_lead_magnet_id: e.target.value }))}>
+                    <option value="">— Выберите лид-магнит —</option>
+                    {leadMagnets.map(lm => (
+                      <option key={lm.id} value={lm.id}>{lm.title} ({lm.code})</option>
+                    ))}
+                  </select>
+                  <div className="form-hint">Создайте лид-магнит в разделе «Закрепы → Лид-магниты»</div>
+                </div>
               </div>
             )}
             <div>

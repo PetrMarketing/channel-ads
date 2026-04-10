@@ -25,6 +25,7 @@ import PaymentSuccessPage from './pages/public/PaymentSuccessPage';
 import PaidChatPayPage from './pages/public/PaidChatPayPage';
 import StaffInvitePage from './pages/public/StaffInvitePage';
 import DocumentationPage from './pages/public/DocumentationPage';
+import LeadMagnetLandingPage from './pages/public/LeadMagnetLandingPage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -57,6 +58,7 @@ export default function App() {
       {/* Public pages */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/subscribe/:shortCode" element={<SubscribePage />} />
+      <Route path="/lm/:shortCode" element={<LeadMagnetLandingPage />} />
       <Route path="/pay/:tc" element={<PaidChatPayPage />} />
       <Route path="/paid-chat-pay/success/:orderId" element={<PaymentSuccessPage />} />
       <Route path="/paid-chat-pay/fail/:orderId" element={<PaidChatPayPage />} />

@@ -58,11 +58,12 @@ async def create_link(tracking_code: str, body: dict, user: Dict[str, Any] = Dep
 
     short_code = generate_short_code()
     link_type = body.get("link_type", "landing")
-    if link_type not in ("landing", "direct"):
+    if link_type not in ("landing", "direct", "lm_landing"):
         link_type = "landing"
     link_id = await execute_returning_id(
-        """INSERT INTO tracking_links (channel_id, name, utm_source, utm_medium, utm_campaign, utm_content, utm_term, short_code, link_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id""",
+        """INSERT INTO tracking_links (channel_id, name, utm_source, utm_medium, utm_campaign, utm_content, utm_term, short_code, link_type,
+            lm_title, lm_description, lm_description_align, lm_button_text, lm_lead_magnet_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id""",
         channel["id"],
         body.get("name"),
         body.get("utm_source"),
@@ -72,6 +73,11 @@ async def create_link(tracking_code: str, body: dict, user: Dict[str, Any] = Dep
         body.get("utm_term"),
         short_code,
         link_type,
+        body.get("lm_title", ""),
+        body.get("lm_description", ""),
+        body.get("lm_description_align", "left"),
+        body.get("lm_button_text", "Получить бесплатно"),
+        int(body["lm_lead_magnet_id"]) if body.get("lm_lead_magnet_id") else None,
     )
     link = await fetch_one("SELECT * FROM tracking_links WHERE id = $1", link_id)
     return {"success": True, "link": link}
@@ -86,7 +92,8 @@ async def update_link(tracking_code: str, link_id: int, body: dict, user: Dict[s
     fields = []
     params = []
     idx = 1
-    for key in ("name", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "link_type"):
+    for key in ("name", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "link_type",
+                 "lm_title", "lm_description", "lm_description_align", "lm_button_text", "lm_lead_magnet_id"):
         if key in body:
             fields.append(f"{key} = ${idx}")
             params.append(body[key])
@@ -114,6 +121,26 @@ async def update_metrika(tracking_code: str, link_id: int, body: dict, user: Dic
         link_id, channel["id"],
     )
     return {"success": True}
+
+
+@router.post("/{tracking_code}/{link_id}/lm-image")
+async def upload_lm_image(tracking_code: str, link_id: int, request, user: Dict[str, Any] = Depends(get_current_user)):
+    """Upload image for lead magnet landing page."""
+    from fastapi import Request
+    channel = await _get_owned_channel(tracking_code, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    form = await request.form()
+    file = form.get("file")
+    if not file or not hasattr(file, "read"):
+        raise HTTPException(status_code=400, detail="Файл не загружен")
+    from ..services.file_storage import save_upload
+    file_path, file_type, _ = await save_upload(file, photo_only=True)
+    from ..config import settings
+    rel = file_path.replace(settings.UPLOAD_DIR, "").lstrip("/")
+    url = f"/uploads/{rel}"
+    await execute("UPDATE tracking_links SET lm_image_url = $1 WHERE id = $2 AND channel_id = $3", url, link_id, channel["id"])
+    return {"success": True, "url": url}
 
 
 @router.patch("/{tracking_code}/{link_id}/pause")
