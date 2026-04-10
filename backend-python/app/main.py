@@ -30,6 +30,7 @@ from .routes import (
     funnels, content, giveaways, notifications, payments,
     max_routes, telegram_bot, max_webhook,
     admin, paid_chats, paid_chat_payments, services, ord, referrals, landings,
+    metrics,
 )
 
 
@@ -152,6 +153,7 @@ from .routes import analytics, comments
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(comments.router, prefix="/api/comments", tags=["comments"])
 app.include_router(telegram_bot.router, prefix="/api/telegram", tags=["telegram-bot"])
+app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
 
 # ========================
 # API Routes — Public

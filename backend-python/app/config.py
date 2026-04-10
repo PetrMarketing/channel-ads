@@ -20,6 +20,7 @@ class Settings:
     YM_OAUTH_TOKEN: str = os.getenv("YM_OAUTH_TOKEN", "")
     ADMIN_JWT_SECRET: str = os.getenv("ADMIN_JWT_SECRET", "admin-secret-change-me")
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads"))
+    METRICS_API_KEY: str = os.getenv("METRICS_API_KEY", "")
 
 
 settings = Settings()
