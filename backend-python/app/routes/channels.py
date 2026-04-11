@@ -163,7 +163,7 @@ async def list_channels(user: Dict[str, Any] = Depends(get_current_user)):
     # Channels where user is staff
     staff_channels = await fetch_all(
         """SELECT c.*, cs.role as staff_role,
-                  u.first_name as owner_first_name, u.last_name as owner_last_name, u.username as owner_username
+                  u.first_name as owner_first_name, u.username as owner_username
            FROM channel_staff cs
            JOIN channels c ON c.id = cs.channel_id
            JOIN users u ON u.id = c.user_id
@@ -173,7 +173,7 @@ async def list_channels(user: Dict[str, Any] = Depends(get_current_user)):
     )
     for sc in staff_channels:
         ch = await enrich_with_billing(mask_channel(dict(sc)))
-        owner_name = " ".join(filter(None, [sc.get("owner_first_name"), sc.get("owner_last_name")])) or sc.get("owner_username") or ""
+        owner_name = sc.get("owner_first_name") or sc.get("owner_username") or ""
         ch["owner_name"] = owner_name
         ch["staff_role"] = sc.get("staff_role")
         ch["is_staff"] = True
