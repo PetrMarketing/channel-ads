@@ -32,7 +32,8 @@ _BC_COLS = "id, channel_id, title, message_text, file_path, file_type, telegram_
 
 
 async def _get_owned_channel(tc: str, uid: int):
-    return await fetch_one("SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2", tc, uid)
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tc, uid, "broadcasts")
 
 
 async def _save_upload(file) -> tuple:
@@ -645,7 +646,7 @@ async def edit_sent_messages(tc: str, bc_id: int, request: Request, user: Dict[s
                     failed += 1
                     continue
                 token = settings.TELEGRAM_BOT_TOKEN
-                url = f"https://api.telegram.org/bot{token}/editMessageText"
+                url = f"{settings.TELEGRAM_API_URL}/bot{token}/editMessageText"
                 async with _aiohttp.ClientSession() as session:
                     async with session.post(url, json={
                         "chat_id": int(chat_id),
@@ -711,7 +712,7 @@ async def delete_sent_messages(tc: str, bc_id: int, user: Dict[str, Any] = Depen
                     failed += 1
                     continue
                 token = settings.TELEGRAM_BOT_TOKEN
-                url = f"https://api.telegram.org/bot{token}/deleteMessage"
+                url = f"{settings.TELEGRAM_API_URL}/bot{token}/deleteMessage"
                 async with _aiohttp.ClientSession() as session:
                     async with session.post(url, json={
                         "chat_id": int(chat_id),

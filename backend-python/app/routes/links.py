@@ -16,10 +16,8 @@ def generate_short_code(length: int = 10) -> str:
 
 
 async def _get_owned_channel(tracking_code: str, user_id: int):
-    return await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
-        tracking_code, user_id,
-    )
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tracking_code, user_id, "links")
 
 
 @router.get("/{tracking_code}")

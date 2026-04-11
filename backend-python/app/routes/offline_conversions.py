@@ -17,7 +17,8 @@ public_router = APIRouter()
 
 
 async def _get_owned_channel(tc: str, uid: int):
-    return await fetch_one("SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2", tc, uid)
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tc, uid, "offline_conversions")
 
 
 @router.get("/{tc}")

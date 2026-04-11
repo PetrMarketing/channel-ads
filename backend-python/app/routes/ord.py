@@ -50,9 +50,8 @@ async def _ord_request(method: str, path: str, token: str, sandbox: bool = False
 
 
 async def _get_owned_channel(tc: str, user_id: int):
-    return await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2", tc, user_id
-    )
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tc, user_id, "ord")
 
 
 # ─── Settings ───

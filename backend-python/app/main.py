@@ -262,7 +262,7 @@ async def bot_info():
     if settings.TELEGRAM_BOT_TOKEN:
         import aiohttp
         try:
-            url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getMe"
+            url = f"{settings.TELEGRAM_API_URL}/bot{settings.TELEGRAM_BOT_TOKEN}/getMe"
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as resp:
                     data = await resp.json()

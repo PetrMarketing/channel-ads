@@ -550,6 +550,8 @@ export default function PaidChatsPage() {
           setMemberChatFilter={setMemberChatFilter}
           memberStatusFilter={memberStatusFilter}
           setMemberStatusFilter={setMemberStatusFilter}
+          tc={tc}
+          onReload={loadMembers}
         />
       )}
 

@@ -16,7 +16,8 @@ _PIN_COLS = "id, channel_id, title, message_text, status, telegram_message_id, l
 
 
 async def _get_owned_channel(tc: str, uid: int):
-    return await fetch_one("SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2", tc, uid)
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tc, uid, "pins")
 
 
 async def _save_upload(file: UploadFile) -> tuple:
@@ -509,7 +510,7 @@ async def publish_pin(tc: str, pin_id: int, user: Dict[str, Any] = Depends(get_c
                 tg_text = sanitize_html_for_telegram(message_text)
                 token = settings.TELEGRAM_BOT_TOKEN
                 if token:
-                    url = f"https://api.telegram.org/bot{token}/editMessageText"
+                    url = f"{settings.TELEGRAM_API_URL}/bot{token}/editMessageText"
                     payload = {
                         "chat_id": channel["channel_id"],
                         "message_id": int(existing_msg_id),
@@ -570,7 +571,7 @@ async def _get_tg_bot_username() -> str:
     if not token:
         return ""
     try:
-        url = f"https://api.telegram.org/bot{token}/getMe"
+        url = f"{settings.TELEGRAM_API_URL}/bot{token}/getMe"
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 data = await resp.json()
@@ -662,7 +663,7 @@ async def unpin_post(tc: str, pin_id: int, user: Dict[str, Any] = Depends(get_cu
             import aiohttp
             token = settings.TELEGRAM_BOT_TOKEN
             if token:
-                url = f"https://api.telegram.org/bot{token}/unpinChatMessage"
+                url = f"{settings.TELEGRAM_API_URL}/bot{token}/unpinChatMessage"
                 async with aiohttp.ClientSession() as session:
                     await session.post(url, json={"chat_id": channel["channel_id"], "message_id": int(pin["telegram_message_id"])})
     # MAX doesn't have unpin API — just reset status

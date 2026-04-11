@@ -138,7 +138,7 @@ async def _kick_member(member: dict):
         token = settings.TELEGRAM_BOT_TOKEN
         if not token:
             return
-        url = f"https://api.telegram.org/bot{token}/banChatMember"
+        url = f"{settings.TELEGRAM_API_URL}/bot{token}/banChatMember"
         payload = {"chat_id": chat_id, "user_id": int(tg_id)}
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as resp:
@@ -146,7 +146,7 @@ async def _kick_member(member: dict):
                 if result.get("ok"):
                     print(f"[PaidChatChecker] Banned TG user {tg_id} from chat {chat_id}")
                     # Immediately unban so they can rejoin if they re-subscribe
-                    unban_url = f"https://api.telegram.org/bot{token}/unbanChatMember"
+                    unban_url = f"{settings.TELEGRAM_API_URL}/bot{token}/unbanChatMember"
                     unban_payload = {"chat_id": chat_id, "user_id": int(tg_id), "only_if_banned": True}
                     async with session.post(unban_url, json=unban_payload) as _:
                         pass

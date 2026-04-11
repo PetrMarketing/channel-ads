@@ -20,16 +20,15 @@ from ..middleware.auth import find_or_create_tg_user, create_jwt
 router = APIRouter()
 
 _poll_task: Optional[asyncio.Task] = None
-_BASE = "https://api.telegram.org/bot"
-
-
 def _api_url(method: str) -> str:
-    return f"{_BASE}{settings.TELEGRAM_BOT_TOKEN}/{method}"
+    base = settings.TELEGRAM_API_URL.rstrip("/")
+    return f"{base}/bot{settings.TELEGRAM_BOT_TOKEN}/{method}"
 
 
 async def _tg_request(method: str, **kwargs):
     url = _api_url(method)
-    async with aiohttp.ClientSession() as session:
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(url, json=kwargs) as resp:
             return await resp.json()
 
@@ -1570,14 +1569,16 @@ async def _poll_loop():
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"[TG Bot] Poll error: {e}")
+            print(f"[TG Bot] Poll error: {type(e).__name__}: {e}")
             await asyncio.sleep(5)
 
 
 def start_telegram_polling():
     global _poll_task
     if not settings.TELEGRAM_BOT_TOKEN:
+        print("[TG Bot] No token, polling disabled")
         return
+    print(f"[TG Bot] Starting polling (API: {settings.TELEGRAM_API_URL})")
     _poll_task = asyncio.create_task(_poll_loop())
 
 

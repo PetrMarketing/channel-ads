@@ -16,12 +16,13 @@ export default function StaffPage() {
   const { showToast } = useToast();
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [inviting, setInviting] = useState(false);
-  const [inviteRole, setInviteRole] = useState('editor');
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviteUrl, setInviteUrl] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addRole, setAddRole] = useState('editor');
+  const [pkId, setPkId] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmInfo, setConfirmInfo] = useState(null);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState(null);
 
   const tc = currentChannel?.tracking_code;
 
@@ -32,7 +33,6 @@ export default function StaffPage() {
       const data = await api.get(`/billing/${tc}/staff`);
       if (data.success) setStaff(data.staff || []);
     } catch {
-      // no staff
     } finally {
       setLoading(false);
     }
@@ -40,14 +40,23 @@ export default function StaffPage() {
 
   useEffect(() => { loadStaff(); }, [loadStaff]);
 
-  const handleInvite = async (confirmed = false) => {
-    setInviting(true);
+  const handleAdd = async (confirmed = false) => {
+    if (!pkId.trim()) {
+      showToast('Введите PKid сотрудника', 'error');
+      return;
+    }
+    setAdding(true);
     try {
-      const data = await api.post(`/billing/${tc}/staff/invite`, { role: inviteRole, confirm: confirmed });
+      const data = await api.post(`/billing/${tc}/staff`, {
+        identifier: pkId.trim(),
+        role: addRole,
+        confirm: confirmed,
+      });
       if (data.success) {
-        setInviteUrl(data.invite_url);
+        showToast('Сотрудник добавлен');
+        setPkId('');
         setShowConfirmModal(false);
-        setShowInviteModal(true);
+        loadStaff();
       } else if (data.needs_confirm) {
         setConfirmInfo(data);
         setShowConfirmModal(true);
@@ -55,16 +64,11 @@ export default function StaffPage() {
         showToast(data.detail || data.error || 'Ошибка', 'error');
       }
     } catch (err) {
-      const msg = err?.response?.data?.detail || err?.message || 'Ошибка создания приглашения';
+      const msg = err?.response?.data?.detail || err?.message || 'Ошибка добавления';
       showToast(msg, 'error');
     } finally {
-      setInviting(false);
+      setAdding(false);
     }
-  };
-
-  const copyInviteUrl = () => {
-    navigator.clipboard.writeText(inviteUrl);
-    showToast('Ссылка скопирована');
   };
 
   const handleChangeRole = async (staffId, newRole) => {
@@ -79,12 +83,14 @@ export default function StaffPage() {
     }
   };
 
-  const handleRemove = async (staffId, name) => {
-    if (!confirm(`Удалить сотрудника ${name}?`)) return;
+  const handleRemove = async () => {
+    if (!removeTarget) return;
     try {
-      const data = await api.delete(`/billing/${tc}/staff/${staffId}`);
+      const data = await api.delete(`/billing/${tc}/staff/${removeTarget.id}`);
       if (data.success) {
         showToast('Сотрудник удалён');
+        setShowRemoveModal(false);
+        setRemoveTarget(null);
         loadStaff();
       }
     } catch {
@@ -104,23 +110,40 @@ export default function StaffPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2>Сотрудники</h2>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <select
-            value={inviteRole}
-            onChange={e => setInviteRole(e.target.value)}
+      <h2 style={{ marginBottom: '20px' }}>Сотрудники</h2>
+
+      {/* Add by PKid */}
+      <div style={{
+        background: 'var(--bg-glass)', border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)', padding: '16px', marginBottom: '24px',
+      }}>
+        <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '12px' }}>Добавить сотрудника</div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
             className="input"
-            style={{ width: 'auto', padding: '6px 10px', fontSize: '0.84rem' }}
+            placeholder="Введите PKid сотрудника"
+            value={pkId}
+            onChange={e => setPkId(e.target.value)}
+            style={{ flex: 1, minWidth: '140px', padding: '8px 12px', fontSize: '0.88rem' }}
+            onKeyDown={e => { if (e.key === 'Enter') handleAdd(false); }}
+          />
+          <select
+            value={addRole}
+            onChange={e => setAddRole(e.target.value)}
+            className="input"
+            style={{ width: 'auto', padding: '8px 12px', fontSize: '0.84rem' }}
           >
             {Object.entries(ROLE_INFO).map(([key, info]) => (
               <option key={key} value={key}>{info.name}</option>
             ))}
           </select>
-          <button className="btn btn-primary" onClick={() => handleInvite(false)} disabled={inviting}>
-            {inviting ? 'Создание...' : 'Пригласить'}
+          <button className="btn btn-primary" onClick={() => handleAdd(false)} disabled={adding}>
+            {adding ? 'Добавление...' : 'Добавить'}
           </button>
         </div>
+        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
+          PKid можно найти в верхней панели сервиса у каждого пользователя
+        </p>
       </div>
 
       {/* Roles reference */}
@@ -156,7 +179,7 @@ export default function StaffPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {staff.map(s => {
             const info = ROLE_INFO[s.role] || ROLE_INFO.editor;
-            const displayName = [s.first_name, s.last_name].filter(Boolean).join(' ') || s.username || `ID ${s.user_id}`;
+            const displayName = [s.first_name, s.last_name].filter(Boolean).join(' ') || s.username || `PKid ${s.user_id}`;
             return (
               <div key={s.id} style={{
                 background: 'var(--bg-glass)', border: '1px solid var(--border)',
@@ -165,9 +188,10 @@ export default function StaffPage() {
               }}>
                 <div style={{ flex: 1, minWidth: '150px' }}>
                   <div style={{ fontSize: '0.92rem', fontWeight: 600 }}>{displayName}</div>
-                  {s.username && (
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>@{s.username}</div>
-                  )}
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    PKid: {s.user_id}
+                    {s.username ? ` · @${s.username}` : ''}
+                  </div>
                 </div>
                 <select
                   value={s.role}
@@ -183,7 +207,7 @@ export default function StaffPage() {
                   ))}
                 </select>
                 <button
-                  onClick={() => handleRemove(s.id, displayName)}
+                  onClick={() => { setRemoveTarget({ id: s.id, name: displayName }); setShowRemoveModal(true); }}
                   className="btn"
                   style={{
                     padding: '4px 12px', fontSize: '0.82rem',
@@ -199,30 +223,10 @@ export default function StaffPage() {
         </div>
       )}
 
-      {/* Invite Link Modal */}
-      <Modal isOpen={showInviteModal} onClose={() => setShowInviteModal(false)} title="Ссылка-приглашение">
-        <div style={{ textAlign: 'center', padding: '16px 0' }}>
-          <p style={{ marginBottom: '16px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-            Отправьте эту ссылку сотруднику. Ссылка действует 7 дней.
-          </p>
-          <div style={{
-            padding: '12px 16px', background: 'var(--bg-glass)', borderRadius: '10px',
-            border: '1px solid var(--border)', wordBreak: 'break-all', fontSize: '0.85rem',
-            marginBottom: '16px', textAlign: 'left',
-          }}>
-            {inviteUrl}
-          </div>
-          <button className="btn btn-primary" onClick={copyInviteUrl} style={{ width: '100%' }}>
-            Скопировать ссылку
-          </button>
-        </div>
-      </Modal>
-
       {/* Confirm subscription reduction modal */}
       <Modal isOpen={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Добавление сотрудника">
         {confirmInfo && (
           <div style={{ textAlign: 'center', padding: '8px 0' }}>
-            <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>⚠️</div>
             <p style={{ fontSize: '0.95rem', marginBottom: '16px' }}>
               Ваш срок подписки уменьшится в <strong>{confirmInfo.new_users}/{confirmInfo.current_users}</strong> раза
               после добавления сотрудника.
@@ -244,10 +248,33 @@ export default function StaffPage() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-              <button className="btn btn-primary" onClick={() => handleInvite(true)} disabled={inviting}>
-                {inviting ? 'Создание...' : 'Подтвердить и пригласить'}
+              <button className="btn btn-primary" onClick={() => handleAdd(true)} disabled={adding}>
+                {adding ? 'Добавление...' : 'Подтвердить'}
               </button>
               <button className="btn btn-outline" onClick={() => setShowConfirmModal(false)}>
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Remove confirmation modal */}
+      <Modal isOpen={showRemoveModal} onClose={() => { setShowRemoveModal(false); setRemoveTarget(null); }} title="Удаление сотрудника">
+        {removeTarget && (
+          <div style={{ textAlign: 'center', padding: '8px 0' }}>
+            <p style={{ fontSize: '0.95rem', marginBottom: '20px' }}>
+              Удалить сотрудника <strong>{removeTarget.name}</strong>?
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                className="btn"
+                style={{ background: 'var(--error)', color: '#fff', border: 'none' }}
+                onClick={handleRemove}
+              >
+                Удалить
+              </button>
+              <button className="btn btn-outline" onClick={() => { setShowRemoveModal(false); setRemoveTarget(null); }}>
                 Отмена
               </button>
             </div>

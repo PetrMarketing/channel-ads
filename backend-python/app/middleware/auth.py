@@ -130,3 +130,56 @@ async def find_or_create_max_user(max_user_id: str, name: str = "", dialog_chat_
 
 def create_jwt(user_id: int) -> str:
     return jwt.encode({"userId": user_id}, settings.JWT_SECRET, algorithm="HS256")
+
+
+# ── Staff role permissions ──
+
+STAFF_PERMISSIONS = {
+    "advertiser": ["links", "analytics", "offline_conversions"],
+    "editor": ["links", "content", "pins", "lead_magnets", "giveaways", "broadcasts",
+                "funnels", "analytics", "notifications", "comments", "offline_conversions"],
+    "admin": ["all"],
+}
+
+
+async def get_channel_for_user(
+    tracking_code: str,
+    user_id: int,
+    permission: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Get channel if user is owner or has staff access with required permission.
+
+    Returns channel dict with _is_owner and _staff_role fields, or None.
+    """
+    # Check ownership first
+    channel = await fetch_one(
+        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
+        tracking_code, user_id,
+    )
+    if channel:
+        channel = dict(channel)
+        channel["_is_owner"] = True
+        channel["_staff_role"] = None
+        return channel
+
+    # Check staff access
+    row = await fetch_one(
+        """SELECT c.*, cs.role as _staff_role
+           FROM channel_staff cs
+           JOIN channels c ON c.id = cs.channel_id
+           WHERE c.tracking_code = $1 AND cs.user_id = $2""",
+        tracking_code, user_id,
+    )
+    if not row:
+        return None
+
+    role = row.get("_staff_role", "")
+    perms = STAFF_PERMISSIONS.get(role, [])
+
+    # Check permission
+    if permission and "all" not in perms and permission not in perms:
+        return None
+
+    channel = dict(row)
+    channel["_is_owner"] = False
+    return channel

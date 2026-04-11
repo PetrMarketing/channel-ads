@@ -18,7 +18,7 @@ async def _create_unique_invite_link(chat_id: str, platform: str, member_name: s
         token = settings.TELEGRAM_BOT_TOKEN
         if not token:
             return None
-        url = f"https://api.telegram.org/bot{token}/createChatInviteLink"
+        url = f"{settings.TELEGRAM_API_URL}/bot{token}/createChatInviteLink"
         payload = {
             "chat_id": chat_id,
             "member_limit": 1,
@@ -64,9 +64,8 @@ async def _create_unique_invite_link(chat_id: str, platform: str, member_name: s
 
 
 async def _get_owned_channel(tc: str, uid: int):
-    return await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2", tc, uid
-    )
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tc, uid, "paid_chats")
 
 
 async def _require_active_billing(channel_id: int):
@@ -365,6 +364,7 @@ async def list_members(tc: str, request: Request, user: Dict[str, Any] = Depends
     chat_filter = request.query_params.get("chat_id")
     status_filter = request.query_params.get("status")
 
+    # Existing members
     query = """
         SELECT m.*, m.invite_link, pc.title as chat_title, p.title as plan_title, p.plan_type, p.price
         FROM paid_chat_members m
@@ -378,12 +378,58 @@ async def list_members(tc: str, request: Request, user: Dict[str, Any] = Depends
         query += f" AND m.paid_chat_id = ${idx}"
         params.append(int(chat_filter))
         idx += 1
-    if status_filter:
+    if status_filter and status_filter != "pending":
         query += f" AND m.status = ${idx}"
         params.append(status_filter)
         idx += 1
     query += " ORDER BY m.created_at DESC"
-    members = await fetch_all(query, *params)
+    members = list(await fetch_all(query, *params))
+
+    # Also include pending payments (users who started payment but didn't complete)
+    if not status_filter or status_filter == "pending":
+        pq = """
+            SELECT pp.id as payment_id, pp.paid_chat_id, pp.channel_id, pp.plan_id,
+                   pp.telegram_id, pp.max_user_id, pp.username, pp.first_name, pp.platform,
+                   pp.amount, pp.created_at,
+                   pc.title as chat_title, p.title as plan_title, p.plan_type, p.price
+            FROM paid_chat_payments pp
+            LEFT JOIN paid_chats pc ON pc.id = pp.paid_chat_id
+            LEFT JOIN paid_chat_plans p ON p.id = pp.plan_id
+            WHERE pp.channel_id = $1 AND pp.status = 'pending'
+        """
+        pp_params = [channel["id"]]
+        pp_idx = 2
+        if chat_filter:
+            pq += f" AND pp.paid_chat_id = ${pp_idx}"
+            pp_params.append(int(chat_filter))
+            pp_idx += 1
+        pq += " ORDER BY pp.created_at DESC"
+        pending = await fetch_all(pq, *pp_params)
+
+        # Convert pending payments to member-like dicts
+        for pp in pending:
+            members.append({
+                "id": f"pay_{pp['payment_id']}",
+                "payment_id": pp["payment_id"],
+                "paid_chat_id": pp["paid_chat_id"],
+                "channel_id": pp["channel_id"],
+                "plan_id": pp["plan_id"],
+                "telegram_id": pp.get("telegram_id"),
+                "max_user_id": pp.get("max_user_id"),
+                "username": pp.get("username"),
+                "first_name": pp.get("first_name"),
+                "platform": pp.get("platform"),
+                "status": "pending",
+                "amount_paid": None,
+                "expires_at": None,
+                "invite_link": None,
+                "chat_title": pp.get("chat_title"),
+                "plan_title": pp.get("plan_title"),
+                "plan_type": pp.get("plan_type"),
+                "price": pp.get("price"),
+                "created_at": pp.get("created_at"),
+            })
+
     return {"success": True, "members": members}
 
 
@@ -496,6 +542,29 @@ async def update_member(tc: str, member_id: int, request: Request, user: Dict[st
         f"UPDATE paid_chat_members SET {', '.join(fields)} WHERE id = ${idx} AND channel_id = ${idx+1}",
         *params,
     )
+    return {"success": True}
+
+
+@router.post("/{tc}/members/mark-paid/{payment_id}")
+async def mark_payment_as_paid(tc: str, payment_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    """Manually mark a pending payment as paid: create member, send invite link."""
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+
+    payment = await fetch_one(
+        "SELECT * FROM paid_chat_payments WHERE id = $1 AND channel_id = $2",
+        payment_id, channel["id"],
+    )
+    if not payment:
+        raise HTTPException(status_code=404, detail="Платёж не найден")
+    if payment["status"] == "paid":
+        raise HTTPException(status_code=400, detail="Платёж уже подтверждён")
+
+    # Use _fulfill_payment logic
+    from .paid_chat_payments import _fulfill_payment
+    await _fulfill_payment(payment["order_id"], {"source": "manual_confirm"})
+
     return {"success": True}
 
 

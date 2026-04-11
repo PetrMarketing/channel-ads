@@ -20,7 +20,8 @@ _GW_COLS = ("id, channel_id, title, message_text, image_path, image_type, attach
 
 
 async def _get_owned_channel(tc: str, uid: int):
-    return await fetch_one("SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2", tc, uid)
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tc, uid, "giveaways")
 
 
 async def _save_upload(file: UploadFile) -> tuple:
@@ -298,7 +299,7 @@ async def publish_giveaway(tc: str, giveaway_id: int, user: Dict[str, Any] = Dep
             bot_info_result = None
             try:
                 import aiohttp
-                url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getMe"
+                url = f"{settings.TELEGRAM_API_URL}/bot{settings.TELEGRAM_BOT_TOKEN}/getMe"
                 async with aiohttp.ClientSession() as s:
                     async with s.get(url) as r:
                         bot_info_result = await r.json()

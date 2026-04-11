@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import math
 import aiohttp
 
-from ..middleware.auth import get_current_user
+from ..middleware.auth import get_current_user, get_channel_for_user
 from ..database import fetch_one, fetch_all, execute
 from ..config import settings
 
@@ -154,19 +154,37 @@ async def scan_channels(user: Dict[str, Any] = Depends(get_current_user)):
 
 @router.get("/")
 async def list_channels(user: Dict[str, Any] = Depends(get_current_user)):
+    # Own channels
     channels = await fetch_all(
         "SELECT * FROM channels WHERE user_id = $1 ORDER BY created_at DESC", user["id"]
     )
     enriched = [await enrich_with_billing(mask_channel(c)) for c in channels]
+
+    # Channels where user is staff
+    staff_channels = await fetch_all(
+        """SELECT c.*, cs.role as staff_role,
+                  u.first_name as owner_first_name, u.last_name as owner_last_name, u.username as owner_username
+           FROM channel_staff cs
+           JOIN channels c ON c.id = cs.channel_id
+           JOIN users u ON u.id = c.user_id
+           WHERE cs.user_id = $1
+           ORDER BY cs.created_at DESC""",
+        user["id"],
+    )
+    for sc in staff_channels:
+        ch = await enrich_with_billing(mask_channel(dict(sc)))
+        owner_name = " ".join(filter(None, [sc.get("owner_first_name"), sc.get("owner_last_name")])) or sc.get("owner_username") or ""
+        ch["owner_name"] = owner_name
+        ch["staff_role"] = sc.get("staff_role")
+        ch["is_staff"] = True
+        enriched.append(ch)
+
     return {"success": True, "channels": enriched}
 
 
 @router.get("/{tracking_code}")
 async def get_channel(tracking_code: str, user: Dict[str, Any] = Depends(get_current_user)):
-    channel = await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
-        tracking_code, user["id"],
-    )
+    channel = await get_channel_for_user(tracking_code, user["id"], "analytics")
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
     enriched = await enrich_with_billing(mask_channel(channel))
@@ -175,10 +193,7 @@ async def get_channel(tracking_code: str, user: Dict[str, Any] = Depends(get_cur
 
 @router.put("/{tracking_code}")
 async def update_channel(tracking_code: str, request_body: dict, user: Dict[str, Any] = Depends(get_current_user)):
-    channel = await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
-        tracking_code, user["id"],
-    )
+    channel = await get_channel_for_user(tracking_code, user["id"], "content")
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
@@ -206,10 +221,7 @@ async def get_channel_stats(
     days: int = Query(30),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    channel = await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
-        tracking_code, user["id"],
-    )
+    channel = await get_channel_for_user(tracking_code, user["id"], "analytics")
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
@@ -263,10 +275,7 @@ async def get_subscribers(
     limit: int = Query(50, ge=1, le=200),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    channel = await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
-        tracking_code, user["id"],
-    )
+    channel = await get_channel_for_user(tracking_code, user["id"], "analytics")
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
@@ -337,7 +346,7 @@ async def _fetch_invite_link_for_channel(channel: dict) -> Optional[str]:
         if not channel_id:
             return None
         try:
-            tg_base = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}"
+            tg_base = f"{settings.TELEGRAM_API_URL}/bot{settings.TELEGRAM_BOT_TOKEN}"
             async with aiohttp.ClientSession() as session:
                 # Try createChatInviteLink first (non-destructive)
                 async with session.post(f"{tg_base}/createChatInviteLink", json={"chat_id": int(channel_id), "name": "channel-ads"}) as resp:

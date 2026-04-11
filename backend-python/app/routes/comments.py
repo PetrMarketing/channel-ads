@@ -9,7 +9,8 @@ public_router = APIRouter()
 
 
 async def _get_channel(tc, uid):
-    return await fetch_one("SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2", tc, uid)
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tc, uid, "comments")
 
 
 # ══════════════ Protected (dashboard) ══════════════

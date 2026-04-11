@@ -210,7 +210,7 @@ async def send_telegram_message(chat_id: int, text: str, **kwargs):
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
         return None
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    url = f"{settings.TELEGRAM_API_URL}/bot{token}/sendMessage"
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", **kwargs}
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload) as resp:
@@ -221,7 +221,7 @@ async def send_telegram_photo(chat_id: int, photo, caption: str = "", **kwargs):
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
         return None
-    url = f"https://api.telegram.org/bot{token}/sendPhoto"
+    url = f"{settings.TELEGRAM_API_URL}/bot{token}/sendPhoto"
     if isinstance(photo, str) and not os.path.exists(photo):
         # file_id
         payload = {"chat_id": chat_id, "photo": photo, "caption": caption, "parse_mode": "HTML", **kwargs}
@@ -247,7 +247,7 @@ async def send_telegram_document(chat_id: int, document, caption: str = "", **kw
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
         return None
-    url = f"https://api.telegram.org/bot{token}/sendDocument"
+    url = f"{settings.TELEGRAM_API_URL}/bot{token}/sendDocument"
     if isinstance(document, str) and not os.path.exists(document):
         payload = {"chat_id": chat_id, "document": document, "caption": caption, "parse_mode": "HTML", **kwargs}
         async with aiohttp.ClientSession() as session:
@@ -272,7 +272,7 @@ async def send_telegram_video(chat_id: int, video, caption: str = "", **kwargs):
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
         return None
-    url = f"https://api.telegram.org/bot{token}/sendVideo"
+    url = f"{settings.TELEGRAM_API_URL}/bot{token}/sendVideo"
     if isinstance(video, str) and not os.path.exists(video):
         payload = {"chat_id": chat_id, "video": video, "caption": caption, "parse_mode": "HTML", **kwargs}
         async with aiohttp.ClientSession() as session:
@@ -297,7 +297,7 @@ async def send_telegram_voice(chat_id: int, voice, caption: str = "", **kwargs):
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
         return None
-    url = f"https://api.telegram.org/bot{token}/sendVoice"
+    url = f"{settings.TELEGRAM_API_URL}/bot{token}/sendVoice"
     if isinstance(voice, str) and not os.path.exists(voice):
         payload = {"chat_id": chat_id, "voice": voice, "caption": caption, "parse_mode": "HTML", **kwargs}
         async with aiohttp.ClientSession() as session:
@@ -322,7 +322,7 @@ async def send_telegram_video_note(chat_id: int, video_note, **kwargs):
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
         return None
-    url = f"https://api.telegram.org/bot{token}/sendVideoNote"
+    url = f"{settings.TELEGRAM_API_URL}/bot{token}/sendVideoNote"
     if isinstance(video_note, str) and not os.path.exists(video_note):
         payload = {"chat_id": chat_id, "video_note": video_note, **kwargs}
         async with aiohttp.ClientSession() as session:

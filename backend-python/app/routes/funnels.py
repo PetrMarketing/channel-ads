@@ -16,7 +16,8 @@ _STEP_COLS = "id, channel_id, lead_magnet_id, step_number, delay_minutes, messag
 
 
 async def _get_owned_channel(tc: str, uid: int):
-    return await fetch_one("SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2", tc, uid)
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tc, uid, "funnels")
 
 
 async def _save_upload(file) -> tuple:

@@ -3823,6 +3823,11 @@ select.form-input option {
 .pc-badge.info { background: rgba(59,130,246,0.15); color: #3b82f6; }
 .pc-badge.danger { background: rgba(239,68,68,0.15); color: #ef4444; }
 
+.pc-btn-sm { padding: 4px 12px; border-radius: 6px; border: none; font-size: 0.8rem; cursor: pointer; font-weight: 600; }
+.pc-btn-success { background: #2a9d8f; color: #fff; }
+.pc-btn-success:hover { background: #238a7e; }
+.pc-btn-success:disabled { opacity: 0.6; cursor: not-allowed; }
+
 /* Booking calendar cell hover */
 .booking-cell { position: relative; cursor: pointer; transition: background 0.1s; }
 .booking-cell:hover { background: rgba(42,170,238,0.06); }

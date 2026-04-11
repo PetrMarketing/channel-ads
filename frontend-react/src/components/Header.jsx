@@ -121,7 +121,7 @@ export default function Header({ onToggleSidebar }) {
         <button className="sidebar-toggle" onClick={onToggleSidebar}>&#9776;</button>
         <h1><img src="/logo-64.png" alt="PK" style={{ width: 28, height: 28, borderRadius: 6, verticalAlign: 'middle', marginRight: 8 }} />MAXМаркетинг</h1>
         {channels.length > 0 && (
-          <div className="global-channel-selector">
+          <div className="global-channel-selector" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <select
               value={currentChannel?.tracking_code || ''}
               onChange={handleChannelChange}
@@ -129,15 +129,36 @@ export default function Header({ onToggleSidebar }) {
               <option value="">Выберите канал</option>
               {channels.map(ch => (
                 <option key={ch.tracking_code} value={ch.tracking_code}>
-                  {ch.title || ch.channel_id || ch.tracking_code}
+                  {(ch.title || ch.channel_id || ch.tracking_code) + (ch.is_staff ? ` (${ch.owner_name || 'сотрудник'})` : '')}
                 </option>
               ))}
             </select>
+            {currentChannel?.is_staff && (
+              <span style={{
+                fontSize: '0.72rem', color: 'var(--text-secondary)', background: 'var(--bg-glass)',
+                padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--border)', whiteSpace: 'nowrap',
+              }}>
+                Владелец: {currentChannel.owner_name || '—'}
+              </span>
+            )}
           </div>
         )}
         {user && (
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginRight: '4px' }}>
             {user.first_name || user.username || ''}
+          </span>
+        )}
+        {user?.id && (
+          <span
+            style={{
+              fontSize: '0.72rem', color: 'var(--text-secondary)', background: 'var(--bg-glass)',
+              padding: '2px 7px', borderRadius: '4px', border: '1px solid var(--border)',
+              cursor: 'pointer', userSelect: 'all', marginRight: '4px',
+            }}
+            title="Нажмите, чтобы скопировать"
+            onClick={() => { navigator.clipboard.writeText(String(user.id)); }}
+          >
+            PKid: {user.id}
           </span>
         )}
         {user && (

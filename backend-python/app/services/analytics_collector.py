@@ -78,7 +78,7 @@ async def _collect_channel(ch, today):
             tg_chat_id = ch.get("channel_id")
             if token and tg_chat_id:
                 async with aiohttp.ClientSession() as session:
-                    resp = await session.get(f"https://api.telegram.org/bot{token}/getChatMemberCount?chat_id={tg_chat_id}")
+                    resp = await session.get(f"{settings.TELEGRAM_API_URL}/bot{token}/getChatMemberCount?chat_id={tg_chat_id}")
                     data = await resp.json()
                     if data.get("ok"):
                         subs = data.get("result", 0)

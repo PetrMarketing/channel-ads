@@ -36,7 +36,8 @@ _POST_COLS = "id, channel_id, title, message_text, file_path, file_type, telegra
 
 
 async def _get_owned_channel(tc: str, uid: int):
-    return await fetch_one("SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2", tc, uid)
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tc, uid, "content")
 
 
 async def _save_upload(file) -> tuple:
@@ -270,7 +271,7 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
                 tg_text = sanitize_html_for_telegram(message_text)
                 token = settings.TELEGRAM_BOT_TOKEN
                 if token:
-                    url = f"https://api.telegram.org/bot{token}/editMessageText"
+                    url = f"{settings.TELEGRAM_API_URL}/bot{token}/editMessageText"
                     payload = {"chat_id": channel["channel_id"], "message_id": int(existing_msg_id), "text": tg_text, "parse_mode": "HTML"}
                     async with aiohttp.ClientSession() as session:
                         resp = await session.post(url, json=payload)

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..middleware.auth import get_current_user
+from ..middleware.auth import get_current_user, get_channel_for_user
 from ..config import settings
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
 
@@ -389,10 +389,7 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
 
 @router.get("/{tracking_code}/status")
 async def get_billing_status(tracking_code: str, user=Depends(get_current_user)):
-    channel = await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
-        tracking_code, user["id"],
-    )
+    channel = await get_channel_for_user(tracking_code, user["id"])
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
@@ -544,10 +541,7 @@ async def get_payment_status(tracking_code: str, payment_id: str, user=Depends(g
 
 @router.get("/{tracking_code}/payments")
 async def list_payments(tracking_code: str, user=Depends(get_current_user)):
-    channel = await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
-        tracking_code, user["id"],
-    )
+    channel = await get_channel_for_user(tracking_code, user["id"])
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
@@ -652,9 +646,12 @@ async def add_staff(tracking_code: str, request: Request, user=Depends(get_curre
         raise HTTPException(status_code=400, detail="Укажите Telegram ID, MAX ID или username")
 
     target_user = None
-    # Try numeric ID first (telegram_id)
+    # Try PKid (internal user id) or platform IDs
     if identifier.isdigit():
-        target_user = await fetch_one("SELECT * FROM users WHERE telegram_id = $1", int(identifier))
+        # First try PKid (internal user id)
+        target_user = await fetch_one("SELECT * FROM users WHERE id = $1", int(identifier))
+        if not target_user:
+            target_user = await fetch_one("SELECT * FROM users WHERE telegram_id = $1", int(identifier))
         if not target_user:
             target_user = await fetch_one("SELECT * FROM users WHERE max_user_id = $1", identifier)
     else:
