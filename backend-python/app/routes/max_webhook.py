@@ -523,6 +523,45 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
     if payload.startswith("lm_"):
         await handle_lead_magnet(max_api, chat_id, max_user_id, "", first_name, payload)
         return
+    if payload.startswith("shoporder_"):
+        order_num = payload.replace("shoporder_", "")
+        order = await fetch_one(
+            "SELECT o.*, c.tracking_code FROM shop_orders o JOIN channels c ON c.id = o.channel_id WHERE o.order_number = $1",
+            order_num)
+        if order:
+            items = await fetch_all("SELECT product_name, quantity, price FROM shop_order_items WHERE order_id = $1", order["id"])
+            lines = [f"**Заказ {order_num}**\n"]
+            for it in items:
+                lines.append(f"  {it['product_name']} x{it['quantity']} - {float(it['price']) * it['quantity']:.0f} RUB")
+            lines.append(f"\nИтого: **{float(order['total']):.0f} RUB**")
+            lines.append("\nВы можете оплатить заказ или связаться с менеджером.")
+            # Get manager link
+            shop_s = await fetch_one("SELECT manager_user_id FROM shop_settings WHERE channel_id = $1", order["channel_id"])
+            mgr_link = ""
+            if shop_s and shop_s.get("manager_user_id"):
+                mgr = await fetch_one("SELECT username, max_user_id FROM users WHERE id = $1", shop_s["manager_user_id"])
+                if mgr:
+                    if mgr.get("username"):
+                        mgr_link = f"https://t.me/{mgr['username']}"
+                    elif mgr.get("max_user_id"):
+                        mgr_link = f"https://max.ru/id{mgr['max_user_id']}"
+            btns = []
+            if mgr_link:
+                btns.append([{"type": "link", "text": "Связаться с менеджером", "url": mgr_link}])
+            await _send_to_chat(max_api, chat_id, "\n".join(lines), buttons=btns if btns else None)
+            # Notify manager
+            if shop_s and shop_s.get("manager_user_id"):
+                try:
+                    from ..services.messenger import send_to_user
+                    mgr_user = await fetch_one("SELECT max_user_id FROM users WHERE id = $1", shop_s["manager_user_id"])
+                    if mgr_user and mgr_user.get("max_user_id"):
+                        admin_text = f"**Новый заказ {order_num}**\n\nКлиент: {order.get('client_name', '')} {order.get('client_phone', '')}\n" + "\n".join(lines[1:])
+                        await send_to_user(mgr_user["max_user_id"], "max", admin_text)
+                except Exception as e:
+                    print(f"[Shop] Manager notification error: {e}")
+        else:
+            await _send_to_chat(max_api, chat_id, "Заказ не найден.")
+        return
     if payload.startswith("shop_"):
         tracking_code = payload.replace("shop_", "")
         app_url = settings.APP_URL

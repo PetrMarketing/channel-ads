@@ -14,6 +14,7 @@ import BillingPage from './pages/BillingPage';
 import StaffPage from './pages/StaffPage';
 import PaidChatsPage from './pages/PaidChatsPage';
 import ServicesPage from './pages/ServicesPage';
+import ShopPage from './pages/ShopPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import CommentsPage from './pages/CommentsPage';
 import OrdPage from './pages/OrdPage';
@@ -97,6 +98,7 @@ export default function App() {
         <Route path="staff" element={<StaffPage />} />
         <Route path="paid-chats" element={<PaidChatsPage />} />
         <Route path="services" element={<ServicesPage />} />
+        <Route path="shop" element={<ShopPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="comments" element={<CommentsPage />} />
         <Route path="ord" element={<OrdPage />} />

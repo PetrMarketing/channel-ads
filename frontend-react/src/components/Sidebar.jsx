@@ -97,6 +97,13 @@ const icons = {
       <circle cx="12" cy="15" r="2"/>
     </svg>
   ),
+  shop: (
+    <svg className="sidebar-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <path d="M16 10a4 4 0 01-8 0"/>
+    </svg>
+  ),
   analytics: (
     <svg className="sidebar-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" y1="20" x2="18" y2="10"/>
@@ -137,6 +144,7 @@ const menuItems = [
     items: [
       { path: '/paid-chats', label: 'Платные чаты', icon: icons.paidChats },
       { path: '/services', label: 'Услуги и запись', icon: icons.services },
+      { path: '/shop', label: 'Магазин', icon: icons.shop },
     ],
   },
   { path: '/staff', label: 'Сотрудники', icon: icons.staff, standalone: true },

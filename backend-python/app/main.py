@@ -30,7 +30,7 @@ from .routes import (
     funnels, content, giveaways, notifications, payments,
     max_routes, telegram_bot, max_webhook,
     admin, paid_chats, paid_chat_payments, services, ord, referrals, landings,
-    metrics,
+    metrics, shop,
 )
 
 
@@ -146,6 +146,7 @@ app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(paid_chats.router, prefix="/api/paid-chats", tags=["paid-chats"])
 app.include_router(services.router, prefix="/api/services", tags=["services"])
+app.include_router(shop.router, prefix="/api/shop", tags=["shop"])
 app.include_router(ord.router, prefix="/api/ord", tags=["ord"])
 app.include_router(referrals.router, prefix="/api/referrals", tags=["referrals"])
 app.include_router(landings.router, tags=["landings"])
@@ -163,6 +164,7 @@ app.include_router(max_webhook.router, prefix="/webhook/max", tags=["max-webhook
 app.include_router(billing.public_router, prefix="/api/billing/public", tags=["billing-public"])
 app.include_router(billing.staff_invite_router, prefix="/api/staff", tags=["staff-invites"])
 app.include_router(services.public_router, prefix="/api/services/public", tags=["services-public"])
+app.include_router(shop.public_router, prefix="/api/shop/public", tags=["shop-public"])
 app.include_router(comments.public_router, prefix="/api/comments/public", tags=["comments-public"])
 app.include_router(paid_chat_payments.router, prefix="/api/paid-chat-pay", tags=["paid-chat-pay"])
 
@@ -299,6 +301,9 @@ async def miniapp_page(request: Request, code: str = ""):
     if code.startswith("book_"):
         from fastapi.responses import RedirectResponse
         return RedirectResponse(f"/booking/{code}", status_code=302)
+    # Handle shop_ prefix — render shop miniapp directly (no redirect to preserve WebApp context)
+    if code.startswith("shop_"):
+        return await shop_app_page(request, code)
     # Handle paid_ prefix — redirect to payment page
     if code.startswith("paid_"):
         tc_val = code[5:]
@@ -744,11 +749,7 @@ async def booking_page(request: Request, params: str = ""):
 <html><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<script>
-var _s=document.createElement('script');_s.src='https://st.max.ru/js/max-web-app.js';
-_s.onload=function(){{try{{window.WebApp.ready()}}catch(e){{}}}};
-document.head.appendChild(_s);
-</script>
+<script src="https://st.max.ru/js/max-web-app.js"></script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#1f2937}}
@@ -829,11 +830,10 @@ async function init() {{
   try {{
     if (window.WebApp) {{
       try {{ window.WebApp.ready(); }} catch(e) {{}}
-      // Get user info from MAX WebApp
-      const u = window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user;
+      var u = window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user;
       if (u) {{
         state.userName = ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
-        state.userId = u.user_id || u.id || '';
+        state.userId = u.id || '';
       }}
     }}
     const [catData, appData] = await Promise.all([api('/catalog'), api('/appearance')]);
@@ -1156,6 +1156,398 @@ async function submitBooking() {{
 function resetApp() {{
   state = {{step:'services',services:state.services,specialists:[],selectedService:null,selectedSpecialist:null,selectedDate:'',selectedSlot:null}};
   render();
+}}
+
+init();
+</script>
+</body></html>"""
+    return HTMLResponse(html)
+
+
+@app.get("/shop-app")
+@app.get("/shop-app/{params}")
+async def shop_app_page(request: Request, params: str = ""):
+    """Shop miniapp — standalone SPA for online shop."""
+    from fastapi.responses import HTMLResponse
+    if not params:
+        params = request.query_params.get("WebAppStartParam", "") or request.query_params.get("startapp", "") or ""
+    tc = ""
+    if params.startswith("shop_"):
+        tc = params[5:]
+    elif params:
+        tc = params
+
+    html = f"""<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<script src="https://st.max.ru/js/max-web-app.js"></script>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#1f2937}}
+.app{{max-width:480px;margin:0 auto;min-height:100vh;background:#fff}}
+.header{{padding:14px 20px;text-align:center;color:#fff;position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px}}
+.header h1{{font-size:1.1rem;font-weight:600;flex:1;text-align:center}}
+.header .back{{background:none;border:none;color:#fff;font-size:1.3rem;cursor:pointer;padding:4px}}
+.header .cart-icon{{position:relative;background:none;border:none;color:#fff;font-size:1.3rem;cursor:pointer}}
+.header .cart-badge{{position:absolute;top:-6px;right:-8px;background:#ef4444;color:#fff;font-size:0.65rem;padding:1px 5px;border-radius:10px;font-weight:700}}
+.banner{{width:100%;height:160px;object-fit:cover}}
+.section{{padding:12px 16px}}
+.section h2{{font-size:1rem;font-weight:600;margin-bottom:10px;color:#374151}}
+.hscroll{{display:flex;gap:10px;overflow-x:auto;padding:4px 0;-webkit-overflow-scrolling:touch}}
+.hscroll::-webkit-scrollbar{{display:none}}
+.pcard{{flex-shrink:0;width:140px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;cursor:pointer}}
+.pcard img{{width:100%;height:100px;object-fit:cover}}
+.pcard .info{{padding:8px}}
+.pcard .pname{{font-size:0.82rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.pcard .pprice{{font-size:0.85rem;font-weight:700;color:var(--pc,#4F46E5);margin-top:2px}}
+.cat-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}}
+.cat-card{{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;text-align:center;cursor:pointer;transition:all .15s}}
+.cat-card:hover{{border-color:var(--pc,#4F46E5);box-shadow:0 0 0 2px rgba(79,70,229,0.12)}}
+.cat-card .cname{{font-weight:600;font-size:0.9rem}}
+.cat-card .ccnt{{font-size:0.78rem;color:#6b7280;margin-top:2px}}
+.prod-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}}
+.pgcard{{background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;cursor:pointer}}
+.pgcard img{{width:100%;height:120px;object-fit:cover}}
+.pgcard .info{{padding:8px}}
+.pgcard .pname{{font-size:0.85rem;font-weight:500}}
+.pgcard .pprice{{font-size:0.9rem;font-weight:700;color:var(--pc,#4F46E5);margin-top:2px}}
+.pgcard .old-price{{font-size:0.78rem;color:#9ca3af;text-decoration:line-through;margin-left:4px}}
+.filter-bar{{display:flex;gap:8px;overflow-x:auto;padding:4px 0;margin-bottom:12px;-webkit-overflow-scrolling:touch}}
+.filter-bar::-webkit-scrollbar{{display:none}}
+.fbtn{{flex-shrink:0;padding:6px 14px;border:1px solid #e5e7eb;border-radius:20px;background:#fff;cursor:pointer;font-size:0.82rem;transition:all .15s}}
+.fbtn.active{{background:var(--pc,#4F46E5);color:#fff;border-color:var(--pc,#4F46E5)}}
+.product-img{{width:100%;max-height:300px;object-fit:cover;border-radius:0 0 16px 16px}}
+.product-info{{padding:16px}}
+.product-info h2{{font-size:1.2rem;margin-bottom:6px}}
+.price-row{{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}}
+.price-row .cur{{font-size:1.3rem;font-weight:700;color:var(--pc,#4F46E5)}}
+.price-row .old{{font-size:0.95rem;color:#9ca3af;text-decoration:line-through}}
+.desc{{font-size:0.88rem;color:#6b7280;margin-bottom:12px;line-height:1.5}}
+.variants{{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}}
+.vbtn{{padding:6px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;font-size:0.85rem}}
+.vbtn.active{{background:var(--pc,#4F46E5);color:#fff;border-color:var(--pc,#4F46E5)}}
+.qty-row{{display:flex;align-items:center;gap:12px;margin-bottom:14px}}
+.qty-btn{{width:36px;height:36px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:1.2rem;cursor:pointer;display:flex;align-items:center;justify-content:center}}
+.qty-val{{font-size:1.1rem;font-weight:600;min-width:20px;text-align:center}}
+.btn{{display:block;width:100%;padding:14px;border:none;border-radius:12px;font-size:1rem;font-weight:600;cursor:pointer;color:#fff;transition:opacity .15s}}
+.btn:disabled{{opacity:0.5}}
+.cart-item{{display:flex;gap:10px;padding:12px 0;border-bottom:1px solid #f3f4f6}}
+.cart-item img{{width:60px;height:60px;object-fit:cover;border-radius:8px;flex-shrink:0}}
+.ci-info{{flex:1}}
+.ci-info .ciname{{font-size:0.88rem;font-weight:500}}
+.ci-info .civar{{font-size:0.78rem;color:#6b7280}}
+.ci-info .ciprice{{font-size:0.9rem;font-weight:600;color:var(--pc,#4F46E5);margin-top:2px}}
+.ci-qty{{display:flex;align-items:center;gap:6px;margin-top:4px}}
+.ci-qty button{{width:26px;height:26px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:0.9rem}}
+.ci-remove{{background:none;border:none;color:#ef4444;font-size:0.8rem;cursor:pointer;margin-top:4px}}
+.promo-row{{display:flex;gap:8px;margin:12px 0}}
+.promo-row input{{flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.9rem}}
+.promo-row button{{padding:10px 16px;border:none;border-radius:8px;background:var(--pc,#4F46E5);color:#fff;font-size:0.85rem;cursor:pointer}}
+.totals{{margin:12px 0;font-size:0.9rem}}
+.totals .row{{display:flex;justify-content:space-between;padding:4px 0}}
+.totals .total{{font-weight:700;font-size:1.05rem;border-top:1px solid #e5e7eb;padding-top:8px;margin-top:4px}}
+.form-label{{display:block;font-size:0.85rem;font-weight:500;margin-bottom:4px;color:#374151}}
+.form-input{{width:100%;padding:10px 14px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.95rem;margin-bottom:10px;outline:none}}
+.form-input:focus{{border-color:var(--pc,#4F46E5)}}
+.dm-list{{margin-bottom:12px}}
+.dm-item{{padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px;cursor:pointer;display:flex;justify-content:space-between}}
+.dm-item.active{{border-color:var(--pc,#4F46E5);background:rgba(79,70,229,0.04)}}
+.success-wrap{{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;padding:40px 20px;text-align:center}}
+.success-wrap .check{{width:64px;height:64px;border-radius:50%;background:var(--pc,#4F46E5);display:flex;align-items:center;justify-content:center;margin-bottom:16px}}
+.success-wrap .check svg{{width:32px;height:32px;stroke:#fff;stroke-width:3;fill:none}}
+.success-wrap h2{{margin-bottom:8px}}
+.success-wrap p{{color:#6b7280;font-size:0.9rem}}
+.empty{{text-align:center;padding:40px 20px;color:#9ca3af}}
+.loading{{text-align:center;padding:40px;color:#9ca3af}}
+</style>
+</head><body>
+<div class="app" id="app"><div class="loading">Загрузка...</div></div>
+<script>
+var TC = '{tc}';
+var API = '/api/shop/public';
+var uid = '';
+
+function resolveUid() {{
+  try {{
+    if (window.WebApp && window.WebApp.initDataUnsafe) {{
+      var u = window.WebApp.initDataUnsafe.user;
+      if (u && u.id) uid = String(u.id);
+      if (u) S.userName = ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
+    }}
+  }} catch(e) {{}}
+  if (!uid) {{ uid = localStorage.getItem('shop_uid'); if (!uid) {{ uid = 'anon_' + Math.random().toString(36).slice(2,10); localStorage.setItem('shop_uid', uid); }} }}
+}}
+
+var S = {{
+  screen: 'home', cat: null, prodId: null, product: null,
+  categories: [], products: [], cartItems: [], appearance: {{}}, deliveryMethods: [],
+  filterCat: null, variant: null, qty: 1,
+  promo: '', discount: 0, promoApplied: false,
+  orderNum: '', dmId: null, userName: ''
+}};
+
+var $=function(id){{return document.getElementById(id)}};
+var app=$('app');
+
+function fmt(p) {{ return parseFloat(p||0).toLocaleString('ru-RU') + ' &#8381;'; }}
+function img(url) {{ return url || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23f3f4f6%22 width=%22200%22 height=%22200%22/><text x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%239ca3af%22 font-size=%2214%22>No image</text></svg>'; }}
+
+async function api(path, opts) {{
+  const r = await fetch(API + '/' + TC + path, opts);
+  return r.json();
+}}
+
+async function init() {{
+  try {{ if (window.WebApp) window.WebApp.ready(); }} catch(e) {{}}
+  resolveUid();
+  try {{
+    const [catData, appData] = await Promise.all([api('/catalog'), api('/appearance')]);
+    S.categories = catData.categories || [];
+    S.products = catData.products || [];
+    S.appearance = appData.settings || {{}};
+    document.title = appData.channel_title || 'Shop';
+    S.privacyUrl = appData.privacy_policy_url || '';
+    api('/track-visit', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{user_identifier:uid}})}}).catch(()=>{{}});
+    await loadCart();
+    render();
+  }} catch(e) {{ app.innerHTML = '<div class="empty">Ошибка: ' + e.message + '</div>'; }}
+}}
+
+async function loadCart() {{
+  try {{ const d = await api('/cart/' + uid); S.cartItems = d.items || []; }} catch(e) {{ S.cartItems = []; }}
+}}
+
+function pc() {{ return S.appearance.primary_color || '#4F46E5'; }}
+
+function cartCount() {{ return S.cartItems.reduce((s,i)=>s+i.quantity, 0); }}
+
+function headerHtml(title, back) {{
+  return `<div class="header" style="background:${{pc()}}">
+    ${{back ? '<button class="back" onclick="goBack()">&#8592;</button>' : '<div style="width:28px"></div>'}}
+    <h1>${{title}}</h1>
+    <button class="cart-icon" onclick="go(\'cart\')">
+      &#128722;${{cartCount() ? '<span class="cart-badge">' + cartCount() + '</span>' : ''}}
+    </button>
+  </div>`;
+}}
+
+function go(screen, data) {{
+  if (screen === 'catalog') {{ S.filterCat = data || null; }}
+  if (screen === 'product') {{ S.prodId = data; S.product = null; S.variant = null; S.qty = 1; }}
+  S.screen = screen;
+  render();
+  if (screen === 'product') loadProduct();
+  window.scrollTo(0,0);
+}}
+
+function goBack() {{
+  if (S.screen === 'product') go('catalog');
+  else if (S.screen === 'checkout') go('cart');
+  else if (S.screen === 'cart' || S.screen === 'catalog') go('home');
+  else go('home');
+}}
+
+async function loadProduct() {{
+  try {{
+    const d = await api('/product/' + S.prodId);
+    S.product = d.product || d;
+    if (S.product.variants?.length) S.variant = S.product.variants[0];
+    render();
+  }} catch(e) {{}}
+}}
+
+async function addToCart() {{
+  try {{
+    await api('/cart', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{
+      user_identifier: uid, product_id: S.prodId,
+      variant_id: S.variant?.id || null, quantity: S.qty
+    }})}});
+    await loadCart();
+    render();
+    // Animate cart badge
+    const ci = document.querySelector('.cart-icon');
+    if (ci) {{
+      ci.style.transition = 'transform 0.15s';
+      ci.style.transform = 'scale(1.5)';
+      setTimeout(() => {{ ci.style.transform = 'scale(1)'; }}, 200);
+    }}
+  }} catch(e) {{ alert('Ошибка добавления'); }}
+}}
+
+async function removeItem(itemId) {{
+  try {{ await api('/cart/' + uid + '/' + itemId, {{method:'DELETE'}}); await loadCart(); render(); }} catch(e) {{}}
+}}
+
+async function applyPromo() {{
+  if (!S.promo) return;
+  try {{
+    const sub = S.cartItems.reduce((s,i)=>s + (parseFloat(i.price)||0)*i.quantity, 0);
+    const d = await api('/apply-promo', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{code:S.promo, subtotal:sub}})}});
+    if (d.discount) {{ S.discount = d.discount; S.promoApplied = true; }}
+    else {{ alert(d.detail || d.message || 'Промокод не найден'); }}
+    render();
+  }} catch(e) {{}}
+}}
+
+async function loadDM() {{
+  try {{ const d = await api('/delivery-methods'); S.deliveryMethods = d.methods || d || []; }} catch(e) {{}}
+}}
+
+function render() {{
+  const s = S.screen;
+  if (s === 'home') renderHome();
+  else if (s === 'catalog') renderCatalog();
+  else if (s === 'product') renderProduct();
+  else if (s === 'cart') renderCart();
+  else if (s === 'checkout') renderCheckout();
+  else if (s === 'success') renderSuccess();
+  document.documentElement.style.setProperty('--pc', pc());
+}}
+
+function renderHome() {{
+  const hits = S.products.filter(p=>p.is_hit).slice(0,10);
+  const newest = [...S.products].sort((a,b)=>(b.id||0)-(a.id||0)).slice(0,10);
+  let h = headerHtml(S.appearance.shop_name || 'Магазин', false);
+  if (S.appearance.banner_url) h += `<img class="banner" src="${{S.appearance.banner_url}}">`;
+  if (hits.length) {{
+    h += `<div class="section"><h2>Хиты</h2><div class="hscroll">`;
+    hits.forEach(p => {{ h += `<div class="pcard" onclick="go('product',${{p.id}})"><img src="${{img(p.image_url)}}"><div class="info"><div class="pname">${{p.name}}</div><div class="pprice">${{fmt(p.price)}}</div></div></div>`; }});
+    h += `</div></div>`;
+  }}
+  if (newest.length) {{
+    h += `<div class="section"><h2>Новинки</h2><div class="hscroll">`;
+    newest.forEach(p => {{ h += `<div class="pcard" onclick="go('product',${{p.id}})"><img src="${{img(p.image_url)}}"><div class="info"><div class="pname">${{p.name}}</div><div class="pprice">${{fmt(p.price)}}</div></div></div>`; }});
+    h += `</div></div>`;
+  }}
+  if (S.categories.length) {{
+    h += `<div class="section"><h2>Категории</h2><div class="cat-grid">`;
+    S.categories.forEach(c => {{
+      const cnt = S.products.filter(p=>p.category_id===c.id).length;
+      h += `<div class="cat-card" onclick="go('catalog',${{c.id}})"><div class="cname">${{c.name}}</div><div class="ccnt">${{cnt}} товаров</div></div>`;
+    }});
+    h += `</div></div>`;
+  }}
+  h += `<div class="section"><button class="btn" style="background:${{pc()}}" onclick="go('catalog')">Весь каталог</button></div>`;
+  app.innerHTML = h;
+}}
+
+function renderCatalog() {{
+  let prods = S.filterCat ? S.products.filter(p=>p.category_id===S.filterCat) : S.products;
+  let h = headerHtml('Каталог', true);
+  h += `<div class="section"><div class="filter-bar">`;
+  h += `<button class="fbtn ${{!S.filterCat?'active':''}}" onclick="S.filterCat=null;render()">Все</button>`;
+  S.categories.forEach(c => {{
+    h += `<button class="fbtn ${{S.filterCat===c.id?'active':''}}" onclick="S.filterCat=${{c.id}};render()">${{c.name}}</button>`;
+  }});
+  h += `</div><div class="prod-grid">`;
+  prods.forEach(p => {{
+    h += `<div class="pgcard" onclick="go('product',${{p.id}})"><img src="${{img(p.image_url)}}"><div class="info"><div class="pname">${{p.name}}</div><div class="pprice">${{fmt(p.price)}}${{p.old_price ? '<span class="old-price">'+fmt(p.old_price)+'</span>' : ''}}</div></div></div>`;
+  }});
+  if (!prods.length) h += `<div class="empty">Товары не найдены</div>`;
+  h += `</div></div>`;
+  app.innerHTML = h;
+}}
+
+function renderProduct() {{
+  if (!S.product) {{ app.innerHTML = headerHtml('Товар', true) + '<div class="loading">Загрузка...</div>'; return; }}
+  const p = S.product;
+  let h = headerHtml(p.name, true);
+  h += `<img class="product-img" src="${{img(p.image_url)}}">`;
+  h += `<div class="product-info"><h2>${{p.name}}</h2>`;
+  h += `<div class="price-row"><span class="cur">${{fmt(S.variant?.price || p.price)}}</span>`;
+  if (p.old_price) h += `<span class="old">${{fmt(p.old_price)}}</span>`;
+  h += `</div>`;
+  if (p.description) h += `<div class="desc">${{p.description}}</div>`;
+  if (p.variants?.length > 1) {{
+    h += `<div class="variants">`;
+    p.variants.forEach(v => {{
+      h += `<button class="vbtn ${{S.variant?.id===v.id?'active':''}}" onclick="S.variant=S.product.variants.find(x=>x.id===${{v.id}});render()">${{v.name}}</button>`;
+    }});
+    h += `</div>`;
+  }}
+  h += `<div class="qty-row"><button class="qty-btn" onclick="if(S.qty>1)S.qty--;render()">−</button><span class="qty-val">${{S.qty}}</span><button class="qty-btn" onclick="S.qty++;render()">+</button></div>`;
+  h += `<button class="btn" style="background:${{pc()}}" onclick="addToCart()">Добавить в корзину</button></div>`;
+  app.innerHTML = h;
+}}
+
+function renderCart() {{
+  let h = headerHtml('Корзина', true);
+  if (!S.cartItems.length) {{
+    h += `<div class="empty"><p>Корзина пуста</p><br><button class="btn" style="background:${{pc()}};max-width:200px;margin:0 auto" onclick="go('home')">В магазин</button></div>`;
+    app.innerHTML = h; return;
+  }}
+  h += `<div class="section">`;
+  S.cartItems.forEach(i => {{
+    h += `<div class="cart-item"><img src="${{img(i.image_url || i.product_image_url)}}"><div class="ci-info"><div class="ciname">${{i.product_name || i.name}}</div>`;
+    if (i.variant_name) h += `<div class="civar">${{i.variant_name}}</div>`;
+    h += `<div class="ciprice">${{fmt(i.price)}} × ${{i.quantity}}</div>`;
+    h += `<button class="ci-remove" onclick="removeItem(${{i.id}})">Удалить</button></div></div>`;
+  }});
+  const sub = S.cartItems.reduce((s,i)=>s+(parseFloat(i.price)||0)*i.quantity, 0);
+  h += `<div class="promo-row"><input id="promo" placeholder="Промокод" value="${{S.promo}}" onchange="S.promo=this.value"><button onclick="applyPromo()">Применить</button></div>`;
+  h += `<div class="totals"><div class="row"><span>Подытог</span><span>${{fmt(sub)}}</span></div>`;
+  if (S.discount) h += `<div class="row"><span>Скидка</span><span>-${{fmt(S.discount)}}</span></div>`;
+  h += `<div class="row total"><span>Итого</span><span>${{fmt(Math.max(0, sub - S.discount))}}</span></div></div>`;
+  h += `<button class="btn" style="background:${{pc()}}" onclick="goCheckout()">Оформить</button></div>`;
+  app.innerHTML = h;
+}}
+
+async function goCheckout() {{ await loadDM(); S.screen = 'checkout'; render(); window.scrollTo(0,0); }}
+
+function renderCheckout() {{
+  let h = headerHtml('Оформление', true);
+  h += `<div class="section">`;
+  h += '<label class="form-label">Имя</label><input class="form-input" id="cname" placeholder="Ваше имя" value="' + (S.userName || '') + '">';
+  h += `<label class="form-label">Телефон</label><input class="form-input" id="cphone" type="tel" placeholder="+7...">`;
+  h += `<label class="form-label">Адрес</label><input class="form-input" id="caddr" placeholder="Город, улица, дом">`;
+  if (S.deliveryMethods.length) {{
+    h += `<label class="form-label">Доставка</label><div class="dm-list">`;
+    S.deliveryMethods.forEach(m => {{
+      h += `<div class="dm-item ${{S.dmId===m.id?'active':''}}" onclick="S.dmId=${{m.id}};render()"><span>${{m.name}}</span><span>${{m.price ? fmt(m.price) : 'Бесплатно'}}</span></div>`;
+    }});
+    h += `</div>`;
+  }}
+  if (S.privacyUrl) h += `<p style="font-size:0.78rem;color:#9ca3af;margin:8px 0">Оформляя заказ, вы соглашаетесь с <a href="${{S.privacyUrl}}" target="_blank">политикой конфиденциальности</a></p>`;
+  h += `<button class="btn" style="background:${{pc()}};margin-top:8px" onclick="submitOrder()">Оплатить</button></div>`;
+  app.innerHTML = h;
+}}
+
+async function submitOrder() {{
+  const name = $('cname')?.value || '';
+  const phone = $('cphone')?.value || '';
+  const addr = $('caddr')?.value || '';
+  if (!name || !phone) {{ alert('Заполните имя и телефон'); return; }}
+  const btn = app.querySelector('.btn:last-child');
+  if (btn) {{ btn.disabled = true; btn.textContent = 'Оформление...'; }}
+  try {{
+    const d = await api('/checkout', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{
+      user_identifier: uid, client_name: name, client_phone: phone,
+      client_email: '', client_address: addr,
+      delivery_method_id: S.dmId, promo_code: S.promoApplied ? S.promo : '',
+      notes: ''
+    }})}});
+    if (d.order_id || d.success) {{
+      S.orderNum = d.order_number || d.order_id || '';
+      S.cartItems = []; S.promo = ''; S.discount = 0; S.promoApplied = false;
+      S.screen = 'success'; render();
+    }} else {{ alert(d.detail || 'Ошибка оформления'); if(btn){{ btn.disabled=false; btn.textContent='Оплатить'; }} }}
+  }} catch(e) {{ alert('Ошибка: ' + e.message); if(btn){{ btn.disabled=false; btn.textContent='Оплатить'; }} }}
+}}
+
+function resetShop() {{ S.screen='home'; S.promo=''; S.discount=0; render(); }}
+
+function renderSuccess() {{
+  var botUrl = 'https://max.ru/{settings.MAX_BOT_USERNAME or "id575307462228_bot"}?start=shoporder_' + encodeURIComponent(S.orderNum);
+  app.innerHTML = '<div class="success-wrap">' +
+    '<div class="check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>' +
+    '<h2>Заказ оформлен!</h2>' +
+    '<p>Заказ ' + (S.orderNum ? '&#8470; ' + S.orderNum : '') + '</p>' +
+    '<p style="font-size:0.85rem;color:#6b7280;margin-top:8px">Напишите боту для оплаты и связи с менеджером</p>' +
+    '<a href="' + botUrl + '" style="display:block;text-decoration:none;margin-top:20px">' +
+    '<div class="btn" style="background:' + pc() + ';max-width:260px;width:100%;margin:0 auto">Написать боту</div></a>' +
+    '<div class="btn" style="background:transparent;color:' + pc() + ';border:1px solid ' + pc() + ';max-width:260px;width:100%;margin:10px auto 0;cursor:pointer" onclick="resetShop()">Продолжить покупки</div>' +
+    '</div>';
 }}
 
 init();
