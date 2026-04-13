@@ -44,6 +44,7 @@ async def create_lead_magnet(
     message_text: str = Form(""),
     attach_type: Optional[str] = Form(None),
     subscribers_only: Optional[str] = Form("false"),
+    show_back_button: Optional[str] = Form("true"),
     file: Optional[UploadFile] = File(None),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -59,11 +60,12 @@ async def create_lead_magnet(
         file_path, file_type, file_data = await _save_upload(file)
 
     subs_only = subscribers_only in ("true", "1", "on", True)
+    back_btn = show_back_button in ("true", "1", "on", True)
     lm_id = await execute_returning_id(
-        """INSERT INTO lead_magnets (channel_id, code, title, message_text, file_path, file_type, file_data, attach_type, subscribers_only)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id""",
+        """INSERT INTO lead_magnets (channel_id, code, title, message_text, file_path, file_type, file_data, attach_type, subscribers_only, show_back_button)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
         int(channel["id"]), code, title, message_text or "", file_path, file_type, file_data,
-        attach_type or None, subs_only,
+        attach_type or None, subs_only, back_btn,
     )
     magnet = await fetch_one(f"SELECT {_LM_COLS} FROM lead_magnets WHERE id = $1", lm_id)
     return {"success": True, "leadMagnet": magnet}
@@ -77,6 +79,7 @@ async def update_lead_magnet(
     message_text: str = Form(""),
     attach_type: Optional[str] = Form(None),
     subscribers_only: Optional[str] = Form("false"),
+    show_back_button: Optional[str] = Form("true"),
     file: Optional[UploadFile] = File(None),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -89,16 +92,17 @@ async def update_lead_magnet(
         raise HTTPException(status_code=404, detail="Лид-магнит не найден")
 
     subs_only = subscribers_only in ("true", "1", "on", True)
+    back_btn = show_back_button in ("true", "1", "on", True)
     if file and file.filename:
         file_path, file_type, file_data = await _save_upload(file)
         await execute(
-            "UPDATE lead_magnets SET title=$1, message_text=$2, file_path=$3, file_type=$4, file_data=$5, attach_type=$6, subscribers_only=$7, telegram_file_id=NULL, max_file_token=NULL WHERE id=$8",
-            title, message_text or "", file_path, file_type, file_data, attach_type or None, subs_only, lm_id,
+            "UPDATE lead_magnets SET title=$1, message_text=$2, file_path=$3, file_type=$4, file_data=$5, attach_type=$6, subscribers_only=$7, show_back_button=$8, telegram_file_id=NULL, max_file_token=NULL WHERE id=$9",
+            title, message_text or "", file_path, file_type, file_data, attach_type or None, subs_only, back_btn, lm_id,
         )
     else:
         await execute(
-            "UPDATE lead_magnets SET title=$1, message_text=$2, attach_type=$3, subscribers_only=$4 WHERE id=$5",
-            title, message_text or "", attach_type or None, subs_only, lm_id,
+            "UPDATE lead_magnets SET title=$1, message_text=$2, attach_type=$3, subscribers_only=$4, show_back_button=$5 WHERE id=$6",
+            title, message_text or "", attach_type or None, subs_only, back_btn, lm_id,
         )
 
     magnet = await fetch_one(f"SELECT {_LM_COLS} FROM lead_magnets WHERE id = $1", lm_id)

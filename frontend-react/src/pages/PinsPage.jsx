@@ -26,7 +26,7 @@ export default function PinsPage() {
   const [pinForm, setPinForm] = useState({ title: '', message_text: '', lead_magnet_id: '', inline_buttons: '', attach_type: '' });
   const [pinFile, setPinFile] = useState(null);
   const [removeExistingFile, setRemoveExistingFile] = useState(false);
-  const [lmForm, setLmForm] = useState({ title: '', message_text: '', attach_type: '', subscribers_only: false });
+  const [lmForm, setLmForm] = useState({ title: '', message_text: '', attach_type: '', subscribers_only: false, show_back_button: true });
   const [lmFile, setLmFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -193,14 +193,14 @@ export default function PinsPage() {
   // Lead magnet CRUD
   const openCreateLm = () => {
     setEditingLm(null);
-    setLmForm({ title: '', message_text: '', attach_type: '', subscribers_only: false });
+    setLmForm({ title: '', message_text: '', attach_type: '', subscribers_only: false, show_back_button: true });
     setLmFile(null);
     setShowLmModal(true);
   };
 
   const openEditLm = (lm) => {
     setEditingLm(lm);
-    setLmForm({ title: lm.title || '', message_text: lm.message_text || '', attach_type: lm.attach_type || '', subscribers_only: !!lm.subscribers_only });
+    setLmForm({ title: lm.title || '', message_text: lm.message_text || '', attach_type: lm.attach_type || '', subscribers_only: !!lm.subscribers_only, show_back_button: lm.show_back_button !== false });
     setLmFile(null);
     setShowLmModal(true);
   };
@@ -215,6 +215,7 @@ export default function PinsPage() {
       formData.append('message_text', lmForm.message_text);
       if (lmForm.attach_type) formData.append('attach_type', lmForm.attach_type);
       formData.append('subscribers_only', lmForm.subscribers_only ? 'true' : 'false');
+      formData.append('show_back_button', lmForm.show_back_button ? 'true' : 'false');
       if (lmFile) formData.append('file', lmFile);
 
       const progressCb = lmFile ? (p) => setUploadProgress(p) : null;
@@ -440,6 +441,7 @@ export default function PinsPage() {
                 placeholder="Текст закреплённого сообщения..."
                 rows={5}
                 showEmoji={true}
+                hasFile={!!(pinFile || (!removeExistingFile && editingPin?.file_path))}
               />
             </div>
             <div>
@@ -564,6 +566,7 @@ export default function PinsPage() {
                 placeholder="Вот ваш гайд! Скачайте файл ниже."
                 rows={3}
                 showEmoji={true}
+                hasFile={!!(lmFile || editingLm?.file_path)}
               />
             </div>
             <div>
@@ -591,6 +594,11 @@ export default function PinsPage() {
               <input type="checkbox" checked={lmForm.subscribers_only}
                 onChange={e => setLmForm(p => ({ ...p, subscribers_only: e.target.checked }))} />
               Выдавать только подписчикам канала
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.9rem' }}>
+              <input type="checkbox" checked={lmForm.show_back_button}
+                onChange={e => setLmForm(p => ({ ...p, show_back_button: e.target.checked }))} />
+              Кнопка «Вернуться в канал»
             </label>
             <MessagePreview
               messageText={lmForm.message_text}

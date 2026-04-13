@@ -340,6 +340,15 @@ export default function PaidChatPayPage() {
           </div>
         )}
 
+        {info?.privacy_policy_url && (
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #888)', textAlign: 'center', marginTop: 12 }}>
+            Нажимая «Оплатить», вы соглашаетесь с{' '}
+            <a href={info.privacy_policy_url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary, #4361ee)' }}>
+              политикой обработки персональных данных
+            </a>
+          </p>
+        )}
+
         <button
           onClick={handlePay}
           disabled={paying || !selectedPlan}

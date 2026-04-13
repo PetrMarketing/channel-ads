@@ -206,21 +206,35 @@ async def handle_lead_magnet(chat_id: int, tg_user: dict, code: str):
     # Track if we created a temp file so we can clean it up
     _tmp_file = file_path if (not file_id and file_path and file_data and file_path != lm.get("file_path")) else None
 
+    # Build "back to channel" button if enabled
+    back_markup = None
+    if lm.get("show_back_button", True):
+        channel_username = lm.get("channel_username")
+        if channel_username:
+            back_markup = {"inline_keyboard": [[{"text": "↩️ Вернуться в канал", "url": f"https://t.me/{channel_username}"}]]}
+        else:
+            tg_channel_id = lm.get("tg_channel_id")
+            if tg_channel_id:
+                back_markup = {"inline_keyboard": [[{"text": "↩️ Вернуться в канал", "url": f"https://t.me/c/{str(tg_channel_id)[4:]}"}]]}
+
     if file_id or file_path:
         source = file_id or file_path
         # Use messenger.py functions that handle both file_id (JSON) and local files (FormData)
         result = None
         try:
             if lm_attach_type == "photo":
-                result = await send_telegram_photo(chat_id, source, caption=text)
+                result = await send_telegram_photo(chat_id, source, caption=text, reply_markup=back_markup)
             elif lm_attach_type == "video":
-                result = await send_telegram_video(chat_id, source, caption=text)
+                result = await send_telegram_video(chat_id, source, caption=text, reply_markup=back_markup)
             elif lm_attach_type == "voice":
-                result = await send_telegram_voice(chat_id, source, caption=text)
+                result = await send_telegram_voice(chat_id, source, caption=text, reply_markup=back_markup)
             elif lm_attach_type == "video_note":
                 result = await send_telegram_video_note(chat_id, source)
+                # video_note doesn't support caption/markup, send button separately
+                if back_markup:
+                    await _send_message(chat_id, "↩️ Вернуться в канал:", reply_markup=back_markup)
             else:
-                result = await send_telegram_document(chat_id, source, caption=text)
+                result = await send_telegram_document(chat_id, source, caption=text, reply_markup=back_markup)
         except Exception as e:
             print(f"[TG Bot] Send file ERROR: {e}")
             result = None
@@ -244,7 +258,7 @@ async def handle_lead_magnet(chat_id: int, tg_user: dict, code: str):
             if text:
                 await _send_message(chat_id, text)
     elif text:
-        await _send_message(chat_id, text)
+        await _send_message(chat_id, text, reply_markup=back_markup)
     else:
         await _send_message(chat_id, "Материал пока не загружен. Попробуйте позже.")
 
@@ -342,6 +356,7 @@ async def handle_paid_chat(chat_id: int, tg_user: dict, tracking_code: str):
             "name": tg_user.get("first_name", ""),
             "username": tg_user.get("username", ""),
             "email": None,
+            "privacy_policy_url": channel.get("privacy_policy_url", ""),
         }
         state = _conversation_state[tg_user["id"]]
 
@@ -380,7 +395,12 @@ async def handle_paid_chat(chat_id: int, tg_user: dict, tracking_code: str):
             lines.append("\nВведите номер:")
             await _send_message(chat_id, "\n".join(lines))
         elif state.get("step") == "email":
-            await _send_message(chat_id, "📧 Введите ваш email для оплаты:")
+            policy_url = channel.get("privacy_policy_url", "")
+            if policy_url:
+                await _send_message(chat_id,
+                    f'Перед отправкой данных вы соглашаетесь с <a href="{policy_url}">политикой конфиденциальности</a>.\n\n📧 Введите ваш email для оплаты:')
+            else:
+                await _send_message(chat_id, "📧 Введите ваш email для оплаты:")
 
 
 # ---- /start handler ----
@@ -425,7 +445,8 @@ async def handle_start(chat_id: int, tg_user: dict, payload: str = ""):
         "/newpin — новый закреп\n"
         "/newleadmagnet — новый лид-магнит\n"
         "/cancel — отменить текущее действие\n\n"
-        "/help — помощь",
+        "/help — помощь\n\n"
+        f"🔗 Личный кабинет: {login_url}",
         reply_markup={
             "inline_keyboard": [[
                 {"text": "📈 Открыть личный кабинет", "url": login_url}
@@ -660,7 +681,8 @@ async def cmd_help(chat_id: int, tg_user: dict):
         "📌 <b>Как подключить канал:</b>\n"
         "1. Напишите /start для авторизации\n"
         "2. Добавьте бота администратором в канал\n"
-        "3. Канал появится автоматически",
+        "3. Канал появится автоматически\n\n"
+        f"🔗 Личный кабинет: {login_url}",
         reply_markup={
             "inline_keyboard": [[
                 {"text": "📈 Открыть личный кабинет", "url": login_url}
@@ -700,7 +722,11 @@ async def _handle_conversation(chat_id: int, tg_user: dict, text: str) -> bool:
                     if len(chats) == 1:
                         state["selected_chat"] = chats[0]
                         state["step"] = "email"
-                        await _send_message(chat_id, "📧 Введите ваш email для оплаты:")
+                        policy = state.get("privacy_policy_url", "")
+                        if policy:
+                            await _send_message(chat_id, f'Перед отправкой данных вы соглашаетесь с <a href="{policy}">политикой конфиденциальности</a>.\n\n📧 Введите ваш email для оплаты:')
+                        else:
+                            await _send_message(chat_id, "📧 Введите ваш email для оплаты:")
                     else:
                         state["step"] = "select_chat"
                         lines = ["Выберите чат:\n"]
@@ -721,7 +747,11 @@ async def _handle_conversation(chat_id: int, tg_user: dict, text: str) -> bool:
                 if 0 <= idx < len(chats):
                     state["selected_chat"] = chats[idx]
                     state["step"] = "email"
-                    await _send_message(chat_id, "📧 Введите ваш email для оплаты:")
+                    policy = state.get("privacy_policy_url", "")
+                    if policy:
+                        await _send_message(chat_id, f'Перед отправкой данных вы соглашаетесь с <a href="{policy}">политикой конфиденциальности</a>.\n\n📧 Введите ваш email для оплаты:')
+                    else:
+                        await _send_message(chat_id, "📧 Введите ваш email для оплаты:")
                 else:
                     await _send_message(chat_id, f"Введите число от 1 до {len(chats)}")
             except ValueError:

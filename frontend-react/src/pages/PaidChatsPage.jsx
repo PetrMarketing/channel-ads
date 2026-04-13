@@ -438,8 +438,15 @@ export default function PaidChatsPage() {
         <h1>Платные чаты</h1>
       </div>
 
-      {/* Payment link */}
-      {setup.has_payment && setup.has_plans && setup.has_chats && (() => {
+      {/* Payment link — hidden until privacy policy is set */}
+      {setup.has_payment && setup.has_plans && setup.has_chats && !currentChannel?.privacy_policy_url && (
+        <div className="pc-info-box" style={{ marginBottom: 16, borderColor: 'var(--error, #e63946)' }}>
+          <p style={{ color: 'var(--error, #e63946)', fontSize: '0.88rem', margin: 0 }}>
+            Для отображения ссылок на оплату необходимо заполнить поле «Политика конфиденциальности» во вкладке «Оплата».
+          </p>
+        </div>
+      )}
+      {setup.has_payment && setup.has_plans && setup.has_chats && currentChannel?.privacy_policy_url && (() => {
         const isMax = currentChannel?.platform === 'max';
         const botLink = isMax
           ? `https://max.ru/${import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}?start=paid_${tc}`
@@ -515,6 +522,7 @@ export default function PaidChatsPage() {
           openProviderModal={openProviderModal}
           disconnectProvider={disconnectProvider}
           currentChannel={currentChannel}
+          onChannelUpdate={() => { /* refresh from context */ }}
         />
       )}
 
@@ -754,18 +762,18 @@ export default function PaidChatsPage() {
           <div style={{ padding: '14px', background: 'var(--bg-glass)', borderRadius: 'var(--radius)', border: '1px solid var(--border)', marginBottom: 12 }}>
             <h4 style={{ margin: '0 0 8px', fontSize: '0.92rem' }}>Как добавить чат</h4>
             <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.88rem' }}>
-              <li>Откройте ваш чат → <b>Настройки</b> → <b>Администраторы</b></li>
               <li>
                 {currentChannel?.platform === 'telegram' ? (
-                  <>Добавьте бота: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg)', borderRadius: '4px' }}
+                  <>Добавьте бота в участники чата: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg)', borderRadius: '4px' }}
                     onClick={() => { navigator.clipboard.writeText(`@${import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot'}`); }}>
                     @{import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot'}</code></>
                 ) : (
-                  <>Добавьте бота: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg)', borderRadius: '4px' }}
+                  <>Добавьте бота в участники чата: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg)', borderRadius: '4px' }}
                     onClick={() => { navigator.clipboard.writeText(`@${import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}`); }}>
-                    @{import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}</code></>
+                    @{import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}</code> или по имени <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg)', borderRadius: '4px' }} onClick={() => { navigator.clipboard.writeText(import.meta.env.VITE_MAX_BOT_NAME || 'PKMarketing'); }}>{import.meta.env.VITE_MAX_BOT_NAME || 'PKMarketing'}</code></>
                 )}
               </li>
+              <li>Откройте ваш чат → <b>Настройки</b> → <b>Администраторы</b> → назначьте бота администратором</li>
               <li>Чат появится автоматически в списке выше</li>
             </ol>
           </div>

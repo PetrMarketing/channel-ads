@@ -200,7 +200,7 @@ async def update_channel(tracking_code: str, request_body: dict, user: Dict[str,
     fields = []
     params = []
     idx = 1
-    for key in ("title", "yandex_metrika_id", "vk_pixel_id", "ym_oauth_token", "join_link"):
+    for key in ("title", "yandex_metrika_id", "vk_pixel_id", "ym_oauth_token", "join_link", "privacy_policy_url"):
         if key in request_body:
             fields.append(f"{key} = ${idx}")
             params.append(request_body[key])

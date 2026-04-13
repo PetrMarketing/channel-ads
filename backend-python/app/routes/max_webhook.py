@@ -194,10 +194,21 @@ async def handle_lead_magnet(max_api, chat_id: str, max_user_id: str, username: 
                     import os
                     os.unlink(tmp_path)
 
+    # Build "back to channel" button if enabled
+    back_buttons = None
+    if lm.get("show_back_button", True) and lm.get("max_chat_id"):
+        try:
+            ch_info = await max_api.get_chat(str(lm["max_chat_id"]))
+            ch_link = ch_info.get("data", {}).get("link") if ch_info.get("success") else None
+            if ch_link:
+                back_buttons = [[{"type": "link", "text": "↩️ Вернуться в канал", "url": ch_link}]]
+        except Exception:
+            pass
+
     if attachments:
-        await _send_to_chat(max_api, chat_id, text, attachments=attachments)
+        await _send_to_chat(max_api, chat_id, text, attachments=attachments, buttons=back_buttons)
     elif text:
-        await _send_to_chat(max_api, chat_id, text)
+        await _send_to_chat(max_api, chat_id, text, buttons=back_buttons)
     else:
         await _send_to_chat(max_api, chat_id, "Материал пока не загружен. Попробуйте позже.")
 
@@ -429,6 +440,7 @@ async def handle_paid_chat_max(max_api, chat_id: str, max_user_id: str, tracking
             "phone": None,
             "email": None,
             "name": (await fetch_one("SELECT first_name FROM users WHERE max_user_id = $1", str(max_user_id)) or {}).get("first_name", ""),
+            "privacy_policy_url": channel.get("privacy_policy_url", ""),
         }
 
         state = _conversation_state[max_user_id]
@@ -447,7 +459,12 @@ async def handle_paid_chat_max(max_api, chat_id: str, max_user_id: str, tracking
             lines.append("\nВведите номер:")
             await _send_to_chat(max_api, chat_id, "\n".join(lines))
         else:
-            await _send_to_chat(max_api, chat_id, "📱 Введите ваш номер телефона для оплаты:")
+            policy = channel.get("privacy_policy_url", "")
+            if policy:
+                await _send_to_chat(max_api, chat_id,
+                    f"Перед отправкой данных вы соглашаетесь с [политикой конфиденциальности]({policy}).\n\n📱 Введите ваш номер телефона для оплаты:")
+            else:
+                await _send_to_chat(max_api, chat_id, "📱 Введите ваш номер телефона для оплаты:")
 
 
 async def _handle_go_link(max_api, chat_id: str, max_user_id: str, first_name: str, short_code: str):
@@ -549,7 +566,8 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
         f"/newpin — создать закреп\n"
         f"/newleadmagnet — создать лид-магнит\n"
         f"/stats — статистика\n"
-        f"/help — помощь",
+        f"/help — помощь\n\n"
+        f"🔗 Личный кабинет: {login_url}",
         buttons=[[{"type": "link", "text": "🔑 Открыть личный кабинет", "url": login_url}]],
     )
 
@@ -747,7 +765,7 @@ async def _cmd_login(max_api, chat_id: str, max_user_id: str, first_name: str):
     login_url = f"{settings.APP_URL}/login?token={token}"
     await _send_to_chat(max_api, chat_id,
         f"🔑 **Вход в личный кабинет**\n\n"
-        f"Нажмите кнопку ниже для входа:",
+        f"Нажмите кнопку ниже или перейдите по ссылке:\n{login_url}",
         buttons=[[{"type": "link", "text": "🔑 Открыть личный кабинет", "url": login_url}]],
     )
 
@@ -1537,7 +1555,8 @@ async def process_max_update(body: dict):
             first_name = sender.get("name") or sender.get("first_name", "")
             chat_id = _get_chat_id(body)
 
-            print(f"[MAX Bot] message_created: user={max_user_id}, chat_id={chat_id}, text={text[:50]}")
+            attachments_debug = message.get("body", {}).get("attachments", [])
+            print(f"[MAX Bot] message_created: user={max_user_id}, chat_id={chat_id}, text={text[:50]}, attachments={attachments_debug}")
 
             if not chat_id:
                 print(f"[MAX Bot] message_created: no chat_id")

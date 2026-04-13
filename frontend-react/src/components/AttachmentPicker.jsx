@@ -3,6 +3,7 @@ import { useRef } from 'react';
 const ATTACH_TYPES = [
   { id: 'photo', label: '📷 Фото', accept: 'image/jpeg,image/png,image/gif,image/webp', maxMb: 10, hint: 'JPG, PNG, GIF, WebP. До 10 МБ.' },
   { id: 'video', label: '🎬 Видео', accept: 'video/mp4,video/quicktime,video/webm', maxMb: 20, hint: 'MP4, MOV, WebM. До 20 МБ.' },
+  { id: 'video_note', label: '⭕ Кружок', accept: 'video/mp4,video/quicktime,video/webm', maxMb: 20, hint: 'Видеосообщение (кружок). MP4, до 20 МБ. До 1 минуты.' },
   { id: 'file', label: '📎 Файл', accept: '*/*', maxMb: 50, hint: 'Любой файл. До 50 МБ.' },
   { id: 'voice', label: '🎤 Голосовое', accept: 'audio/ogg,audio/mpeg,audio/mp4,audio/*', maxMb: 10, hint: 'OGG, MP3. До 10 МБ.' },
 ];
@@ -89,7 +90,7 @@ export default function AttachmentPicker({ file, onFileChange, attachType, onAtt
         <div style={{ padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 6, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>{existingFileInfo === 'photo' ? '📷' : existingFileInfo === 'video' ? '🎬' : existingFileInfo === 'voice' ? '🎤' : '📎'}</span>
+              <span>{existingFileInfo === 'photo' ? '📷' : existingFileInfo === 'video' ? '🎬' : existingFileInfo === 'video_note' ? '⭕' : existingFileInfo === 'voice' ? '🎤' : '📎'}</span>
               <span>Прикреплён файл ({existingFileInfo})</span>
             </div>
             {onRemoveExisting && (

@@ -853,7 +853,7 @@ async def public_book(tc: str, request: Request):
 
 @public_router.get("/{tc}/appearance")
 async def public_appearance(tc: str):
-    channel = await fetch_one("SELECT id, title FROM channels WHERE tracking_code = $1", tc)
+    channel = await fetch_one("SELECT id, title, privacy_policy_url FROM channels WHERE tracking_code = $1", tc)
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
     s = await fetch_one("SELECT * FROM service_settings WHERE channel_id = $1", channel["id"])
@@ -870,4 +870,5 @@ async def public_appearance(tc: str):
         "success": True,
         "channel_title": channel.get("title", ""),
         "settings": result,
+        "privacy_policy_url": channel.get("privacy_policy_url", ""),
     }

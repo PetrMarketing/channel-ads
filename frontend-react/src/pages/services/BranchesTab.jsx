@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import Modal from '../../components/Modal';
 import WorkingHoursEditor from './WorkingHoursEditor';
 import { api } from '../../services/api';
@@ -8,9 +9,50 @@ export default function BranchesTab({
   editingBranch, setEditingBranch,
   branchForm, setBranchForm,
   savingBranch, saveBranch,
+  currentChannel,
 }) {
+  const [policyUrl, setPolicyUrl] = useState(currentChannel?.privacy_policy_url || '');
+  const [savingPolicy, setSavingPolicy] = useState(false);
+  const hasPolicy = !!policyUrl;
+
+  const savePolicyUrl = async () => {
+    if (!tc) return;
+    setSavingPolicy(true);
+    try {
+      await api.put(`/channels/${tc}`, { privacy_policy_url: policyUrl });
+      if (currentChannel) currentChannel.privacy_policy_url = policyUrl;
+      showToast('Сохранено');
+    } catch { showToast('Ошибка', 'error'); }
+    setSavingPolicy(false);
+  };
+
   return (
     <div className="pc-section">
+      {/* Privacy policy */}
+      <div style={{
+        background: 'var(--bg-glass)', border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)', padding: '16px', marginBottom: '20px',
+      }}>
+        <label className="form-label" style={{ marginBottom: '8px', display: 'block', fontWeight: 600 }}>
+          Политика конфиденциальности *
+        </label>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0 0 10px' }}>
+          Ссылка на политику обработки персональных данных. Обязательна для работы мини-приложения записи.
+        </p>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input className="input" placeholder="https://example.com/privacy" value={policyUrl}
+            onChange={e => setPolicyUrl(e.target.value)} style={{ flex: 1 }} />
+          <button className="btn btn-primary" onClick={savePolicyUrl} disabled={savingPolicy} style={{ whiteSpace: 'nowrap' }}>
+            {savingPolicy ? '...' : 'Сохранить'}
+          </button>
+        </div>
+        {!hasPolicy && (
+          <p style={{ fontSize: '0.78rem', color: 'var(--error, #e63946)', marginTop: '6px' }}>
+            Без заполнения этого поля ссылки на мини-приложение не будут отображаться
+          </p>
+        )}
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2>Филиалы</h2>
         <button className="btn btn-primary" onClick={() => { setEditingBranch(null); setBranchForm({ name: '', city: '', address: '', phone: '', email: '', buffer_time: 0, working_hours: {} }); setShowBranchModal(true); }}>
@@ -36,13 +78,19 @@ export default function BranchesTab({
               <button className="btn btn-outline" style={btnSmall} onClick={() => { setEditingBranch(b); setBranchForm({ name: b.name || '', city: b.city || '', address: b.address || '', phone: b.phone || '', email: b.email || '', buffer_time: b.buffer_time || 0, working_hours: b.working_hours || {} }); setShowBranchModal(true); }}>Ред.</button>
               <button className="btn btn-danger" style={btnSmall} onClick={async () => { if (!window.confirm('Удалить филиал?')) return; await api.delete(`/services/${tc}/branches/${b.id}`); loadBranches(); }}>Удалить</button>
             </div>
-            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Miniapp:</span>
-              <code style={{ fontSize: '0.72rem', padding: '2px 6px', background: 'var(--bg)', borderRadius: 4, cursor: 'pointer', wordBreak: 'break-all' }}
-                onClick={() => { navigator.clipboard.writeText(branchLink); showToast('Ссылка скопирована'); }}
-                title="Нажмите для копирования"
-              >{branchLink}</code>
-            </div>
+            {hasPolicy ? (
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Miniapp:</span>
+                <code style={{ fontSize: '0.72rem', padding: '2px 6px', background: 'var(--bg)', borderRadius: 4, cursor: 'pointer', wordBreak: 'break-all' }}
+                  onClick={() => { navigator.clipboard.writeText(branchLink); showToast('Ссылка скопирована'); }}
+                  title="Нажмите для копирования"
+                >{branchLink}</code>
+              </div>
+            ) : (
+              <p style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--error, #e63946)' }}>
+                Заполните «Политику конфиденциальности» во вкладке «Внешний вид» для отображения ссылки на мини-приложение
+              </p>
+            )}
           </div>
           );
         })}

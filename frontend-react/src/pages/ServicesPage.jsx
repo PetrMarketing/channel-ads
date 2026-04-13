@@ -332,6 +332,7 @@ export default function ServicesPage() {
           editingBranch={editingBranch} setEditingBranch={setEditingBranch}
           branchForm={branchForm} setBranchForm={setBranchForm}
           savingBranch={savingBranch} saveBranch={saveBranch}
+          currentChannel={currentChannel}
         />
       )}
 
@@ -399,6 +400,7 @@ export default function ServicesPage() {
           saveSettings={saveSettings} savingSettings={savingSettings}
           coverImage={coverImage} setCoverImage={setCoverImage}
           uploadingCover={uploadingCover} setUploadingCover={setUploadingCover}
+          currentChannel={currentChannel}
         />
       )}
     </div>

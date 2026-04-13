@@ -439,6 +439,7 @@ export default function ContentPage() {
                   rows={6}
                   showEmoji={true}
                   className={errors.message_text ? 'field-error' : ''}
+                  hasFile={!!(postFile || (!removeExistingFile && editingPost?.file_path))}
                 />
               </div>
               {errors.message_text && <div className="field-error-text">{errors.message_text}</div>}

@@ -23,6 +23,7 @@ export default function DashboardPage() {
   const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
   const maxBotId = import.meta.env.VITE_MAX_BOT_ID || '206603862';
   const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
+  const maxBotName = import.meta.env.VITE_MAX_BOT_NAME || 'PKMarketing';
 
   const loadStats = useCallback(async () => {
     try {
@@ -205,8 +206,8 @@ export default function DashboardPage() {
                 <>
                   <h4 style={{ marginBottom: '8px' }}>Добавьте бота в канал</h4>
                   <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <li>Откройте ваш канал → <b>Настройки</b> → <b>Администраторы</b></li>
-                    <li>Добавьте бота: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg-glass)', borderRadius: '4px' }} onClick={() => { navigator.clipboard.writeText(`@${maxBotUsername}`); showToast('Скопировано'); }}>@{maxBotUsername}</code></li>
+                    <li>Добавьте бота в подписчики канала: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg-glass)', borderRadius: '4px' }} onClick={() => { navigator.clipboard.writeText(`@${maxBotUsername}`); showToast('Скопировано'); }}>@{maxBotUsername}</code> или по имени <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg-glass)', borderRadius: '4px' }} onClick={() => { navigator.clipboard.writeText(maxBotName); showToast('Скопировано'); }}>{maxBotName}</code></li>
+                    <li>Откройте ваш канал → <b>Настройки</b> → <b>Администраторы</b> → назначьте бота администратором</li>
                     <li>Канал появится автоматически в списке каналов</li>
                   </ol>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '10px' }}>
@@ -311,6 +312,7 @@ function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
   const isDisconnected = ch.is_active === 0 || ch.is_active === false;
   const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
   const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
+  const maxBotName = import.meta.env.VITE_MAX_BOT_NAME || 'PKMarketing';
   const platformColor = ch.platform === 'max' ? '#7B68EE' : '#2AABEE';
   const firstLetter = (ch.title || ch.channel_id || 'C')[0].toUpperCase();
 
@@ -394,12 +396,14 @@ function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
         {isDisconnected && (
           <div style={{ marginTop: '6px' }}>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 6px 0' }}>
-              Откройте канал → Настройки → Администраторы → добавьте бота{' '}
+              1. Добавьте бота в подписчики:{' '}
               <b
                 style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
                 title="Нажмите, чтобы скопировать"
                 onClick={(e) => { e.stopPropagation(); const name = ch.platform === 'max' ? `@${maxBotUsername}` : `@${tgBotUsername}`; navigator.clipboard.writeText(name); }}
-              >{ch.platform === 'max' ? '@' + maxBotUsername : '@' + tgBotUsername}</b>
+              >{ch.platform === 'max' ? `@${maxBotUsername}` : `@${tgBotUsername}`}</b>
+              {ch.platform === 'max' && <span> или по имени <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg-glass)', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(maxBotName); }}>{maxBotName}</code></span>}
+              <br />2. Канал → Настройки → Администраторы → назначьте бота администратором
             </p>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {ch.join_link && (

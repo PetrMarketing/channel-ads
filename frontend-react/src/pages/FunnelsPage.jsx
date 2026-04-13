@@ -465,6 +465,7 @@ export default function FunnelsPage() {
                   rows={5}
                   showEmoji={true}
                   className={errors.message_text ? 'field-error' : ''}
+                  hasFile={!!(stepFile || editingStep?.file_url)}
                 />
               </div>
               {errors.message_text && <div className="field-error-text">{errors.message_text}</div>}

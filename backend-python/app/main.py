@@ -813,6 +813,7 @@ const API = '/api/services/public';
 const TC = '{tc}';
 const BRANCH_ID = '{branch_id}';
 let appearance = {{}};
+let privacyPolicyUrl = '';
 let state = {{step:'services',services:[],specialists:[],selectedService:null,selectedSpecialist:null,selectedDate:'',selectedSlot:null,showCal:false,calYear:new Date().getFullYear(),calMonth:new Date().getMonth(),userName:'',userPhone:'',userEmail:'',userId:''}};
 const WEEKDAYS = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
 const WEEKDAYS_SHORT = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
@@ -838,6 +839,7 @@ async function init() {{
     const [catData, appData] = await Promise.all([api('/catalog'), api('/appearance')]);
     if (catData.success) state.services = catData.services || [];
     if (appData.success && appData.settings) appearance = appData.settings;
+    if (appData.privacy_policy_url) privacyPolicyUrl = appData.privacy_policy_url;
     document.documentElement.style.setProperty('--pc', appearance.primary_color || '#4F46E5');
     render();
   }} catch(e) {{
@@ -1048,6 +1050,10 @@ function render() {{
     h += '<label class="form-label">Комментарий</label>';
     h += '<textarea class="form-input" id="f-notes" rows="2" placeholder="Пожелания (необязательно)"></textarea>';
     h += '</div>';
+    if (privacyPolicyUrl) {{
+      h += '<p style="font-size:0.72rem;color:#9ca3af;text-align:center;margin:8px 0">'
+        + 'Отправляя форму, вы соглашаетесь с <a href="' + esc(privacyPolicyUrl) + '" target="_blank" style="color:' + pc + '">политикой обработки персональных данных</a></p>';
+    }}
     h += '<button class="btn" id="book-btn" style="background:' + pc + '" onclick="submitBooking()">Подтвердить запись</button>';
     h += '</div>';
   }}

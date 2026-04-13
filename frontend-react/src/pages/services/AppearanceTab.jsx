@@ -16,6 +16,7 @@ export default function AppearanceTab({
   saveSettings, savingSettings,
   coverImage, setCoverImage,
   uploadingCover, setUploadingCover,
+  currentChannel,
 }) {
   const [bgFile, setBgFile] = useState(null);
   const s = settings;

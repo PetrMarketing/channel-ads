@@ -399,6 +399,7 @@ async def get_payment_info(tc: str):
         "plans": plans,
         "chats": chats,
         "description": notif["message_text"] if notif else "",
+        "privacy_policy_url": channel.get("privacy_policy_url", ""),
     }
 
 

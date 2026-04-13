@@ -68,7 +68,15 @@ const CATEGORY_ICONS = {
   'Стрелки': '➡️', 'Природа': '🌿', 'Еда': '🍕', 'Объекты': '📱',
 };
 
-export default function RichTextEditor({ value, onChange, placeholder, rows = 5, showEmoji = false }) {
+function getTextLength(html) {
+  if (!html) return 0;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent.length;
+}
+
+export default function RichTextEditor({ value, onChange, placeholder, rows = 5, showEmoji = false, maxLength, hasFile }) {
+  const effectiveMax = maxLength || (hasFile ? 1024 : 4096);
   const editorRef = useRef(null);
   const [showToolbar, setShowToolbar] = useState(false);
   const [toolbarPos, setToolbarPos] = useState({ top: 0, left: 0 });
@@ -311,6 +319,21 @@ export default function RichTextEditor({ value, onChange, placeholder, rows = 5,
           )}
         </div>
       )}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        fontSize: '0.72rem', marginTop: '4px', color: 'var(--text-secondary, #999)',
+      }}>
+        <span style={{ color: getTextLength(value) > effectiveMax ? 'var(--error, #e63946)' : undefined }}>
+          {getTextLength(value) > effectiveMax
+            ? `Превышен лимит на ${getTextLength(value) - effectiveMax} симв.`
+            : hasFile !== undefined
+              ? (hasFile ? 'С вложением: до 1024 симв.' : 'Без вложения: до 4096 симв.')
+              : ''}
+        </span>
+        <span style={{ color: getTextLength(value) > effectiveMax ? 'var(--error, #e63946)' : undefined }}>
+          {getTextLength(value)} / {effectiveMax}
+        </span>
+      </div>
     </div>
   );
 }
