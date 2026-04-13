@@ -749,7 +749,7 @@ async def booking_page(request: Request, params: str = ""):
 <html><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<script src="https://st.max.ru/js/max-web-app.js"></script>
+<script src="https://st.max.ru/js/max-web-app.js" async></script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#1f2937}}
@@ -817,6 +817,9 @@ let appearance = {{}};
 let privacyPolicyUrl = '';
 let state = {{step:'services',services:[],specialists:[],selectedService:null,selectedSpecialist:null,selectedDate:'',selectedSlot:null,showCal:false,calYear:new Date().getFullYear(),calMonth:new Date().getMonth(),userName:'',userPhone:'',userEmail:'',userId:''}};
 const WEEKDAYS = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+var WB = window.WebApp || {{}};
+function bHaptic(t) {{ try {{ if (WB.HapticFeedback) WB.HapticFeedback[t==='success'?'notificationOccurred':'impactOccurred'](t==='success'?'success':'light'); }} catch(e) {{}} }}
+function bUpdateBack() {{ try {{ if (!WB.BackButton) return; if (state.step==='services') WB.BackButton.hide(); else WB.BackButton.show(); }} catch(e) {{}} }}
 const WEEKDAYS_SHORT = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 function localDateStr(d) {{ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }}
@@ -835,6 +838,7 @@ async function init() {{
         state.userName = ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
         state.userId = u.id || '';
       }}
+      try {{ if (WB.BackButton) WB.BackButton.onClick(function() {{ bookGoBack(); }}); }} catch(e) {{}}
     }}
     const [catData, appData] = await Promise.all([api('/catalog'), api('/appearance')]);
     if (catData.success) state.services = catData.services || [];
@@ -1046,7 +1050,10 @@ function render() {{
     h += '<label class="form-label">Имя</label>';
     h += '<input class="form-input" id="f-name" value="' + esc(state.userName) + '" placeholder="Ваше имя">';
     h += '<label class="form-label">Телефон</label>';
-    h += '<input class="form-input" id="f-phone" type="tel" value="' + esc(state.userPhone) + '" placeholder="+7...">';
+    h += '<div style="display:flex;gap:8px">';
+    h += '<input class="form-input" id="f-phone" type="tel" value="' + esc(state.userPhone) + '" placeholder="+7..." style="flex:1;margin:0">';
+    if (WB.requestContact) h += '<button class="btn" style="background:' + pc + ';padding:8px 12px;font-size:0.8rem;white-space:nowrap" onclick="bFillPhone()">Авто</button>';
+    h += '</div>';
     h += '<label class="form-label">Комментарий</label>';
     h += '<textarea class="form-input" id="f-notes" rows="2" placeholder="Пожелания (необязательно)"></textarea>';
     h += '</div>';
@@ -1078,7 +1085,7 @@ function selectService(i) {{
   state.selectedService = state.services[i];
   state.step = 'specialists';
   state.specialists = [];
-  render();
+  render(); bUpdateBack();
   api('/specialists?service_id=' + state.selectedService.id).then(d => {{
     if (d.success) state.specialists = d.specialists || [];
     render();
@@ -1091,7 +1098,7 @@ function selectSpecialist(i) {{
   state.selectedDate = '';
   state.selectedSlot = null;
   state.slots = [];
-  render();
+  render(); bUpdateBack();
 }}
 
 function selectDate(d) {{
@@ -1122,7 +1129,15 @@ function goBack(step) {{
   if (step === 'services') {{ state.selectedService = null; state.selectedSpecialist = null; }}
   if (step === 'specialists') {{ state.selectedSpecialist = null; state.selectedDate = ''; state.selectedSlot = null; }}
   if (step === 'datetime') {{ state.selectedSlot = null; }}
-  render();
+  render(); bUpdateBack();
+}}
+async function bFillPhone() {{
+  try {{ var r = await WB.requestContact(); if (r && r.phone) {{ var el = document.getElementById('f-phone'); if (el) el.value = r.phone; bHaptic('success'); }} }} catch(e) {{}}
+}}
+function bookGoBack() {{
+  if (state.step === 'confirm') goBack('datetime');
+  else if (state.step === 'datetime') goBack('specialists');
+  else if (state.step === 'specialists') goBack('services');
 }}
 
 async function submitBooking() {{
@@ -1148,7 +1163,7 @@ async function submitBooking() {{
       }})
     }});
     const data = await r.json();
-    if (data.success) {{ state.step = 'success'; render(); }}
+    if (data.success) {{ bHaptic('success'); state.step = 'success'; render(); bUpdateBack(); }}
     else {{ alert(data.detail || 'Ошибка бронирования'); btn.disabled = false; btn.textContent = 'Подтвердить запись'; }}
   }} catch(e) {{ alert('Ошибка: ' + e.message); btn.disabled = false; btn.textContent = 'Подтвердить запись'; }}
 }}
@@ -1181,7 +1196,7 @@ async def shop_app_page(request: Request, params: str = ""):
 <html><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<script src="https://st.max.ru/js/max-web-app.js"></script>
+<script src="https://st.max.ru/js/max-web-app.js" async></script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#1f2937}}
@@ -1289,6 +1304,9 @@ var S = {{
 
 var $=function(id){{return document.getElementById(id)}};
 var app=$('app');
+var WA = window.WebApp || {{}};
+function haptic(type) {{ try {{ if (WA.HapticFeedback) WA.HapticFeedback[type === 'success' ? 'notificationOccurred' : 'impactOccurred'](type === 'success' ? 'success' : 'light'); }} catch(e) {{}} }}
+function updateBackButton() {{ try {{ if (!WA.BackButton) return; if (S.screen === 'home') WA.BackButton.hide(); else WA.BackButton.show(); }} catch(e) {{}} }}
 
 function fmt(p) {{ return parseFloat(p||0).toLocaleString('ru-RU') + ' &#8381;'; }}
 function img(url) {{ return url || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23f3f4f6%22 width=%22200%22 height=%22200%22/><text x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%239ca3af%22 font-size=%2214%22>No image</text></svg>'; }}
@@ -1298,8 +1316,19 @@ async function api(path, opts) {{
   return r.json();
 }}
 
+// Retry user detection when bridge loads late
+document.querySelector('script[src*="max-web-app"]').addEventListener('load', function() {{
+  WA = window.WebApp || {{}};
+  try {{ if (WA.ready) WA.ready(); }} catch(e) {{}}
+  if (uid.startsWith('anon_')) {{ resolveUid(); loadCart().then(render); }}
+}});
+
 async function init() {{
-  try {{ if (window.WebApp) window.WebApp.ready(); }} catch(e) {{}}
+  WA = window.WebApp || {{}};
+  try {{
+    if (WA.ready) WA.ready();
+    if (WA.BackButton) WA.BackButton.onClick(function() {{ goBack(); }});
+  }} catch(e) {{}}
   resolveUid();
   try {{
     const [catData, appData] = await Promise.all([api('/catalog'), api('/appearance')]);
@@ -1337,6 +1366,7 @@ function go(screen, data) {{
   if (screen === 'product') {{ S.prodId = data; S.product = null; S.variant = null; S.qty = 1; }}
   S.screen = screen;
   render();
+  updateBackButton();
   if (screen === 'product') loadProduct();
   window.scrollTo(0,0);
 }}
@@ -1365,12 +1395,12 @@ async function addToCart() {{
     }})}});
     await loadCart();
     render();
-    // Animate cart badge
-    const ci = document.querySelector('.cart-icon');
+    haptic('light');
+    var ci = document.querySelector('.cart-icon');
     if (ci) {{
       ci.style.transition = 'transform 0.15s';
       ci.style.transform = 'scale(1.5)';
-      setTimeout(() => {{ ci.style.transform = 'scale(1)'; }}, 200);
+      setTimeout(function() {{ ci.style.transform = 'scale(1)'; }}, 200);
     }}
   }} catch(e) {{ alert('Ошибка добавления'); }}
 }}
@@ -1499,7 +1529,9 @@ function renderCheckout() {{
   let h = headerHtml('Оформление', true);
   h += `<div class="section">`;
   h += '<label class="form-label">Имя</label><input class="form-input" id="cname" placeholder="Ваше имя" value="' + (S.userName || '') + '">';
-  h += `<label class="form-label">Телефон</label><input class="form-input" id="cphone" type="tel" placeholder="+7...">`;
+  h += '<label class="form-label">Телефон</label><div style="display:flex;gap:8px"><input class="form-input" id="cphone" type="tel" placeholder="+7..." style="flex:1;margin:0">';
+  if (WA.requestContact) h += '<button class="btn" style="background:' + pc() + ';padding:8px 12px;font-size:0.8rem;white-space:nowrap" onclick="fillPhone()">Автозаполнение</button>';
+  h += '</div>';
   h += `<label class="form-label">Адрес</label><input class="form-input" id="caddr" placeholder="Город, улица, дом">`;
   if (S.deliveryMethods.length) {{
     h += `<label class="form-label">Доставка</label><div class="dm-list">`;
@@ -1530,9 +1562,22 @@ async function submitOrder() {{
     if (d.order_id || d.success) {{
       S.orderNum = d.order_number || d.order_id || '';
       S.cartItems = []; S.promo = ''; S.discount = 0; S.promoApplied = false;
+      haptic('success');
       S.screen = 'success'; render();
+      updateBackButton();
     }} else {{ alert(d.detail || 'Ошибка оформления'); if(btn){{ btn.disabled=false; btn.textContent='Оплатить'; }} }}
   }} catch(e) {{ alert('Ошибка: ' + e.message); if(btn){{ btn.disabled=false; btn.textContent='Оплатить'; }} }}
+}}
+
+async function fillPhone() {{
+  try {{
+    var result = await WA.requestContact();
+    if (result && result.phone) {{
+      var el = $('cphone');
+      if (el) el.value = result.phone;
+      haptic('success');
+    }}
+  }} catch(e) {{}}
 }}
 
 function resetShop() {{ S.screen='home'; S.promo=''; S.discount=0; render(); }}
