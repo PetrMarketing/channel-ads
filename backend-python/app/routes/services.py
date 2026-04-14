@@ -54,12 +54,16 @@ async def create_branch(tc: str, request: Request, user=Depends(get_current_user
     if isinstance(wh, str):
         wh = json.loads(wh)
     bid = await execute_returning_id(
-        """INSERT INTO service_branches (channel_id, name, city, address, latitude, longitude, working_hours, buffer_time, phone, email)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
+        """INSERT INTO service_branches (channel_id, name, city, address, latitude, longitude, working_hours, buffer_time, phone, email, is_online, privacy_policy_url, offer_url, manager_user_id, manager_contact_url)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id""",
         channel["id"], body.get("name", ""), body.get("city"), body.get("address"),
         body.get("latitude"), body.get("longitude"),
         json.dumps(wh, ensure_ascii=False), int(body.get("buffer_time", 0)),
         body.get("phone"), body.get("email"),
+        bool(body.get("is_online", False)),
+        body.get("privacy_policy_url", ""), body.get("offer_url", ""),
+        int(body["manager_user_id"]) if body.get("manager_user_id") else None,
+        body.get("manager_contact_url", ""),
     )
     return {"success": True, "id": bid}
 
@@ -72,7 +76,7 @@ async def update_branch(tc: str, bid: int, request: Request, user=Depends(get_cu
     body = await request.json()
     fields, params = [], []
     idx = 1
-    for key in ("name", "city", "address", "phone", "email", "is_active", "buffer_time", "latitude", "longitude"):
+    for key in ("name", "city", "address", "phone", "email", "is_active", "buffer_time", "latitude", "longitude", "is_online", "privacy_policy_url", "offer_url", "manager_user_id", "manager_contact_url"):
         if key in body:
             fields.append(f"{key} = ${idx}")
             params.append(body[key])
@@ -659,6 +663,101 @@ async def public_specialists(tc: str, service_id: int = Query(None)):
     return {"success": True, "specialists": _strip_binary_list(specs)}
 
 
+@public_router.get("/{tc}/available-dates")
+async def public_available_dates(tc: str, specialist_id: int = Query(...), service_id: int = Query(...), days: int = Query(30)):
+    """Return dates with available slots for the next N days."""
+    import datetime as dt
+    channel = await fetch_one("SELECT id FROM channels WHERE tracking_code = $1", tc)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+
+    specialist = await fetch_one("SELECT * FROM service_specialists WHERE id = $1 AND channel_id = $2", specialist_id, channel["id"])
+    if not specialist:
+        return {"success": True, "dates": []}
+
+    service = await fetch_one("SELECT duration_minutes FROM services WHERE id = $1", service_id)
+    duration = service.get("duration_minutes", 60) if service else 60
+
+    sett = await fetch_one("SELECT slot_step_minutes, min_booking_hours FROM service_settings WHERE channel_id = $1", channel["id"])
+    slot_step = sett["slot_step_minutes"] if sett else 30
+    min_hours = sett["min_booking_hours"] if sett else 2
+
+    wh = specialist.get("working_hours") or {}
+    if isinstance(wh, str):
+        wh = json.loads(wh)
+
+    # Branch working hours as fallback
+    branch_wh = {}
+    if specialist.get("branch_id"):
+        branch = await fetch_one("SELECT working_hours, buffer_time FROM service_branches WHERE id = $1", specialist["branch_id"])
+        if branch:
+            branch_wh = branch.get("working_hours") or {}
+            if isinstance(branch_wh, str):
+                branch_wh = json.loads(branch_wh)
+
+    day_names = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+    today = dt.date.today()
+    now = dt.datetime.utcnow()
+    min_time = now + dt.timedelta(hours=min_hours + 3)  # +3 for MSK offset
+
+    max_per_day = specialist.get("max_bookings_per_day", 10)
+
+    available = []
+    for offset in range(days):
+        d = today + dt.timedelta(days=offset)
+        day_key = day_names[d.weekday()]
+        dh = wh.get(day_key, {})
+        if not dh or not (dh.get("start") or dh.get("from")):
+            dh = branch_wh.get(day_key, {})
+        start_key = dh.get("start") or dh.get("from") or ""
+        end_key = dh.get("end") or dh.get("to") or ""
+        if not start_key or not end_key:
+            continue
+
+        sh, sm = map(int, start_key.split(":"))
+        eh, em = map(int, end_key.split(":"))
+        work_start = sh * 60 + sm
+        work_end = eh * 60 + em
+
+        # Count existing bookings
+        count = await fetch_one(
+            "SELECT COUNT(*) as cnt FROM service_bookings WHERE specialist_id = $1 AND booking_date = $2 AND status NOT IN ('cancelled')",
+            specialist_id, d)
+        if count and count["cnt"] >= max_per_day:
+            continue
+
+        # Check if at least one slot is available
+        existing = await fetch_all(
+            "SELECT start_time, end_time FROM service_bookings WHERE specialist_id = $1 AND booking_date = $2 AND status NOT IN ('cancelled')",
+            specialist_id, d)
+        booked = []
+        for b in existing:
+            st, et = b["start_time"], b["end_time"]
+            if hasattr(st, 'hour'):
+                booked.append((st.hour * 60 + st.minute, et.hour * 60 + et.minute))
+            else:
+                bsh, bsm = map(int, str(st).split(":")[:2])
+                beh, bem = map(int, str(et).split(":")[:2])
+                booked.append((bsh * 60 + bsm, beh * 60 + bem))
+
+        has_slot = False
+        t = work_start
+        while t + duration <= work_end:
+            slot_end = t + duration
+            conflict = any(not (slot_end <= bs or t >= be) for bs, be in booked)
+            if not conflict:
+                slot_dt = dt.datetime.combine(d, dt.time(t // 60, t % 60))
+                if slot_dt > min_time.replace(tzinfo=None):
+                    has_slot = True
+                    break
+            t += slot_step
+
+        if has_slot:
+            available.append(d.isoformat())
+
+    return {"success": True, "dates": available}
+
+
 @public_router.get("/{tc}/slots")
 async def public_slots(tc: str, specialist_id: int = Query(...), service_id: int = Query(...), date: str = Query(...)):
     """Get available time slots for a specialist on a given date."""
@@ -798,6 +897,13 @@ async def public_book(tc: str, request: Request):
     service = await fetch_one("SELECT * FROM services WHERE id = $1", service_id)
     specialist = await fetch_one("SELECT branch_id FROM service_specialists WHERE id = $1", specialist_id)
 
+    # Get custom price for this specialist+service, fall back to service price
+    custom = await fetch_one(
+        "SELECT custom_price FROM specialist_services WHERE specialist_id = $1 AND service_id = $2",
+        specialist_id, service_id,
+    )
+    price = float(custom["custom_price"]) if custom and custom.get("custom_price") is not None else (float(service["price"]) if service else 0)
+
     client_name = body.get("client_name") or ""
     client_phone = body.get("client_phone") or ""
     client_max_user_id = str(body["client_max_user_id"]) if body.get("client_max_user_id") else None
@@ -813,7 +919,7 @@ async def public_book(tc: str, request: Request):
         client_name, client_phone, body.get("client_email"),
         client_max_user_id,
         book_date, book_start, book_end,
-        float(service["price"]) if service else 0,
+        price,
     )
 
     # Send notification to client via MAX bot

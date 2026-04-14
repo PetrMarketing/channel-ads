@@ -3268,6 +3268,19 @@ select.form-input option {
     }
 }
 
+/* 375px mobile fixes */
+@media (max-width: 375px) {
+  .header-right { gap: 4px !important; }
+  .header-right .btn { padding: 4px 8px; font-size: 0.7rem; }
+  .pc-tabs .pc-tab { padding: 8px 10px; font-size: 0.75rem; }
+  .stats-grid { grid-template-columns: 1fr !important; }
+}
+
+/* Mobile overflow prevention */
+code, .pc-info-box code { word-break: break-all; }
+.pc-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.pc-tabs::-webkit-scrollbar { display: none; }
+
 /* ===== Scrollbar Styling ===== */
 ::-webkit-scrollbar {
     width: 6px;

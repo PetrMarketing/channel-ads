@@ -87,11 +87,23 @@ async def list_payment_settings(tc: str, user: Dict[str, Any] = Depends(get_curr
     channel = await _get_owned_channel(tc, user["id"])
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
-    settings = await fetch_all(
+    rows = await fetch_all(
         "SELECT id, channel_id, provider, credentials, is_active, created_at FROM paid_chat_payment_settings WHERE channel_id = $1 ORDER BY created_at",
         channel["id"],
     )
-    return {"success": True, "settings": settings}
+    # Mask credentials — show only which fields are filled, not values
+    masked = []
+    for r in rows:
+        r = dict(r)
+        creds = r.get("credentials", {})
+        if isinstance(creds, str):
+            try:
+                creds = json.loads(creds)
+            except Exception:
+                creds = {}
+        r["credentials"] = {k: ("***" + v[-4:] if isinstance(v, str) and len(v) > 4 else "***") for k, v in creds.items()} if isinstance(creds, dict) else {}
+        masked.append(r)
+    return {"success": True, "settings": masked}
 
 
 @router.post("/{tc}/payment-settings")
@@ -104,8 +116,24 @@ async def save_payment_settings(tc: str, request: Request, user: Dict[str, Any] 
     provider = body.get("provider", "")
     if provider not in ("yoomoney", "prodamus", "tinkoff", "robokassa", "getcourse"):
         raise HTTPException(status_code=400, detail="Неподдерживаемая платёжная система")
-    credentials = json.dumps(body.get("credentials", {}), ensure_ascii=False)
+    new_creds = body.get("credentials", {})
     is_active = body.get("is_active", 1)
+
+    # Merge with existing credentials — empty values keep old ones
+    existing = await fetch_one(
+        "SELECT credentials FROM paid_chat_payment_settings WHERE channel_id = $1 AND provider = $2",
+        channel["id"], provider)
+    if existing:
+        old_creds = existing.get("credentials", {})
+        if isinstance(old_creds, str):
+            try: old_creds = json.loads(old_creds)
+            except: old_creds = {}
+        for k, v in new_creds.items():
+            if v:  # Only update non-empty values
+                old_creds[k] = v
+        new_creds = old_creds
+
+    credentials = json.dumps(new_creds, ensure_ascii=False)
 
     sid = await execute_returning_id(
         """INSERT INTO paid_chat_payment_settings (channel_id, provider, credentials, is_active)
@@ -190,8 +218,8 @@ async def create_plan(tc: str, request: Request, user: Dict[str, Any] = Depends(
     if plan_type not in ("one_time", "recurring"):
         raise HTTPException(status_code=400, detail="Тип плана: one_time или recurring")
     pid = await execute_returning_id(
-        """INSERT INTO paid_chat_plans (channel_id, plan_type, duration_days, price, currency, title, description, is_active, sort_order)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id""",
+        """INSERT INTO paid_chat_plans (channel_id, plan_type, duration_days, price, currency, title, description, is_active, sort_order, offer_code)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
         channel["id"],
         plan_type,
         body.get("duration_days", 30),
@@ -201,6 +229,7 @@ async def create_plan(tc: str, request: Request, user: Dict[str, Any] = Depends(
         body.get("description", ""),
         body.get("is_active", 1),
         body.get("sort_order", 0),
+        body.get("offer_code", ""),
     )
     plan = await fetch_one("SELECT * FROM paid_chat_plans WHERE id = $1", pid)
     return {"success": True, "plan": plan}
@@ -214,7 +243,7 @@ async def update_plan(tc: str, plan_id: int, request: Request, user: Dict[str, A
     body = await request.json()
     fields, params = [], []
     idx = 1
-    for key in ("plan_type", "duration_days", "price", "currency", "title", "description", "is_active", "sort_order"):
+    for key in ("plan_type", "duration_days", "price", "currency", "title", "description", "is_active", "sort_order", "offer_code"):
         if key in body:
             fields.append(f"{key} = ${idx}")
             params.append(body[key])

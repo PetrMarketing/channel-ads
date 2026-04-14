@@ -79,7 +79,7 @@ export default function ShopProductsTab({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <h2>Товары</h2>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <select className="form-input" value={productFilter} onChange={e => setProductFilter(e.target.value)} style={{ width: 'auto', minWidth: 160 }}>
+          <select className="form-input" value={productFilter} onChange={e => setProductFilter(e.target.value)} style={{ width: 'auto', minWidth: 120 }}>
             <option value="">Все категории</option>
             {categories.map(c => (
               <option key={c.id} value={c.id}>{c.name}</option>

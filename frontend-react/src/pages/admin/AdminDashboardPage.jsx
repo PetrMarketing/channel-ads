@@ -30,22 +30,30 @@ export default function AdminDashboardPage() {
     { label: 'Лид-магнитов', value: stats.leadMagnets, color: '#a8dadc' },
   ];
 
-  const renderChart = (data, label, color, valueKey = 'count') => {
+  const renderBarChart = (data, label, color, valueKey = 'count', suffix = '') => {
     if (!data || !data.length) return <div style={{ color: '#aaa', fontSize: 13, padding: 20, textAlign: 'center' }}>Нет данных</div>;
     const values = data.map(d => d[valueKey] || 0);
     const max = Math.max(...values, 1);
-    const w = 100, h = 40;
-    const points = values.map((v, i) => `${(i / Math.max(values.length - 1, 1)) * w},${h - (v / max) * h}`).join(' ');
+    const chartH = 140;
     return (
       <div style={{ background: '#fff', borderRadius: 12, padding: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>{label}</div>
-        <svg viewBox={`0 0 ${w} ${h + 4}`} style={{ width: '100%', height: 120 }} preserveAspectRatio="none">
-          <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-          {values.map((v, i) => (
-            <circle key={i} cx={(i / Math.max(values.length - 1, 1)) * w} cy={h - (v / max) * h} r="2" fill={color} />
-          ))}
-        </svg>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#999', marginTop: 4 }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>{label}</div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: chartH }}>
+          {values.map((v, i) => {
+            var h = Math.max(2, (v / max) * (chartH - 20));
+            return (
+              <div key={i} title={(data[i]?.date || '') + ': ' + Number(v).toLocaleString('ru-RU') + suffix}
+                style={{
+                  flex: 1, height: h, borderRadius: '2px 2px 0 0', cursor: 'pointer',
+                  background: color, opacity: 0.75, transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={function(e) { e.currentTarget.style.opacity = '1'; }}
+                onMouseLeave={function(e) { e.currentTarget.style.opacity = '0.75'; }}
+              />
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#999', marginTop: 6 }}>
           <span>{data[0]?.date?.slice(5)}</span>
           <span>{data[data.length - 1]?.date?.slice(5)}</span>
         </div>
@@ -78,9 +86,9 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Charts */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: 16 }}>
-        {renderChart(charts?.users_chart, 'Регистрации пользователей', '#4361ee')}
-        {renderChart(charts?.revenue_chart, 'Доход (₽)', '#e63946', 'amount')}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+        {renderBarChart(charts?.users_chart, 'Регистрации пользователей', '#4361ee')}
+        {renderBarChart(charts?.revenue_chart, 'Доход', '#e63946', 'amount', ' ₽')}
       </div>
     </div>
   );

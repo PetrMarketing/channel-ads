@@ -536,15 +536,8 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
             lines.append(f"\nИтого: **{float(order['total']):.0f} RUB**")
             lines.append("\nВы можете оплатить заказ или связаться с менеджером.")
             # Get manager link
-            shop_s = await fetch_one("SELECT manager_user_id FROM shop_settings WHERE channel_id = $1", order["channel_id"])
-            mgr_link = ""
-            if shop_s and shop_s.get("manager_user_id"):
-                mgr = await fetch_one("SELECT username, max_user_id FROM users WHERE id = $1", shop_s["manager_user_id"])
-                if mgr:
-                    if mgr.get("username"):
-                        mgr_link = f"https://t.me/{mgr['username']}"
-                    elif mgr.get("max_user_id"):
-                        mgr_link = f"https://max.ru/id{mgr['max_user_id']}"
+            shop_s = await fetch_one("SELECT manager_user_id, manager_contact_url FROM shop_settings WHERE channel_id = $1", order["channel_id"])
+            mgr_link = (shop_s.get("manager_contact_url") or "") if shop_s else ""
             btns = []
             if mgr_link:
                 btns.append([{"type": "link", "text": "Связаться с менеджером", "url": mgr_link}])
@@ -1091,6 +1084,7 @@ async def _handle_conversation(max_api, chat_id: str, max_user_id: str, text: st
 
     action = state["action"]
     step = state["step"]
+    print(f"[MAX Bot] Conversation: action={action}, step={step}, text={text[:30]}")
 
     # Cancel
     if text.lower() in ("/cancel", "отмена", "отменить"):
@@ -1636,7 +1630,13 @@ async def process_max_update(body: dict):
 
             # Check conversation state first (for multi-step flows)
             if not cmd.startswith("/"):
-                handled = await _handle_conversation(max_api, chat_id, max_user_id, text)
+                print(f"[MAX Bot] Checking conversation: user={max_user_id}, has_state={max_user_id in _conversation_state}")
+                try:
+                    handled = await _handle_conversation(max_api, chat_id, max_user_id, text)
+                except Exception as conv_err:
+                    import traceback
+                    print(f"[MAX Bot] Conversation error: {conv_err}\n{traceback.format_exc()}")
+                    handled = False
                 if handled:
                     return
                 # Check if it's a 6-digit account link code

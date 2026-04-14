@@ -66,26 +66,30 @@ async def save_settings(tc: str, request: Request, user=Depends(get_current_user
         await execute(
             """UPDATE shop_settings SET shop_name=$1, primary_color=$2, banner_url=$3, welcome_text=$4,
                currency=$5, min_order_amount=$6, require_phone=$7, require_email=$8, require_address=$9,
-               manager_user_id=$10 WHERE channel_id = $11""",
+               manager_user_id=$10, manager_contact_url=$11, banners=$12 WHERE channel_id = $13""",
             body.get("shop_name", ""), body.get("primary_color", "#4F46E5"),
             body.get("banner_url"), body.get("welcome_text", ""),
             body.get("currency", "RUB"), float(body.get("min_order_amount", 0)),
             bool(body.get("require_phone", True)), bool(body.get("require_email", False)),
             bool(body.get("require_address", False)),
             int(body["manager_user_id"]) if body.get("manager_user_id") else None,
+            body.get("manager_contact_url", ""),
+            json.dumps(body.get("banners", []), ensure_ascii=False),
             channel["id"],
         )
     else:
         await execute(
             """INSERT INTO shop_settings (channel_id, shop_name, primary_color, banner_url, welcome_text,
-               currency, min_order_amount, require_phone, require_email, require_address, manager_user_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
+               currency, min_order_amount, require_phone, require_email, require_address, manager_user_id, manager_contact_url, banners)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
             channel["id"], body.get("shop_name", ""), body.get("primary_color", "#4F46E5"),
             body.get("banner_url"), body.get("welcome_text", ""),
             body.get("currency", "RUB"), float(body.get("min_order_amount", 0)),
             bool(body.get("require_phone", True)), bool(body.get("require_email", False)),
             bool(body.get("require_address", False)),
             int(body["manager_user_id"]) if body.get("manager_user_id") else None,
+            body.get("manager_contact_url", ""),
+            json.dumps(body.get("banners", []), ensure_ascii=False),
         )
     return {"success": True}
 
@@ -935,3 +939,5 @@ async def track_visit(tc: str, request: Request):
            ON CONFLICT (channel_id, user_identifier) DO NOTHING""",
         channel["id"], user_identifier)
     return {"success": True}
+
+

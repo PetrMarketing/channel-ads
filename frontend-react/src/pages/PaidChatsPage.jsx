@@ -38,7 +38,7 @@ export default function PaidChatsPage() {
   const [plans, setPlans] = useState([]);
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
-  const [planForm, setPlanForm] = useState({ plan_type: 'recurring', duration_days: 30, price: '', title: '', description: '' });
+  const [planForm, setPlanForm] = useState({ plan_type: 'recurring', duration_days: 30, price: '', title: '', description: '', offer_code: '' });
   const [savingPlan, setSavingPlan] = useState(false);
 
   // Chats
@@ -150,7 +150,8 @@ export default function PaidChatsPage() {
   const openProviderModal = (provider) => {
     setSelectedProvider(provider);
     const existing = paymentSettings.find(s => s.provider === provider.id);
-    setProviderCreds(existing?.credentials || {});
+    // Credentials are masked from server — show placeholders, user fills new values to update
+    setProviderCreds({});
     setShowProviderModal(true);
   };
 
@@ -198,9 +199,12 @@ export default function PaidChatsPage() {
   };
 
   // ── Plans handlers ──
+  const hasGetcourse = paymentSettings.some(s => s.provider === 'getcourse');
+
   const openPlanCreate = () => {
     setEditingPlan(null);
-    setPlanForm({ plan_type: 'recurring', duration_days: 30, price: '', title: '', description: '' });
+    // Default offer_code from getcourse settings (masked, user enters new)
+    setPlanForm({ plan_type: 'recurring', duration_days: 30, price: '', title: '', description: '', offer_code: '' });
     setShowPlanModal(true);
   };
 
@@ -212,6 +216,7 @@ export default function PaidChatsPage() {
       price: plan.price,
       title: plan.title || '',
       description: plan.description || '',
+      offer_code: plan.offer_code || '',
     });
     setShowPlanModal(true);
   };
@@ -439,14 +444,14 @@ export default function PaidChatsPage() {
       </div>
 
       {/* Payment link — hidden until privacy policy is set */}
-      {setup.has_payment && setup.has_plans && setup.has_chats && !currentChannel?.privacy_policy_url && (
+      {setup.has_payment && setup.has_plans && setup.has_chats && (!currentChannel?.privacy_policy_url || !currentChannel?.offer_url) && (
         <div className="pc-info-box" style={{ marginBottom: 16, borderColor: 'var(--error, #e63946)' }}>
           <p style={{ color: 'var(--error, #e63946)', fontSize: '0.88rem', margin: 0 }}>
-            Для отображения ссылок на оплату необходимо заполнить поле «Политика конфиденциальности» во вкладке «Оплата».
+            Для отображения ссылок заполните «Политику конфиденциальности» и «Договор оферты» во вкладке «Оплата».
           </p>
         </div>
       )}
-      {setup.has_payment && setup.has_plans && setup.has_chats && currentChannel?.privacy_policy_url && (() => {
+      {setup.has_payment && setup.has_plans && setup.has_chats && currentChannel?.privacy_policy_url && currentChannel?.offer_url && (() => {
         const isMax = currentChannel?.platform === 'max';
         const botLink = isMax
           ? `https://max.ru/${import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot'}?start=paid_${tc}`
@@ -456,22 +461,12 @@ export default function PaidChatsPage() {
         <div className="pc-info-box" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
             <strong>Ссылка на бота:</strong>
-            <code style={{ background: 'var(--bg)', padding: '4px 10px', borderRadius: 6, fontSize: '0.85rem', wordBreak: 'break-all' }}>
+            <code style={{ background: 'var(--bg)', padding: '4px 10px', borderRadius: 6, fontSize: '0.78rem', wordBreak: 'break-all' }}>
               {botLink}
             </code>
             <button
               className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '0.82rem' }}
               onClick={() => { navigator.clipboard.writeText(botLink); showToast('Ссылка скопирована'); }}
-            >Копировать</button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <strong>Веб-ссылка:</strong>
-            <code style={{ background: 'var(--bg)', padding: '4px 10px', borderRadius: 6, fontSize: '0.85rem', wordBreak: 'break-all' }}>
-              {webLink}
-            </code>
-            <button
-              className="btn btn-outline" style={{ padding: '6px 14px', fontSize: '0.82rem' }}
-              onClick={() => { navigator.clipboard.writeText(webLink); showToast('Ссылка скопирована'); }}
             >Копировать</button>
           </div>
         </div>);
@@ -623,17 +618,21 @@ export default function PaidChatsPage() {
               </div>
             )}
 
-            {selectedProvider.fields.map(f => (
-              <div key={f.key} className="form-group">
-                <label>{f.label}</label>
-                <input
-                  type={f.key.includes('password') || f.key.includes('secret') ? 'password' : 'text'}
-                  value={providerCreds[f.key] || ''}
-                  onChange={e => setProviderCreds(prev => ({ ...prev, [f.key]: e.target.value }))}
-                  placeholder={f.label}
-                />
-              </div>
-            ))}
+            {selectedProvider.fields.map(f => {
+              const existing = paymentSettings.find(s => s.provider === selectedProvider.id);
+              const masked = existing?.credentials?.[f.key];
+              return (
+                <div key={f.key} className="form-group">
+                  <label>{f.label} {masked && <span style={{ fontSize: '0.72rem', color: 'var(--success, #2a9d8f)' }}>(сохранено: {masked})</span>}</label>
+                  <input
+                    type={f.key.includes('password') || f.key.includes('secret') ? 'password' : 'text'}
+                    value={providerCreds[f.key] || ''}
+                    onChange={e => setProviderCreds(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    placeholder={masked ? 'Оставьте пустым, чтобы не менять' : f.label}
+                  />
+                </div>
+              );
+            })}
             <button className="btn btn-primary" onClick={saveProvider} disabled={savingProvider} style={{ marginTop: 12 }}>
               {savingProvider ? 'Сохранение...' : 'Сохранить'}
             </button>
@@ -698,6 +697,17 @@ export default function PaidChatsPage() {
               rows={3}
             />
           </div>
+          {hasGetcourse && (
+            <div className="form-group">
+              <label>Код предложения GetCourse</label>
+              <input
+                value={planForm.offer_code}
+                onChange={e => setPlanForm(f => ({ ...f, offer_code: e.target.value }))}
+                placeholder="Код из ссылки на оплату GetCourse"
+              />
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>Уникальный код предложения для этого тарифа в GetCourse</p>
+            </div>
+          )}
           <button className="btn btn-primary" onClick={savePlan} disabled={savingPlan} style={{ marginTop: 12 }}>
             {savingPlan ? 'Сохранение...' : 'Сохранить'}
           </button>

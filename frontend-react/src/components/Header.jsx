@@ -121,7 +121,7 @@ export default function Header({ onToggleSidebar }) {
         <button className="sidebar-toggle" onClick={onToggleSidebar}>&#9776;</button>
         <h1><img src="/logo-64.png" alt="PK" style={{ width: 28, height: 28, borderRadius: 6, verticalAlign: 'middle', marginRight: 8 }} />MAXМаркетинг</h1>
         {channels.length > 0 && (
-          <div className="global-channel-selector" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className="global-channel-selector" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <select
               value={currentChannel?.tracking_code || ''}
               onChange={handleChannelChange}
@@ -137,6 +137,7 @@ export default function Header({ onToggleSidebar }) {
               <span style={{
                 fontSize: '0.72rem', color: 'var(--text-secondary)', background: 'var(--bg-glass)',
                 padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--border)', whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120,
               }}>
                 Владелец: {currentChannel.owner_name || '—'}
               </span>

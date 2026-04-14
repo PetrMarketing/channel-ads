@@ -262,6 +262,10 @@ export default function ShopPage() {
 
   // Settings save
   const saveSettings = async () => {
+    if (settings.manager_contact_url && !settings.manager_contact_url.startsWith('https://t.me/') && !settings.manager_contact_url.startsWith('https://max.ru/')) {
+      showToast('Ссылка менеджера должна начинаться с https://t.me/ или https://max.ru/', 'error');
+      return;
+    }
     setSavingSettings(true);
     try {
       await api.post(`/shop/${tc}/settings`, settings);

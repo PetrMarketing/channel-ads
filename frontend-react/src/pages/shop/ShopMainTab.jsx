@@ -4,7 +4,24 @@ import { api } from '../../services/api';
 export default function ShopMainTab({ tc, settings, setSettings, orderStats, products, showToast, currentChannel, saveSettings, savingSettings }) {
   const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
   const shopLink = `https://max.ru/${maxBotUsername}?startapp=shop_${tc}`;
-  const hasPolicy = !!currentChannel?.privacy_policy_url;
+  const [policyUrl, setPolicyUrl] = useState(currentChannel?.privacy_policy_url || '');
+  const [offerUrl, setOfferUrl] = useState(currentChannel?.offer_url || '');
+  const [savingLegal, setSavingLegal] = useState(false);
+
+  const saveLegal = async () => {
+    if (!tc) return;
+    setSavingLegal(true);
+    try {
+      await api.put(`/channels/${tc}`, { privacy_policy_url: policyUrl, offer_url: offerUrl });
+      if (currentChannel) { currentChannel.privacy_policy_url = policyUrl; currentChannel.offer_url = offerUrl; }
+      showToast('Сохранено');
+    } catch { showToast('Ошибка', 'error'); }
+    setSavingLegal(false);
+  };
+
+  const validManagerUrl = settings.manager_contact_url && (settings.manager_contact_url.startsWith('https://t.me/') || settings.manager_contact_url.startsWith('https://max.ru/'));
+  const hasPolicy = !!policyUrl && !!offerUrl;
+  const canShowLink = hasPolicy && settings.manager_user_id && validManagerUrl;
 
   const [staff, setStaff] = useState([]);
   useEffect(() => {
@@ -75,6 +92,45 @@ export default function ShopMainTab({ tc, settings, setSettings, orderStats, pro
             Выберите менеджера для получения уведомлений о заказах
           </p>
         )}
+        <div style={{ marginTop: 12 }}>
+          <label className="form-label" style={{ display: 'block', marginBottom: 6 }}>Ссылка для связи с менеджером</label>
+          <input className="form-input" placeholder="https://t.me/username или https://max.ru/..."
+            value={settings.manager_contact_url || ''}
+            onChange={e => setSettings(s => ({ ...s, manager_contact_url: e.target.value }))}
+          />
+          {settings.manager_contact_url && !settings.manager_contact_url.startsWith('https://t.me/') && !settings.manager_contact_url.startsWith('https://max.ru/') && (
+            <p style={{ fontSize: '0.75rem', color: 'var(--error, #e63946)', marginTop: 4 }}>Ссылка должна начинаться с https://t.me/ или https://max.ru/</p>
+          )}
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+            Ссылка на Telegram или MAX. Отправляется клиенту после заказа.
+          </p>
+        </div>
+      </div>
+
+      {/* Legal docs */}
+      <div style={{
+        background: 'var(--bg-glass)', border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)', padding: '16px', marginBottom: 20,
+      }}>
+        <label style={{ fontWeight: 600, marginBottom: 8, display: 'block' }}>Юридические документы</label>
+        <div style={{ marginBottom: 12 }}>
+          <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>Политика конфиденциальности *</label>
+          <input className="form-input" placeholder="https://example.com/privacy"
+            value={policyUrl} onChange={e => setPolicyUrl(e.target.value)} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>Договор оферты *</label>
+          <input className="form-input" placeholder="https://example.com/offer"
+            value={offerUrl} onChange={e => setOfferUrl(e.target.value)} />
+        </div>
+        <button className="btn btn-primary" onClick={saveLegal} disabled={savingLegal} style={{ width: '100%' }}>
+          {savingLegal ? '...' : 'Сохранить'}
+        </button>
+        {(!policyUrl || !offerUrl) && (
+          <p style={{ fontSize: '0.78rem', color: 'var(--error, #e63946)', marginTop: '6px' }}>
+            Без заполнения этих полей ссылки на оплату и мини-приложения не будут отображаться
+          </p>
+        )}
       </div>
 
       {/* Miniapp link */}
@@ -83,7 +139,7 @@ export default function ShopMainTab({ tc, settings, setSettings, orderStats, pro
         borderRadius: 'var(--radius)', padding: '16px', marginBottom: 20,
       }}>
         <label style={{ fontWeight: 600, marginBottom: 8, display: 'block' }}>Ссылка на магазин (мини-приложение)</label>
-        {hasPolicy ? (
+        {canShowLink ? (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <code style={{
               fontSize: '0.78rem', padding: '6px 10px', background: 'var(--bg)',
@@ -95,7 +151,7 @@ export default function ShopMainTab({ tc, settings, setSettings, orderStats, pro
           </div>
         ) : (
           <p style={{ fontSize: '0.8rem', color: 'var(--error, #e63946)', margin: '8px 0 0' }}>
-            Заполните «Политику конфиденциальности» во вкладке «Внешний вид» для отображения ссылки
+            {!hasPolicy ? 'Заполните юридические документы' : !settings.manager_user_id ? 'Выберите менеджера' : 'Укажите корректную ссылку менеджера (t.me или max.ru)'}
           </p>
         )}
       </div>

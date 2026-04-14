@@ -188,6 +188,11 @@ export default function ServicesPage() {
 
   // Branch CRUD
   const saveBranch = async () => {
+    // Validate manager contact URL
+    if (branchForm.manager_contact_url && !branchForm.manager_contact_url.startsWith('https://t.me/') && !branchForm.manager_contact_url.startsWith('https://max.ru/')) {
+      showToast('Ссылка менеджера должна начинаться с https://t.me/ или https://max.ru/', 'error');
+      return;
+    }
     setSavingBranch(true);
     try {
       const payload = { ...branchForm, buffer_time: parseInt(branchForm.buffer_time) || 0 };

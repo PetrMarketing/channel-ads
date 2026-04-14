@@ -169,6 +169,59 @@ app.include_router(comments.public_router, prefix="/api/comments/public", tags=[
 app.include_router(paid_chat_payments.router, prefix="/api/paid-chat-pay", tags=["paid-chat-pay"])
 
 
+def _short_address(addr_data):
+    """Build short address from Nominatim addressdetails: street + house + city."""
+    a = addr_data.get("address", {})
+    parts = []
+    # City
+    city = a.get("city") or a.get("town") or a.get("village") or a.get("hamlet") or ""
+    if city:
+        parts.append(city)
+    # Street
+    street = a.get("road") or a.get("pedestrian") or a.get("neighbourhood") or ""
+    if street:
+        parts.append(street)
+    # House
+    house = a.get("house_number") or ""
+    if house:
+        parts.append(house)
+    return ", ".join(parts) if parts else addr_data.get("display_name", "")
+
+
+@app.get("/api/geo/reverse")
+async def geo_reverse(lat: float = 0, lon: float = 0):
+    """Reverse geocode via Nominatim."""
+    import aiohttp
+    if not lat or not lon:
+        return {"address": ""}
+    url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&addressdetails=1&accept-language=ru"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"User-Agent": "PKMarketing/1.0"},
+                                   timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                data = await resp.json()
+                return {"address": _short_address(data)}
+    except Exception:
+        return {"address": ""}
+
+
+@app.get("/api/geo/suggest")
+async def geo_suggest(q: str = ""):
+    """Address suggestions via Nominatim."""
+    import aiohttp
+    if not q or len(q) < 3:
+        return {"results": []}
+    url = f"https://nominatim.openstreetmap.org/search?q={q}&format=json&addressdetails=1&limit=5&countrycodes=ru&accept-language=ru"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"User-Agent": "PKMarketing/1.0"},
+                                   timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                data = await resp.json()
+                return {"results": [{"display": _short_address(r), "lat": float(r["lat"]), "lon": float(r["lon"])} for r in data if r.get("lat")]}
+    except Exception:
+        return {"results": []}
+
+
 # ========================
 # Top-level endpoints
 # ========================
@@ -815,7 +868,7 @@ const TC = '{tc}';
 const BRANCH_ID = '{branch_id}';
 let appearance = {{}};
 let privacyPolicyUrl = '';
-let state = {{step:'services',services:[],specialists:[],selectedService:null,selectedSpecialist:null,selectedDate:'',selectedSlot:null,showCal:false,calYear:new Date().getFullYear(),calMonth:new Date().getMonth(),userName:'',userPhone:'',userEmail:'',userId:''}};
+let state = {{step:'services',services:[],specialists:[],selectedService:null,selectedSpecialist:null,selectedDate:'',selectedSlot:null,showCal:false,calYear:new Date().getFullYear(),calMonth:new Date().getMonth(),userName:'',userPhone:'',userEmail:'',userId:'',availableDates:null}};
 const WEEKDAYS = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
 var WB = window.WebApp || {{}};
 function bHaptic(t) {{ try {{ if (WB.HapticFeedback) WB.HapticFeedback[t==='success'?'notificationOccurred':'impactOccurred'](t==='success'?'success':'light'); }} catch(e) {{}} }}
@@ -930,14 +983,17 @@ function render() {{
     mon.setDate(mon.getDate() - (dow === 0 ? 6 : dow - 1));
     h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">';
     h += '<div class="dates-row" style="flex:1">';
+    const avail = state.availableDates;
     for (let i = 0; i < 7; i++) {{
       const d = new Date(mon); d.setDate(d.getDate() + i);
       const ds = localDateStr(d);
       const isPast = d < today;
+      const noSlots = avail && !avail.includes(ds);
+      const disabled = isPast || noSlots;
       const isToday = ds === todayStr;
       const sel = state.selectedDate === ds ? ' selected' : '';
-      const cls = isPast ? ' disabled' : (isToday ? ' today' : '');
-      if (isPast) {{
+      const cls = disabled ? ' disabled' : (isToday ? ' today' : '');
+      if (disabled) {{
         h += '<div class="date-btn disabled">';
       }} else {{
         h += '<div class="date-btn' + sel + cls + '" onclick="selectDate(\\\'' + ds + '\\\')">';
@@ -971,13 +1027,15 @@ function render() {{
         const dt = new Date(state.calYear, state.calMonth, d);
         const ds = localDateStr(dt);
         const isPast = dt < today;
+        const noSlots = avail && !avail.includes(ds);
+        const disabled = isPast || noSlots;
         const isSel = state.selectedDate === ds;
         const isT = ds === todayStr;
         let cls = 'cal-day';
-        if (isPast) cls += ' past';
+        if (disabled) cls += ' past';
         if (isSel) cls += ' sel';
-        if (isT) cls += ' today-mark';
-        if (isPast) {{
+        if (isT && !disabled) cls += ' today-mark';
+        if (disabled) {{
           h += '<div class="' + cls + '">' + d + '</div>';
         }} else {{
           h += '<div class="' + cls + '" onclick="selectDate(\\\'' + ds + '\\\');toggleCal()">' + d + '</div>';
@@ -1098,7 +1156,12 @@ function selectSpecialist(i) {{
   state.selectedDate = '';
   state.selectedSlot = null;
   state.slots = [];
+  state.availableDates = null;
   render(); bUpdateBack();
+  api('/available-dates?specialist_id=' + state.selectedSpecialist.id + '&service_id=' + state.selectedService.id + '&days=60').then(d => {{
+    if (d.success) state.availableDates = d.dates || [];
+    render();
+  }});
 }}
 
 function selectDate(d) {{
@@ -1285,12 +1348,15 @@ var uid = '';
 
 function resolveUid() {{
   try {{
-    if (window.WebApp && window.WebApp.initDataUnsafe) {{
-      var u = window.WebApp.initDataUnsafe.user;
+    var wa = window.WebApp;
+    if (wa && wa.initDataUnsafe) {{
+      var u = wa.initDataUnsafe.user;
       if (u && u.id) uid = String(u.id);
       if (u) S.userName = ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
     }}
-  }} catch(e) {{}}
+    // Debug: log what bridge provides
+    if (wa) console.log('[Shop] WebApp:', wa.platform, 'initData:', !!wa.initData, 'user:', JSON.stringify(wa.initDataUnsafe?.user || null));
+  }} catch(e) {{ console.log('[Shop] resolveUid error:', e); }}
   if (!uid) {{ uid = localStorage.getItem('shop_uid'); if (!uid) {{ uid = 'anon_' + Math.random().toString(36).slice(2,10); localStorage.setItem('shop_uid', uid); }} }}
 }}
 
@@ -1439,7 +1505,16 @@ function renderHome() {{
   const hits = S.products.filter(p=>p.is_hit).slice(0,10);
   const newest = [...S.products].sort((a,b)=>(b.id||0)-(a.id||0)).slice(0,10);
   let h = headerHtml(S.appearance.shop_name || 'Магазин', false);
-  if (S.appearance.banner_url) h += `<img class="banner" src="${{S.appearance.banner_url}}">`;
+  var _banners = (S.appearance.banners && S.appearance.banners.length) ? S.appearance.banners : (S.appearance.banner_url ? [S.appearance.banner_url] : []);
+  if (_banners.length === 1) {{
+    h += '<img class="banner" src="' + _banners[0] + '">';
+  }} else if (_banners.length > 1) {{
+    h += '<div class="banner-slider" style="position:relative;overflow:hidden">';
+    h += '<img class="banner" id="bannerImg" src="' + _banners[0] + '">';
+    h += '<div style="position:absolute;bottom:6px;left:50%;transform:translateX(-50%);display:flex;gap:4px">';
+    _banners.forEach(function(_, i) {{ h += '<div class="bdot" data-i="' + i + '" style="width:' + (i===0?16:6) + 'px;height:6px;border-radius:3px;background:' + (i===0?'#fff':'rgba(255,255,255,0.5)') + ';cursor:pointer;transition:all .2s"></div>'; }});
+    h += '</div></div>';
+  }}
   if (hits.length) {{
     h += `<div class="section"><h2>Хиты</h2><div class="hscroll">`;
     hits.forEach(p => {{ h += `<div class="pcard" onclick="go('product',${{p.id}})"><img src="${{img(p.image_url)}}"><div class="info"><div class="pname">${{p.name}}</div><div class="pprice">${{fmt(p.price)}}</div></div></div>`; }});
@@ -1532,7 +1607,7 @@ function renderCheckout() {{
   h += '<label class="form-label">Телефон</label><div style="display:flex;gap:8px"><input class="form-input" id="cphone" type="tel" placeholder="+7..." style="flex:1;margin:0">';
   if (WA.requestContact) h += '<button class="btn" style="background:' + pc() + ';padding:8px 12px;font-size:0.8rem;white-space:nowrap" onclick="fillPhone()">Автозаполнение</button>';
   h += '</div>';
-  h += `<label class="form-label">Адрес</label><input class="form-input" id="caddr" placeholder="Город, улица, дом">`;
+  h += '<label class="form-label">Адрес</label><input class="form-input" id="caddr" placeholder="Город, улица, дом">';
   if (S.deliveryMethods.length) {{
     h += `<label class="form-label">Доставка</label><div class="dm-list">`;
     S.deliveryMethods.forEach(m => {{
@@ -1596,6 +1671,10 @@ function renderSuccess() {{
 }}
 
 init();
+var _bIdx=0,_bTimer=null;
+function startBannerSlider(){{var b=(S.appearance.banners&&S.appearance.banners.length)?S.appearance.banners:(S.appearance.banner_url?[S.appearance.banner_url]:[]);if(b.length<=1)return;clearInterval(_bTimer);function upd(){{var img=document.getElementById('bannerImg');if(img)img.src=b[_bIdx];document.querySelectorAll('.bdot').forEach(function(d){{var i=parseInt(d.dataset.i);d.style.width=(i===_bIdx?'16px':'6px');d.style.background=(i===_bIdx?'#fff':'rgba(255,255,255,0.5)');}});}}
+_bTimer=setInterval(function(){{_bIdx=(_bIdx+1)%b.length;upd();}},10000);var sl=document.querySelector('.banner-slider');if(sl){{var sx=0;sl.ontouchstart=function(e){{sx=e.touches[0].clientX;}};sl.ontouchend=function(e){{var dx=e.changedTouches[0].clientX-sx;if(Math.abs(dx)>40){{_bIdx=dx<0?(_bIdx+1)%b.length:(_bIdx-1+b.length)%b.length;upd();clearInterval(_bTimer);_bTimer=setInterval(function(){{_bIdx=(_bIdx+1)%b.length;upd();}},10000);}}}};document.querySelectorAll('.bdot').forEach(function(d){{d.onclick=function(){{_bIdx=parseInt(d.dataset.i);upd();}}}});}}}}
+var _oR=render;render=function(){{_oR();if(S.screen==='home')startBannerSlider();}};
 </script>
 </body></html>"""
     return HTMLResponse(html)

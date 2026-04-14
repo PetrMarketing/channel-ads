@@ -124,7 +124,7 @@ export default function StaffPage() {
             placeholder="Введите PKid сотрудника"
             value={pkId}
             onChange={e => setPkId(e.target.value)}
-            style={{ flex: 1, minWidth: '140px', padding: '8px 12px', fontSize: '0.88rem' }}
+            style={{ flex: 1, minWidth: '100px', padding: '8px 12px', fontSize: '0.88rem' }}
             onKeyDown={e => { if (e.key === 'Enter') handleAdd(false); }}
           />
           <select

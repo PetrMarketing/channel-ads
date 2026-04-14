@@ -133,7 +133,7 @@ export default function DashboardPage() {
       {/* Dashboard Stats */}
       {stats && (
         <div style={{ marginBottom: '25px' }}>
-          <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+          <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px' }}>
             <StatCard label="Визиты" value={stats.visits} onClick={() => navigate('/links')} />
             <StatCard label="Подписки" value={stats.subscribers} onClick={() => navigate('/links')} />
             <StatCard label="Лиды" value={stats.leads} onClick={() => navigate('/pins')} />
@@ -206,7 +206,13 @@ export default function DashboardPage() {
                 <>
                   <h4 style={{ marginBottom: '8px' }}>Добавьте бота в канал</h4>
                   <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <li>Добавьте бота в подписчики канала: <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg-glass)', borderRadius: '4px' }} onClick={() => { navigator.clipboard.writeText(`@${maxBotUsername}`); showToast('Скопировано'); }}>@{maxBotUsername}</code> или по имени <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg-glass)', borderRadius: '4px' }} onClick={() => { navigator.clipboard.writeText(maxBotName); showToast('Скопировано'); }}>{maxBotName}</code></li>
+                    <li>Добавьте бота в подписчики канала:
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                        <code style={{ cursor: 'pointer', padding: '4px 8px', background: 'var(--bg-glass)', borderRadius: '4px', fontSize: '0.75rem', wordBreak: 'break-all' }} onClick={() => { navigator.clipboard.writeText(`@${maxBotUsername}`); showToast('Скопировано'); }}>@{maxBotUsername}</code>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>или</span>
+                        <code style={{ cursor: 'pointer', padding: '4px 8px', background: 'var(--bg-glass)', borderRadius: '4px', fontSize: '0.75rem' }} onClick={() => { navigator.clipboard.writeText(maxBotName); showToast('Скопировано'); }}>{maxBotName}</code>
+                      </div>
+                    </li>
                     <li>Откройте ваш канал → <b>Настройки</b> → <b>Администраторы</b> → назначьте бота администратором</li>
                     <li>Канал появится автоматически в списке каналов</li>
                   </ol>
@@ -331,11 +337,12 @@ function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
             ? '1px solid var(--primary)'
             : '1px solid var(--border)',
         borderRadius: 'var(--radius)',
-        padding: '12px 16px',
+        padding: '12px 14px',
         cursor: 'pointer',
         transition: 'var(--transition)',
         opacity: isDisconnected ? 0.8 : 1,
         display: 'flex',
+        width: '100%', boxSizing: 'border-box',
         alignItems: 'center',
         gap: '14px',
       }}
@@ -358,14 +365,28 @@ function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
       )}
 
       {/* Info */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
         <div style={{ fontWeight: 600, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {ch.title || ch.channel_id || ch.tracking_code}
         </div>
         {channelLink && (
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {channelLink}
-          </div>
+          <button style={{
+            border: '1px solid var(--primary)', background: 'rgba(var(--primary-rgb,99,102,241),0.08)',
+            cursor: 'pointer', padding: '3px 10px', fontSize: '0.7rem', color: 'var(--primary)',
+            fontWeight: 600, marginTop: 4, borderRadius: 4,
+          }}
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText(channelLink);
+              var btn = e.currentTarget;
+              var orig = btn.textContent;
+              btn.textContent = 'Скопировано!';
+              btn.style.background = 'var(--primary)';
+              btn.style.color = '#fff';
+              setTimeout(function() { btn.textContent = orig; btn.style.background = ''; btn.style.color = ''; }, 1500);
+            }}>
+            Копировать ссылку
+          </button>
         )}
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
           {isDisconnected ? (
@@ -395,14 +416,14 @@ function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
         </div>
         {isDisconnected && (
           <div style={{ marginTop: '6px' }}>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 6px 0' }}>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 6px 0', wordBreak: 'break-word' }}>
               1. Добавьте бота в подписчики:{' '}
               <b
-                style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+                style={{ cursor: 'pointer', textDecoration: 'underline dotted', wordBreak: 'break-all' }}
                 title="Нажмите, чтобы скопировать"
                 onClick={(e) => { e.stopPropagation(); const name = ch.platform === 'max' ? `@${maxBotUsername}` : `@${tgBotUsername}`; navigator.clipboard.writeText(name); }}
               >{ch.platform === 'max' ? `@${maxBotUsername}` : `@${tgBotUsername}`}</b>
-              {ch.platform === 'max' && <span> или по имени <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg-glass)', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(maxBotName); }}>{maxBotName}</code></span>}
+              {ch.platform === 'max' && <span> или <code style={{ cursor: 'pointer', padding: '2px 6px', background: 'var(--bg-glass)', borderRadius: '4px', fontSize: '0.75rem' }} onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(maxBotName); }}>{maxBotName}</code></span>}
               <br />2. Канал → Настройки → Администраторы → назначьте бота администратором
             </p>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

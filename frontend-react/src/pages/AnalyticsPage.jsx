@@ -55,7 +55,9 @@ export default function AnalyticsPage() {
         <svg viewBox={`0 0 ${w} ${h + 4}`} style={{ width: '100%', height: 120 }} preserveAspectRatio="none">
           <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
           {values.map((v, i) => (
-            <circle key={i} cx={(i / Math.max(values.length - 1, 1)) * w} cy={h - (v / max) * h} r="2" fill={color} />
+            <circle key={i} cx={(i / Math.max(values.length - 1, 1)) * w} cy={h - (v / max) * h} r="3" fill={color} stroke="var(--bg-primary, #fff)" strokeWidth="1" style={{ cursor: 'pointer' }}>
+              <title>{(data[i]?.snapshot_date || '') + ': ' + (typeof v === 'number' && v % 1 !== 0 ? v.toFixed(2) : Number(v).toLocaleString('ru-RU'))}</title>
+            </circle>
           ))}
         </svg>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>

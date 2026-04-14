@@ -19,6 +19,7 @@ export default function AppearanceTab({
   currentChannel,
 }) {
   const [bgFile, setBgFile] = useState(null);
+  const [previewScreen, setPreviewScreen] = useState('home');
   const s = settings;
 
   const bgStyle = s.bg_type === 'gradient'
@@ -234,35 +235,132 @@ export default function AppearanceTab({
         </div>
 
         {/* Preview */}
-        <div style={{ width: 280, flexShrink: 0 }}>
+        <div style={{ width: 260, flexShrink: 0 }}>
           <label className="form-label" style={{ marginBottom: 8 }}>Предпросмотр</label>
-          <div style={{ borderRadius: 16, overflow: 'hidden', border: '1px solid var(--border)', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
+
+          {/* Screen switcher — dots */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 10 }}>
+            {[
+              { id: 'home', label: 'Главная' },
+              { id: 'services', label: 'Услуги' },
+              { id: 'specialists', label: 'Специалисты' },
+              { id: 'booking', label: 'Запись' },
+              { id: 'success', label: 'Спасибо' },
+            ].map(scr => (
+              <button key={scr.id} onClick={() => setPreviewScreen(scr.id)} title={scr.label} style={{
+                border: 'none', cursor: 'pointer', padding: 0,
+                width: previewScreen === scr.id ? 24 : 8,
+                height: 8, borderRadius: 4,
+                background: previewScreen === scr.id ? (s.primary_color || '#4F46E5') : 'var(--border, #d1d5db)',
+                transition: 'all 0.2s',
+              }} />
+            ))}
+          </div>
+
+          <div style={{ borderRadius: 16, overflow: 'hidden', border: '1px solid var(--border)', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', height: 462, display: 'flex', flexDirection: 'column' }}>
             {/* Header */}
-            <div style={{ ...bgStyle, padding: '24px 16px', textAlign: 'center', color: '#fff', position: 'relative', minHeight: 90 }}>
+            <div style={{ ...bgStyle, padding: '24px 16px', textAlign: 'center', color: s.header_text_color || '#fff', position: 'relative', minHeight: 90 }}>
               {overlayStyle && <div style={overlayStyle} />}
               <div style={{ position: 'relative', zIndex: 1 }}>
                 {(coverImage || s.logo_url) && (
                   <img src={coverImage ? URL.createObjectURL(coverImage) : s.logo_url} alt=""
                     style={{ width: 50, height: 50, borderRadius: '50%', objectFit: 'cover', margin: '0 auto 8px', display: 'block', border: '2px solid rgba(255,255,255,0.5)' }} />
                 )}
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{s.welcome_text?.slice(0, 30) || 'Запись на услуги'}</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>
+                  {previewScreen === 'home' ? (s.welcome_text?.slice(0, 30) || 'Запись на услуги') :
+                   previewScreen === 'services' ? 'Выберите услугу' :
+                   previewScreen === 'specialists' ? 'Выберите специалиста' :
+                   previewScreen === 'booking' ? 'Запись' : 'Готово!'}
+                </div>
               </div>
             </div>
-            {/* Services preview */}
-            <div style={{ padding: 12, minHeight: 100,
+
+            {/* Content area */}
+            <div style={{ padding: 12, flex: 1, overflowY: 'auto', color: s.page_text_color || '#1f2937',
               ...(s.page_bg_type === 'gradient'
                 ? { background: `linear-gradient(${s.page_gradient_direction || '180deg'}, ${s.page_gradient_from || '#f5f5f5'}, ${s.page_gradient_to || '#e0e7ff'})` }
                 : { background: s.page_bg_color || '#ffffff' })
             }}>
-              {['Стрижка', 'Маникюр'].map((name, i) => (
-                <div key={i} style={{ padding: '10px 12px', marginBottom: 8, borderRadius: 8, border: '1px solid #eee' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{name}</div>
-                  <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>60 мин · 1500 ₽</div>
+              {/* Home */}
+              {previewScreen === 'home' && (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Наши услуги</div>
+                  {['Стрижка', 'Маникюр', 'Массаж'].map((name, i) => (
+                    <div key={i} style={{ padding: '10px 12px', marginBottom: 6, borderRadius: 8, border: '1px solid #eee', background: 'rgba(255,255,255,0.7)' }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{name}</div>
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{30 + i * 15} мин · {1000 + i * 500} ₽</div>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* Services */}
+              {previewScreen === 'services' && (
+                <>
+                  {['Стрижка мужская', 'Стрижка женская', 'Маникюр', 'Педикюр'].map((name, i) => (
+                    <div key={i} style={{ padding: '10px 12px', marginBottom: 6, borderRadius: 8, border: '1px solid #eee', background: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{name}</div>
+                          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{30 + i * 10} мин</div>
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: s.primary_color || '#4F46E5' }}>{800 + i * 400} ₽</div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* Specialists */}
+              {previewScreen === 'specialists' && (
+                <>
+                  {['Анна Иванова', 'Мария Петрова'].map((name, i) => (
+                    <div key={i} style={{ padding: '12px', marginBottom: 6, borderRadius: 8, border: '1px solid #eee', background: 'rgba(255,255,255,0.7)', display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: s.primary_color || '#4F46E5', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 16, flexShrink: 0 }}>{name[0]}</div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{name}</div>
+                        <div style={{ fontSize: 11, color: '#888' }}>Стилист</div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* Booking form */}
+              {previewScreen === 'booking' && (
+                <>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>Стрижка · Анна Иванова</div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10, overflowX: 'auto' }}>
+                    {['Пн 14', 'Вт 15', 'Ср 16', 'Чт 17'].map((d, i) => (
+                      <div key={i} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #eee', fontSize: 12, textAlign: 'center', background: i === 1 ? (s.primary_color || '#4F46E5') : 'rgba(255,255,255,0.7)', color: i === 1 ? '#fff' : '#333', flexShrink: 0 }}>{d}</div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, marginBottom: 10 }}>
+                    {['10:00', '11:00', '12:00', '14:00', '15:00', '16:00'].map((t, i) => (
+                      <div key={i} style={{ padding: '6px', borderRadius: 6, border: '1px solid #eee', fontSize: 12, textAlign: 'center', background: i === 2 ? (s.primary_color || '#4F46E5') : 'rgba(255,255,255,0.7)', color: i === 2 ? '#fff' : '#333' }}>{t}</div>
+                    ))}
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.5)', borderRadius: 8, padding: 8, fontSize: 11, marginBottom: 8 }}>
+                    <div style={{ marginBottom: 4 }}><b>Имя:</b> Иван Иванов</div>
+                    <div><b>Тел:</b> +7 900 123-45-67</div>
+                  </div>
+                  <div style={{ padding: '10px', borderRadius: 8, background: s.primary_color || '#4F46E5', color: '#fff', textAlign: 'center', fontSize: 13, fontWeight: 600 }}>Подтвердить запись</div>
+                </>
+              )}
+
+              {/* Success */}
+              {previewScreen === 'success' && (
+                <div style={{ textAlign: 'center', padding: '20px 10px' }}>
+                  <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontSize: 24 }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Вы записаны!</div>
+                  <div style={{ fontSize: 12, color: '#888' }}>Стрижка</div>
+                  <div style={{ fontSize: 12, color: '#888' }}>Вт, 15 апреля в 12:00</div>
+                  <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>Анна Иванова</div>
+                  <div style={{ padding: '8px', borderRadius: 8, background: s.primary_color || '#4F46E5', color: '#fff', textAlign: 'center', fontSize: 13, fontWeight: 600, marginTop: 16 }}>Записаться ещё</div>
                 </div>
-              ))}
-              <div style={{ padding: '10px', borderRadius: 8, background: s.primary_color || '#4F46E5', color: '#fff', textAlign: 'center', fontSize: 13, fontWeight: 600, marginTop: 8 }}>
-                Записаться
-              </div>
+              )}
             </div>
           </div>
         </div>

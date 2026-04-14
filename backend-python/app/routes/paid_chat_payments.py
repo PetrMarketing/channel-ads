@@ -502,7 +502,11 @@ async def create_payment(tc: str, request: Request):
     elif provider == "robokassa":
         payment_url = await _init_robokassa_payment(creds, order_id, amount, description, customer_phone, customer_email)
     elif provider == "getcourse":
-        payment_url = await _init_getcourse_payment(creds, order_id, amount, description, customer_name, customer_phone, customer_email)
+        # Use offer_code from plan, not from provider credentials
+        gc_creds = dict(creds)
+        if plan.get("offer_code"):
+            gc_creds["offer_code"] = plan["offer_code"]
+        payment_url = await _init_getcourse_payment(gc_creds, order_id, amount, description, customer_name, customer_phone, customer_email)
     else:
         raise HTTPException(status_code=400, detail=f"Неподдерживаемый провайдер: {provider}")
 

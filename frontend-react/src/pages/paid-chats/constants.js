@@ -3,7 +3,7 @@ export const PROVIDERS = [
   { id: 'prodamus', name: 'Продамус', fields: [{ key: 'api_key', label: 'API-ключ' }, { key: 'shop_url', label: 'URL магазина' }] },
   { id: 'tinkoff', name: 'Тинькофф Эквайринг', fields: [{ key: 'terminal_key', label: 'Terminal Key' }, { key: 'password', label: 'Пароль' }] },
   { id: 'robokassa', name: 'Робокасса', fields: [{ key: 'merchant_login', label: 'Merchant Login' }, { key: 'password1', label: 'Пароль #1' }, { key: 'password2', label: 'Пароль #2' }] },
-  { id: 'getcourse', name: 'GetCourse', fields: [{ key: 'account', label: 'Аккаунт (поддомен, например myschool)' }, { key: 'offer_code', label: 'Код оффера (из ссылки на оплату)' }, { key: 'secret_key', label: 'Секретный ключ API' }] },
+  { id: 'getcourse', name: 'GetCourse', fields: [{ key: 'account', label: 'Аккаунт (поддомен, например myschool)' }, { key: 'secret_key', label: 'Секретный ключ API' }] },
 ];
 
 export const EVENT_LABELS = {

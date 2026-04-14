@@ -1,51 +1,68 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PROVIDERS } from './constants';
 import { api } from '../../services/api';
 
 export default function PaymentTab({ paymentSettings, openProviderModal, disconnectProvider, currentChannel, onChannelUpdate }) {
+  const tc = currentChannel?.tracking_code;
   const [policyUrl, setPolicyUrl] = useState(currentChannel?.privacy_policy_url || '');
-  const [saving, setSaving] = useState(false);
+  const [offerUrl, setOfferUrl] = useState(currentChannel?.offer_url || '');
+  const [savingLegal, setSavingLegal] = useState(false);
 
-  const savePolicyUrl = async () => {
-    if (!currentChannel?.tracking_code) return;
-    setSaving(true);
+  const saveLegal = async () => {
+    if (!tc) return;
+    setSavingLegal(true);
     try {
-      await api.put(`/channels/${currentChannel.tracking_code}`, { privacy_policy_url: policyUrl });
+      await api.put(`/channels/${tc}`, { privacy_policy_url: policyUrl, offer_url: offerUrl });
+      if (currentChannel) { currentChannel.privacy_policy_url = policyUrl; currentChannel.offer_url = offerUrl; }
       if (onChannelUpdate) onChannelUpdate();
     } catch {}
-    setSaving(false);
+    setSavingLegal(false);
   };
+
+  const [staff, setStaff] = useState([]);
+  const [managerUserId, setManagerUserId] = useState(currentChannel?.paid_chat_manager_user_id || '');
+  const [managerContactUrl, setManagerContactUrl] = useState(currentChannel?.paid_chat_manager_contact_url || '');
+  const [savingManager, setSavingManager] = useState(false);
+
+  useEffect(() => {
+    if (!tc) return;
+    api.get(`/billing/${tc}/staff`).then(d => {
+      if (d.success) setStaff(d.staff || []);
+    }).catch(() => {});
+  }, [tc]);
+
+  const ownerOption = currentChannel ? { id: currentChannel.user_id, label: 'Владелец канала' } : null;
+  const managerOptions = [
+    ...(ownerOption ? [ownerOption] : []),
+    ...staff.map(s => ({ id: s.user_id, label: [s.first_name, s.last_name].filter(Boolean).join(' ') || s.username || `PKid ${s.user_id}` })),
+  ];
 
   return (
     <div className="pc-section">
       <h2>Настройка оплаты</h2>
 
-      {/* Privacy policy */}
+      {/* Legal docs */}
       <div style={{
         background: 'var(--bg-glass)', border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)', padding: '16px', marginBottom: '20px',
+        borderRadius: 'var(--radius)', padding: '16px', marginBottom: 20,
       }}>
-        <label className="form-label" style={{ marginBottom: '8px', display: 'block', fontWeight: 600 }}>
-          Политика конфиденциальности *
-        </label>
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0 0 10px' }}>
-          Ссылка на политику обработки персональных данных. Обязательна для приёма платежей и работы мини-приложений.
-        </p>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <input
-            className="input"
-            placeholder="https://example.com/privacy"
-            value={policyUrl}
-            onChange={e => setPolicyUrl(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <button className="btn btn-primary" onClick={savePolicyUrl} disabled={saving} style={{ whiteSpace: 'nowrap' }}>
-            {saving ? '...' : 'Сохранить'}
-          </button>
+        <label style={{ fontWeight: 600, marginBottom: 8, display: 'block' }}>Юридические документы</label>
+        <div style={{ marginBottom: 12 }}>
+          <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>Политика конфиденциальности *</label>
+          <input className="form-input" placeholder="https://example.com/privacy"
+            value={policyUrl} onChange={e => setPolicyUrl(e.target.value)} />
         </div>
-        {!policyUrl && (
+        <div style={{ marginBottom: 12 }}>
+          <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>Договор оферты *</label>
+          <input className="form-input" placeholder="https://example.com/offer"
+            value={offerUrl} onChange={e => setOfferUrl(e.target.value)} />
+        </div>
+        <button className="btn btn-primary" onClick={saveLegal} disabled={savingLegal} style={{ width: '100%' }}>
+          {savingLegal ? '...' : 'Сохранить'}
+        </button>
+        {(!policyUrl || !offerUrl) && (
           <p style={{ fontSize: '0.78rem', color: 'var(--error, #e63946)', marginTop: '6px' }}>
-            Без заполнения этого поля ссылки на оплату и мини-приложения не будут отображаться
+            Без заполнения этих полей ссылки на оплату и мини-приложения не будут отображаться
           </p>
         )}
       </div>
