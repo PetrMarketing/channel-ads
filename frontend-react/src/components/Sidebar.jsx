@@ -97,6 +97,13 @@ const icons = {
       <circle cx="12" cy="15" r="2"/>
     </svg>
   ),
+  ai: (
+    <svg className="sidebar-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a4 4 0 014 4v1h2a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2h2V6a4 4 0 014-4z"/>
+      <circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/>
+      <path d="M10 17h4"/>
+    </svg>
+  ),
   shop: (
     <svg className="sidebar-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
@@ -123,6 +130,7 @@ const menuItems = [
   {
     category: 'marketing', label: 'Маркетинг', icon: icons.marketing,
     items: [
+      { path: '/ai-design', label: 'ИИ Оформление', icon: icons.ai, badge: 'Скоро' },
       { path: '/links', label: 'Ссылки', icon: icons.links },
       { path: '/pins', label: 'Закрепы', icon: icons.pins },
       { path: '/broadcasts', label: 'Рассылки', icon: icons.broadcasts },
@@ -190,6 +198,7 @@ export default function Sidebar({ isOpen, onClose }) {
                 onClick={onClose}
               >
                 <span className="sidebar-icon gradient-icon">{item.icon}</span> {item.label}
+                {item.badge && <span style={{ marginLeft: 'auto', fontSize: '0.65rem', padding: '1px 6px', borderRadius: 8, background: 'linear-gradient(135deg, #7B68EE, #4F46E5)', color: '#fff', fontWeight: 700 }}>{item.badge}</span>}
               </NavLink>
             );
           }

@@ -16,6 +16,7 @@ import PaidChatsPage from './pages/PaidChatsPage';
 import ServicesPage from './pages/ServicesPage';
 import ShopPage from './pages/ShopPage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import AiDesignPage from './pages/AiDesignPage';
 import CommentsPage from './pages/CommentsPage';
 import OrdPage from './pages/OrdPage';
 import ReferralPage from './pages/ReferralPage';
@@ -87,6 +88,7 @@ export default function App() {
       {/* Dashboard (protected) */}
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<DashboardPage />} />
+        <Route path="ai-design" element={<AiDesignPage />} />
         <Route path="links" element={<LinksPage />} />
         <Route path="pins" element={<PinsPage />} />
         <Route path="broadcasts" element={<BroadcastsPage />} />

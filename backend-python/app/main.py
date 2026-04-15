@@ -1505,7 +1505,8 @@ function renderHome() {{
   const hits = S.products.filter(p=>p.is_hit).slice(0,10);
   const newest = [...S.products].sort((a,b)=>(b.id||0)-(a.id||0)).slice(0,10);
   let h = headerHtml(S.appearance.shop_name || 'Магазин', false);
-  var _banners = (S.appearance.banners && S.appearance.banners.length) ? S.appearance.banners : (S.appearance.banner_url ? [S.appearance.banner_url] : []);
+  var _rawB = S.appearance.banners; if (typeof _rawB === 'string') try {{ _rawB = JSON.parse(_rawB); }} catch(e) {{ _rawB = []; }}
+  var _banners = (Array.isArray(_rawB) && _rawB.length) ? _rawB : (S.appearance.banner_url ? [S.appearance.banner_url] : []);
   if (_banners.length === 1) {{
     h += '<img class="banner" src="' + _banners[0] + '">';
   }} else if (_banners.length > 1) {{
@@ -1672,7 +1673,7 @@ function renderSuccess() {{
 
 init();
 var _bIdx=0,_bTimer=null;
-function startBannerSlider(){{var b=(S.appearance.banners&&S.appearance.banners.length)?S.appearance.banners:(S.appearance.banner_url?[S.appearance.banner_url]:[]);if(b.length<=1)return;clearInterval(_bTimer);function upd(){{var img=document.getElementById('bannerImg');if(img)img.src=b[_bIdx];document.querySelectorAll('.bdot').forEach(function(d){{var i=parseInt(d.dataset.i);d.style.width=(i===_bIdx?'16px':'6px');d.style.background=(i===_bIdx?'#fff':'rgba(255,255,255,0.5)');}});}}
+function startBannerSlider(){{var _sb=S.appearance.banners;if(typeof _sb==='string')try{{_sb=JSON.parse(_sb)}}catch(e){{_sb=[]}};var b=(Array.isArray(_sb)&&_sb.length)?_sb:(S.appearance.banner_url?[S.appearance.banner_url]:[]);if(b.length<=1)return;clearInterval(_bTimer);function upd(){{var img=document.getElementById('bannerImg');if(img)img.src=b[_bIdx];document.querySelectorAll('.bdot').forEach(function(d){{var i=parseInt(d.dataset.i);d.style.width=(i===_bIdx?'16px':'6px');d.style.background=(i===_bIdx?'#fff':'rgba(255,255,255,0.5)');}});}}
 _bTimer=setInterval(function(){{_bIdx=(_bIdx+1)%b.length;upd();}},10000);var sl=document.querySelector('.banner-slider');if(sl){{var sx=0;sl.ontouchstart=function(e){{sx=e.touches[0].clientX;}};sl.ontouchend=function(e){{var dx=e.changedTouches[0].clientX-sx;if(Math.abs(dx)>40){{_bIdx=dx<0?(_bIdx+1)%b.length:(_bIdx-1+b.length)%b.length;upd();clearInterval(_bTimer);_bTimer=setInterval(function(){{_bIdx=(_bIdx+1)%b.length;upd();}},10000);}}}};document.querySelectorAll('.bdot').forEach(function(d){{d.onclick=function(){{_bIdx=parseInt(d.dataset.i);upd();}}}});}}}}
 var _oR=render;render=function(){{_oR();if(S.screen==='home')startBannerSlider();}};
 </script>

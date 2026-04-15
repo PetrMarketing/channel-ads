@@ -15,17 +15,24 @@ class MaxApi:
         self.base_url = BASE_URL
 
     def _url(self, method: str) -> str:
-        sep = "&" if "?" in method else "?"
-        return f"{self.base_url}/{method}{sep}access_token={self.token}"
+        return f"{self.base_url}/{method}"
+
+    def _headers(self, extra: dict = None) -> dict:
+        h = {"Authorization": self.token}
+        if extra:
+            h.update(extra)
+        return h
 
     async def _request(self, method: str, endpoint: str, timeout_seconds: int = 60, **kwargs) -> Dict[str, Any]:
         import asyncio as _aio
         timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        # Merge auth header with any existing headers
+        req_headers = self._headers(kwargs.pop("headers", None))
         for attempt in range(6):  # up to 5 retries on 429
             try:
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     url = self._url(endpoint)
-                    async with session.request(method, url, **kwargs) as resp:
+                    async with session.request(method, url, headers=req_headers, **kwargs) as resp:
                         data = await resp.json(content_type=None)
                         if resp.status == 429:
                             wait = 1.0 * (2 ** attempt)  # 1, 2, 4, 8, 16, 32 sec
