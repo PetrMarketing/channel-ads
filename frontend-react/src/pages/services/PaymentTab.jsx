@@ -2,14 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../../services/api';
 import Modal from '../../components/Modal';
 
-const SHOP_PROVIDERS = [
+const SERVICES_PROVIDERS = [
   { id: 'yoomoney', name: 'ЮMoney', fields: [{ key: 'shop_id', label: 'Shop ID' }, { key: 'secret_key', label: 'Секретный ключ' }] },
   { id: 'prodamus', name: 'Продамус', fields: [{ key: 'api_key', label: 'API-ключ' }, { key: 'shop_url', label: 'URL магазина' }] },
   { id: 'tinkoff', name: 'Тинькофф', fields: [{ key: 'terminal_key', label: 'Terminal Key' }, { key: 'password', label: 'Пароль' }] },
   { id: 'robokassa', name: 'Робокасса', fields: [{ key: 'merchant_login', label: 'Merchant Login' }, { key: 'password1', label: 'Пароль #1' }, { key: 'password2', label: 'Пароль #2' }] },
 ];
 
-export default function ShopPaymentTab({ tc, showToast, currentChannel }) {
+export default function PaymentTab({ tc, showToast, currentChannel }) {
   const [paymentSettings, setPaymentSettings] = useState([]);
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState(null);
@@ -19,7 +19,7 @@ export default function ShopPaymentTab({ tc, showToast, currentChannel }) {
   const loadPaymentSettings = useCallback(async () => {
     if (!tc) return;
     try {
-      const data = await api.get(`/shop/${tc}/payment-settings`);
+      const data = await api.get(`/services/${tc}/payment-settings`);
       if (data.success) setPaymentSettings(data.settings || []);
     } catch {}
   }, [tc]);
@@ -36,7 +36,7 @@ export default function ShopPaymentTab({ tc, showToast, currentChannel }) {
     if (!selectedProvider) return;
     setSavingProvider(true);
     try {
-      const data = await api.post(`/shop/${tc}/payment-settings`, {
+      const data = await api.post(`/services/${tc}/payment-settings`, {
         provider: selectedProvider.id,
         credentials: providerCreds,
         is_active: 1,
@@ -65,7 +65,7 @@ export default function ShopPaymentTab({ tc, showToast, currentChannel }) {
   const disconnectProvider = async (setting) => {
     if (!window.confirm('Отключить платёжную систему?')) return;
     try {
-      await api.delete(`/shop/${tc}/payment-settings/${setting.id}`);
+      await api.delete(`/services/${tc}/payment-settings/${setting.id}`);
       showToast('Платёжная система отключена');
       loadPaymentSettings();
     } catch (e) {
@@ -83,13 +83,13 @@ export default function ShopPaymentTab({ tc, showToast, currentChannel }) {
           <li>Выберите платёжную систему из списка ниже</li>
           <li>Зарегистрируйтесь на сайте платёжной системы и получите API-ключи</li>
           <li>Введите полученные данные в форму и нажмите «Сохранить»</li>
-          <li>После подключения эквайринга покупатели смогут оплачивать заказы</li>
+          <li>После подключения эквайринга клиенты смогут оплачивать услуги онлайн</li>
         </ol>
       </div>
 
       <h3 style={{ marginTop: 24 }}>Платёжные системы</h3>
       <div className="pc-providers-grid">
-        {SHOP_PROVIDERS.map(p => {
+        {SERVICES_PROVIDERS.map(p => {
           const connected = paymentSettings.find(s => s.provider === p.id);
           return (
             <div key={p.id} className={`pc-provider-card ${connected ? 'connected' : ''}`}>

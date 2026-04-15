@@ -11,6 +11,7 @@ import BookingsTab from './services/BookingsTab';
 import ClientsTab from './services/ClientsTab';
 import SvcNotificationsTab from './services/SvcNotificationsTab';
 import AppearanceTab from './services/AppearanceTab';
+import PaymentTab from './services/PaymentTab';
 
 export default function ServicesPage() {
   const { currentChannel } = useChannels();
@@ -85,6 +86,7 @@ export default function ServicesPage() {
     { id: 'bookings', label: 'Бронирования' },
     { id: 'clients', label: 'Клиенты' },
     { id: 'notifications', label: 'Уведомления' },
+    { id: 'payment', label: 'Оплата' },
     { id: 'appearance', label: 'Внешний вид' },
   ];
 
@@ -398,6 +400,8 @@ export default function ServicesPage() {
           savingSvcNotif={savingSvcNotif} setSavingSvcNotif={setSavingSvcNotif}
         />
       )}
+
+      {tab === 'payment' && <PaymentTab tc={tc} showToast={showToast} currentChannel={currentChannel} />}
 
       {tab === 'appearance' && (
         <AppearanceTab

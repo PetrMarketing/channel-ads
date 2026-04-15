@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from ..middleware.auth import get_current_user
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
+from ..services.payment_gateway import SECTION_PROVIDERS
 
 router = APIRouter()
 public_router = APIRouter()
@@ -91,6 +92,85 @@ async def save_settings(tc: str, request: Request, user=Depends(get_current_user
             body.get("manager_contact_url", ""),
             json.dumps(body.get("banners", []), ensure_ascii=False),
         )
+    return {"success": True}
+
+
+# ═══════════════════════════════════════
+# PAYMENT SETTINGS
+# ═══════════════════════════════════════
+
+@router.get("/{tc}/payment-settings")
+async def list_payment_settings(tc: str, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    rows = await fetch_all(
+        "SELECT id, channel_id, section, provider, credentials, is_active, created_at FROM payment_settings WHERE channel_id = $1 AND section = 'shop' ORDER BY created_at",
+        channel["id"],
+    )
+    masked = []
+    for r in rows:
+        r = dict(r)
+        creds = r.get("credentials", {})
+        if isinstance(creds, str):
+            try:
+                creds = json.loads(creds)
+            except Exception:
+                creds = {}
+        r["credentials"] = {k: ("***" + v[-4:] if isinstance(v, str) and len(v) > 4 else "***") for k, v in creds.items()} if isinstance(creds, dict) else {}
+        masked.append(r)
+    return {"success": True, "settings": masked}
+
+
+@router.post("/{tc}/payment-settings")
+async def save_payment_settings(tc: str, request: Request, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    body = await request.json()
+    provider = body.get("provider", "")
+    allowed = SECTION_PROVIDERS.get("shop", [])
+    if provider not in allowed:
+        raise HTTPException(status_code=400, detail="Неподдерживаемая платёжная система")
+    new_creds = body.get("credentials", {})
+    is_active = body.get("is_active", 1)
+
+    # Merge with existing credentials — empty values keep old ones
+    existing = await fetch_one(
+        "SELECT credentials FROM payment_settings WHERE channel_id = $1 AND section = 'shop' AND provider = $2",
+        channel["id"], provider)
+    if existing:
+        old_creds = existing.get("credentials", {})
+        if isinstance(old_creds, str):
+            try: old_creds = json.loads(old_creds)
+            except: old_creds = {}
+        for k, v in new_creds.items():
+            if v:
+                old_creds[k] = v
+        new_creds = old_creds
+
+    credentials = json.dumps(new_creds, ensure_ascii=False)
+
+    sid = await execute_returning_id(
+        """INSERT INTO payment_settings (channel_id, section, provider, credentials, is_active)
+           VALUES ($1, 'shop', $2, $3::jsonb, $4)
+           ON CONFLICT (channel_id, section, provider) DO UPDATE
+             SET credentials = $3::jsonb, is_active = $4
+           RETURNING id""",
+        channel["id"], provider, credentials, is_active,
+    )
+    return {"success": True, "id": sid}
+
+
+@router.delete("/{tc}/payment-settings/{setting_id}")
+async def delete_payment_settings(tc: str, setting_id: int, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    await execute(
+        "DELETE FROM payment_settings WHERE id = $1 AND channel_id = $2 AND section = 'shop'",
+        setting_id, channel["id"],
+    )
     return {"success": True}
 
 
@@ -594,9 +674,34 @@ async def update_order_status(tc: str, oid: int, request: Request, user=Depends(
     new_status = body.get("status")
     if not new_status:
         raise HTTPException(status_code=400, detail="Статус обязателен")
+    order = await fetch_one("SELECT * FROM shop_orders WHERE id = $1 AND channel_id = $2", oid, channel["id"])
+    if not order:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
     await execute(
         "UPDATE shop_orders SET status = $1 WHERE id = $2 AND channel_id = $3",
         new_status, oid, channel["id"])
+    # Notify customer about status change
+    try:
+        from ..services.messenger import send_to_user
+        status_texts = {
+            "confirmed": "подтверждён",
+            "processing": "в обработке",
+            "shipped": "отправлен",
+            "delivered": "доставлен",
+            "cancelled": "отменён",
+        }
+        status_text = status_texts.get(new_status, new_status)
+        text = f"Заказ {order.get('order_number', '')} — {status_text}"
+        uid = order.get("user_identifier", "")
+        if uid and not uid.startswith("anon_"):
+            ch = await fetch_one("SELECT platform FROM channels WHERE id = $1", channel["id"])
+            platform = (ch or {}).get("platform", "max")
+            if platform == "telegram":
+                await send_to_user(int(uid), "telegram", text)
+            else:
+                await send_to_user(uid, "max", text)
+    except Exception as e:
+        print(f"[Shop] Status notification error: {e}")
     return {"success": True}
 
 
@@ -886,7 +991,39 @@ async def checkout(tc: str, request: Request):
     except Exception as e:
         print(f"[Shop] Manager notification error: {e}")
 
-    return {"success": True, "order_id": order_id, "order_number": order_number, "total": total}
+    # Init payment if provider configured
+    payment_url = None
+    try:
+        from ..services.payment_gateway import get_active_provider, generate_order_id, init_payment
+        from ..config import settings as app_settings
+        ps = await get_active_provider(channel["id"], "shop")
+        if ps and total > 0:
+            creds = ps.get("credentials", {})
+            if isinstance(creds, str):
+                creds = json.loads(creds)
+            payment_order_id = generate_order_id("shop", channel["id"])
+            await execute(
+                "UPDATE shop_orders SET payment_order_id = $1, payment_status = 'pending' WHERE id = $2",
+                payment_order_id, order_id)
+            app_url = app_settings.APP_URL.rstrip("/") if hasattr(app_settings, "APP_URL") and app_settings.APP_URL else ""
+            payment_url = await init_payment(
+                section="shop",
+                provider=ps["provider"],
+                creds=creds,
+                order_id=payment_order_id,
+                amount=total,
+                description=f"Заказ {order_number}",
+                app_url=app_url,
+                phone=body.get("client_phone", ""),
+                email=body.get("client_email", ""),
+            )
+    except Exception as e:
+        print(f"[Shop] Payment init error: {e}")
+
+    result = {"success": True, "order_id": order_id, "order_number": order_number, "total": total}
+    if payment_url:
+        result["payment_url"] = payment_url
+    return result
 
 
 @public_router.post("/{tc}/apply-promo")

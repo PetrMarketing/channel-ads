@@ -324,7 +324,7 @@ export default function ShopPage() {
       )}
 
       {tab === 'payment' && (
-        <ShopPaymentTab />
+        <ShopPaymentTab tc={tc} showToast={showToast} currentChannel={currentChannel} />
       )}
 
       {tab === 'delivery' && (

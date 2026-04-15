@@ -30,7 +30,7 @@ from .routes import (
     funnels, content, giveaways, notifications, payments,
     max_routes, telegram_bot, max_webhook,
     admin, paid_chats, paid_chat_payments, services, ord, referrals, landings,
-    metrics, shop,
+    metrics, shop, payment_webhooks,
 )
 
 
@@ -56,6 +56,8 @@ async def lifespan(app: FastAPI):
     start_channel_activator()
     from .services.analytics_collector import start_analytics_collector
     start_analytics_collector()
+    from .services.booking_reminder import start_booking_reminder
+    start_booking_reminder()
 
     # Start bot polling
     from .routes.telegram_bot import start_telegram_polling
@@ -167,6 +169,7 @@ app.include_router(services.public_router, prefix="/api/services/public", tags=[
 app.include_router(shop.public_router, prefix="/api/shop/public", tags=["shop-public"])
 app.include_router(comments.public_router, prefix="/api/comments/public", tags=["comments-public"])
 app.include_router(paid_chat_payments.router, prefix="/api/paid-chat-pay", tags=["paid-chat-pay"])
+app.include_router(payment_webhooks.router, prefix="/api/payments/webhook", tags=["payment-webhooks"])
 
 
 def _short_address(addr_data):

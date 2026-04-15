@@ -627,6 +627,87 @@ async def save_settings(tc: str, request: Request, user=Depends(get_current_user
 
 
 # ═══════════════════════════════════════
+# PAYMENT SETTINGS
+# ═══════════════════════════════════════
+
+@router.get("/{tc}/payment-settings")
+async def list_payment_settings(tc: str, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    from ..services.payment_gateway import SECTION_PROVIDERS
+    rows = await fetch_all(
+        "SELECT id, channel_id, section, provider, credentials, is_active, created_at FROM payment_settings WHERE channel_id = $1 AND section = 'services' ORDER BY created_at",
+        channel["id"],
+    )
+    masked = []
+    for r in rows:
+        r = dict(r)
+        creds = r.get("credentials", {})
+        if isinstance(creds, str):
+            try:
+                creds = json.loads(creds)
+            except Exception:
+                creds = {}
+        r["credentials"] = {k: ("***" + v[-4:] if isinstance(v, str) and len(v) > 4 else "***") for k, v in creds.items()} if isinstance(creds, dict) else {}
+        masked.append(r)
+    return {"success": True, "settings": masked}
+
+
+@router.post("/{tc}/payment-settings")
+async def save_payment_settings(tc: str, request: Request, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    from ..services.payment_gateway import SECTION_PROVIDERS
+    body = await request.json()
+    provider = body.get("provider", "")
+    allowed = SECTION_PROVIDERS.get("services", [])
+    if provider not in allowed:
+        raise HTTPException(status_code=400, detail="Неподдерживаемая платёжная система")
+    new_creds = body.get("credentials", {})
+    is_active = body.get("is_active", 1)
+
+    # Merge with existing credentials
+    existing = await fetch_one(
+        "SELECT credentials FROM payment_settings WHERE channel_id = $1 AND section = 'services' AND provider = $2",
+        channel["id"], provider)
+    if existing:
+        old_creds = existing.get("credentials", {})
+        if isinstance(old_creds, str):
+            try: old_creds = json.loads(old_creds)
+            except: old_creds = {}
+        for k, v in new_creds.items():
+            if v:
+                old_creds[k] = v
+        new_creds = old_creds
+
+    credentials = json.dumps(new_creds, ensure_ascii=False)
+
+    sid = await execute_returning_id(
+        """INSERT INTO payment_settings (channel_id, section, provider, credentials, is_active)
+           VALUES ($1, 'services', $2, $3::jsonb, $4)
+           ON CONFLICT (channel_id, section, provider) DO UPDATE
+             SET credentials = $3::jsonb, is_active = $4
+           RETURNING id""",
+        channel["id"], provider, credentials, is_active,
+    )
+    return {"success": True, "id": sid}
+
+
+@router.delete("/{tc}/payment-settings/{setting_id}")
+async def delete_payment_settings(tc: str, setting_id: int, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    await execute(
+        "DELETE FROM payment_settings WHERE id = $1 AND channel_id = $2 AND section = 'services'",
+        setting_id, channel["id"],
+    )
+    return {"success": True}
+
+
+# ═══════════════════════════════════════
 # PUBLIC API (for miniapp, no auth)
 # ═══════════════════════════════════════
 
@@ -954,7 +1035,41 @@ async def public_book(tc: str, request: Request):
             import logging
             logging.getLogger(__name__).warning(f"Failed to send booking notification: {e}")
 
-    return {"success": True, "booking_id": bid}
+    # Init payment if provider configured and price > 0
+    payment_url = None
+    if price > 0:
+        try:
+            from ..services.payment_gateway import get_active_provider, generate_order_id, init_payment
+            from ..config import settings as app_settings
+            ps = await get_active_provider(channel["id"], "services")
+            if ps:
+                creds = ps.get("credentials", {})
+                if isinstance(creds, str):
+                    creds = json.loads(creds)
+                payment_order_id = generate_order_id("services", channel["id"])
+                await execute(
+                    "UPDATE service_bookings SET payment_order_id = $1, payment_status = 'pending', payment_provider = $2 WHERE id = $3",
+                    payment_order_id, ps["provider"], bid)
+                app_url = app_settings.APP_URL.rstrip("/") if hasattr(app_settings, "APP_URL") and app_settings.APP_URL else ""
+                service_name = service.get("name", "") if service else "Услуга"
+                payment_url = await init_payment(
+                    section="services",
+                    provider=ps["provider"],
+                    creds=creds,
+                    order_id=payment_order_id,
+                    amount=price,
+                    description=f"{service_name}",
+                    app_url=app_url,
+                    phone=client_phone,
+                    email=body.get("client_email", ""),
+                )
+        except Exception as e:
+            print(f"[Services] Payment init error: {e}")
+
+    result = {"success": True, "booking_id": bid}
+    if payment_url:
+        result["payment_url"] = payment_url
+    return result
 
 
 @public_router.get("/{tc}/appearance")
