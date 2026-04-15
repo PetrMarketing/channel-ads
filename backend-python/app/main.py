@@ -1724,7 +1724,6 @@ async def redirect_tracking_link(code: str, request: Request):
     # Lead magnet landing — redirect to /lm/ page
     link_type = link.get("link_type", "landing")
     if link_type == "lm_landing":
-        from fastapi.responses import RedirectResponse
         return RedirectResponse(f"/lm/{code}", status_code=302)
 
     # Also record a visit for direct links (no landing page to do it)
@@ -1777,7 +1776,6 @@ async def redirect_tracking_link(code: str, request: Request):
         # For MAX links opened in MAX internal browser — use instant JS redirect
         # This ensures max.ru links are handled natively by the MAX app
         if "max.ru" in channel_url:
-            from fastapi.responses import HTMLResponse
             return HTMLResponse(f"""<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="0;url={channel_url}">
