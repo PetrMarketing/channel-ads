@@ -168,6 +168,34 @@ export default function AdminTariffsPage() {
           )}
         </tbody>
       </table>
+
+      {/* AI Token Plans */}
+      <h3 style={{ margin: '30px 0 12px' }}>Тарифы ИИ Токенов</h3>
+      <p style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>Тарифы задаются в коде (billing.py AI_TOKEN_PLANS)</p>
+      <table style={tableStyle}>
+        <thead><tr>
+          <th style={thStyle}>Токенов</th>
+          <th style={thStyle}>Цена</th>
+          <th style={thStyle}>Без скидки</th>
+          <th style={thStyle}>Скидка</th>
+          <th style={thStyle}>За токен</th>
+        </tr></thead>
+        <tbody>
+          {[
+            { tokens: 100, price: 300 },
+            { tokens: 300, price: 800, original: 900, discount: '11%' },
+            { tokens: 1000, price: 2550, original: 3000, discount: '15%' },
+          ].map((p, i) => (
+            <tr key={i}>
+              <td style={tdStyle}><strong>{p.tokens}</strong></td>
+              <td style={tdStyle}>{p.price} ₽</td>
+              <td style={tdStyle}>{p.original ? <span style={{ textDecoration: 'line-through', color: '#aaa' }}>{p.original} ₽</span> : '—'}</td>
+              <td style={tdStyle}>{p.discount ? <span style={{ color: '#e63946', fontWeight: 600 }}>{p.discount}</span> : '—'}</td>
+              <td style={tdStyle}>{(p.price / p.tokens).toFixed(1)} ₽</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -163,6 +163,17 @@ export default function Header({ onToggleSidebar }) {
           </span>
         )}
         {user && (
+          <span
+            style={{
+              fontSize: '0.72rem', color: '#7B68EE', background: 'rgba(123,104,238,0.1)',
+              padding: '2px 7px', borderRadius: '4px', border: '1px solid rgba(123,104,238,0.3)',
+              marginRight: '4px', fontWeight: 600,
+            }}
+          >
+            {user.ai_tokens || 0} токенов
+          </span>
+        )}
+        {user && (
           <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
             <PlatformBadge platform="max" user={user} channels={channels} onUnlink={handleUnlink} />
           </span>

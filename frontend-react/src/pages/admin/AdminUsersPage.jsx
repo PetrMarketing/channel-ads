@@ -32,7 +32,7 @@ export default function AdminUsersPage() {
       <table style={tableStyle}>
         <thead><tr>
           <th style={thStyle}>PKid</th><th style={thStyle}>Username</th><th style={thStyle}>Имя</th>
-          <th style={thStyle}>TG / MAX ID</th><th style={thStyle}>Каналов</th><th style={thStyle}>Дата</th>
+          <th style={thStyle}>TG / MAX ID</th><th style={thStyle}>Токены</th><th style={thStyle}>Каналов</th><th style={thStyle}>Дата</th>
         </tr></thead>
         <tbody>
           {users.map(u => (
@@ -43,6 +43,7 @@ export default function AdminUsersPage() {
               <td style={tdStyle}>{u.username || '-'}</td>
               <td style={tdStyle}>{u.first_name || '-'}</td>
               <td style={tdStyle}>{u.telegram_id || u.max_user_id || '-'}</td>
+              <td style={{ ...tdStyle, color: '#7B68EE', fontWeight: 600 }}>{u.ai_tokens || 0}</td>
               <td style={tdStyle}>{u.channel_count}</td>
               <td style={tdStyle}>{u.created_at ? new Date(u.created_at).toLocaleDateString('ru') : '-'}</td>
             </tr>

@@ -29,6 +29,10 @@ async def _get_credentials(order_id: str, provider: str):
     section = get_section_from_order_id(order_id)
     if not section:
         return None, None
+    # AI tokens use global Tinkoff settings
+    if section == "ai_tokens":
+        from ..config import settings as app_settings
+        return {"credentials": {"terminal_key": app_settings.TINKOFF_TERMINAL_KEY, "password": app_settings.TINKOFF_PASSWORD}}, section
     # Extract channel_id from order_id (format: prefix_channelid_hex)
     parts = order_id.split('_')
     if len(parts) < 3:
@@ -72,6 +76,9 @@ async def _fulfill(order_id: str, section: str, gateway_response: dict):
         await _fulfill_shop(order_id, gateway_response)
     elif section == 'services':
         await _fulfill_service(order_id, gateway_response)
+    elif section == 'ai_tokens':
+        from .billing import fulfill_ai_tokens
+        await fulfill_ai_tokens(order_id)
 
 
 async def _fulfill_shop(order_id, gateway_response):

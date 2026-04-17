@@ -55,6 +55,8 @@ def get_section_from_order_id(order_id: str) -> str:
         return "shop"
     if order_id.startswith("sv_"):
         return "services"
+    if order_id.startswith("ait_"):
+        return "ai_tokens"
     return ""
 
 

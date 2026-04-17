@@ -71,6 +71,20 @@ export default function AdminUserProfilePage() {
           <div>Email: {user.email || '-'}</div>
           <div>Дата: {user.created_at ? new Date(user.created_at).toLocaleDateString('ru') : '-'}</div>
         </div>
+        {/* AI Tokens */}
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 13, color: '#7B68EE', fontWeight: 700 }}>Токены: {user.ai_tokens || 0}</span>
+          <input id="addTokens" type="number" placeholder="Кол-во" style={{ width: 80, padding: '4px 8px', border: '1px solid #ddd', borderRadius: 4, fontSize: 12 }} />
+          <button style={btnPrimary} onClick={async () => {
+            const val = parseInt(document.getElementById('addTokens').value);
+            if (!val) return;
+            try {
+              await adminApi.post(`/users/${userId}/add-tokens`, { tokens: val });
+              setUser(prev => ({ ...prev, ai_tokens: (prev.ai_tokens || 0) + val }));
+              document.getElementById('addTokens').value = '';
+            } catch {}
+          }}>Начислить</button>
+        </div>
       </div>
 
       <div style={{ borderBottom: '1px solid #ddd', marginBottom: 16, display: 'flex', gap: 4 }}>

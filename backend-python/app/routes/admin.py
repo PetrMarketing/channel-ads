@@ -198,6 +198,16 @@ async def get_user(user_id: int, admin: Dict = Depends(get_current_admin)):
     return {"success": True, "user": user, "channels": channels, "staff": staff}
 
 
+@router.post("/users/{user_id}/add-tokens")
+async def add_tokens(user_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    tokens = int(body.get("tokens", 0))
+    if not tokens:
+        raise HTTPException(status_code=400, detail="Укажите количество токенов")
+    await execute("UPDATE users SET ai_tokens = COALESCE(ai_tokens, 0) + $1 WHERE id = $2", tokens, user_id)
+    return {"success": True}
+
+
 @router.get("/users/{user_id}/channels")
 async def user_channels(user_id: int, admin: Dict = Depends(get_current_admin)):
     rows = await fetch_all(

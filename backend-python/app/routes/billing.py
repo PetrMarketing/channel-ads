@@ -852,3 +852,117 @@ async def accept_staff_invite(token: str, user=Depends(get_current_user)):
     )
 
     return {"success": True}
+
+
+# ═══════════════════════════════════════
+# AI TOKENS
+# ═══════════════════════════════════════
+
+AI_TOKEN_PLANS = [
+    {"id": 1, "tokens": 100, "price": 300, "price_per_token": 3.0},
+    {"id": 2, "tokens": 300, "price": 800, "original_price": 900, "discount": 11},
+    {"id": 3, "tokens": 1000, "price": 2550, "original_price": 3000, "discount": 15},
+]
+
+
+@router.get("/ai-tokens")
+async def get_ai_tokens(user=Depends(get_current_user)):
+    """Get current AI token balance and purchase history."""
+    balance = user.get("ai_tokens", 0)
+    history = await fetch_all(
+        "SELECT * FROM ai_token_purchases WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20",
+        user["id"])
+    usage = await fetch_all(
+        "SELECT * FROM ai_token_usage WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20",
+        user["id"])
+    return {
+        "success": True,
+        "balance": balance,
+        "plans": AI_TOKEN_PLANS,
+        "purchases": [dict(h) for h in history],
+        "usage": [dict(u) for u in usage],
+    }
+
+
+@router.post("/ai-tokens/buy")
+async def buy_ai_tokens(request: Request, user=Depends(get_current_user)):
+    """Initiate AI token purchase."""
+    body = await request.json()
+    plan_id = body.get("plan_id")
+    plan = next((p for p in AI_TOKEN_PLANS if p["id"] == plan_id), None)
+    if not plan:
+        raise HTTPException(status_code=400, detail="Тариф не найден")
+
+    email = body.get("email", "")
+    order_id = f"ait_{user['id']}_{secrets.token_hex(4)}"
+
+    # Save purchase record
+    pid = await execute_returning_id(
+        """INSERT INTO ai_token_purchases (user_id, tokens, amount, payment_order_id, payment_status)
+           VALUES ($1, $2, $3, $4, 'pending') RETURNING id""",
+        user["id"], plan["tokens"], float(plan["price"]), order_id,
+    )
+
+    # Use Tinkoff from global settings (same as billing subscription)
+    terminal_key = settings.TINKOFF_TERMINAL_KEY
+    password = settings.TINKOFF_PASSWORD
+    if not terminal_key:
+        raise HTTPException(status_code=400, detail="Платёжная система не настроена")
+
+    amount_kopeks = int(plan["price"] * 100)
+    app_url = settings.APP_URL.rstrip("/") if settings.APP_URL else ""
+
+    init_params = {
+        "TerminalKey": terminal_key,
+        "Amount": amount_kopeks,
+        "OrderId": order_id,
+        "Description": f"ИИ Токены: {plan['tokens']} шт.",
+        "NotificationURL": f"{app_url}/api/payments/webhook/tinkoff",
+        "SuccessURL": f"{app_url}/billing?tokens=success",
+        "FailURL": f"{app_url}/billing?tokens=fail",
+    }
+    if email:
+        init_params["Receipt"] = {
+            "Email": email,
+            "Taxation": "usn_income",
+            "Items": [{
+                "Name": f"ИИ Токены ({plan['tokens']} шт.)",
+                "Quantity": 1, "Amount": amount_kopeks, "Price": amount_kopeks,
+                "Tax": "none",
+            }],
+        }
+
+    # Generate token for signature
+    sign_params = {k: str(v) for k, v in init_params.items() if k != "Receipt"}
+    sign_params["Password"] = password
+    sign_str = "".join(v for _, v in sorted(sign_params.items()))
+    token = hashlib.sha256(sign_str.encode()).hexdigest()
+    init_params["Token"] = token
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post("https://securepay.tinkoff.ru/v2/Init", json=init_params) as resp:
+            data = await resp.json()
+
+    if not data.get("Success"):
+        raise HTTPException(status_code=400, detail=f"Ошибка инициализации платежа: {data.get('Message', '')}")
+
+    payment_url = data.get("PaymentURL", "")
+    await execute("UPDATE ai_token_purchases SET payment_provider = 'tinkoff' WHERE id = $1", pid)
+
+    return {"success": True, "payment_url": payment_url, "order_id": order_id}
+
+
+@router.post("/ai-tokens/fulfill")
+async def fulfill_ai_tokens(order_id: str):
+    """Called after payment confirmed — add tokens to user balance."""
+    purchase = await fetch_one(
+        "SELECT * FROM ai_token_purchases WHERE payment_order_id = $1", order_id)
+    if not purchase or purchase["payment_status"] == "paid":
+        return
+    await execute(
+        "UPDATE ai_token_purchases SET payment_status = 'paid', paid_at = NOW() WHERE id = $1",
+        purchase["id"])
+    await execute(
+        "UPDATE users SET ai_tokens = ai_tokens + $1 WHERE id = $2",
+        purchase["tokens"], purchase["user_id"])
+    print(f"[AI Tokens] Fulfilled {purchase['tokens']} tokens for user {purchase['user_id']}")
