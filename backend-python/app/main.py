@@ -157,6 +157,8 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"]
 app.include_router(comments.router, prefix="/api/comments", tags=["comments"])
 app.include_router(telegram_bot.router, prefix="/api/telegram", tags=["telegram-bot"])
 app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
+from .routes import ai_design
+app.include_router(ai_design.router, prefix="/api/ai-design", tags=["ai-design"])
 
 # ========================
 # API Routes — Public

@@ -1,0 +1,10 @@
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS lm_pdf_path TEXT;
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS lm_wishes TEXT;
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS lm_ideas JSONB DEFAULT '[]';
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS lm_chosen_idea_index INTEGER;
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS lm_chosen_idea TEXT;
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS lm_content TEXT;
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS lm_banner_url TEXT;
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS lm_post_text TEXT;
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS lead_magnet_id INTEGER REFERENCES lead_magnets(id);
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS pin_post_id INTEGER REFERENCES pin_posts(id);

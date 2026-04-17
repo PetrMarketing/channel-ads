@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS ai_design_sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    channel_id INTEGER REFERENCES channels(id),
+    status TEXT DEFAULT 'survey',
+    niche TEXT,
+    colors JSONB DEFAULT '[]',
+    photo_path TEXT,
+    style TEXT,
+    contact_link TEXT,
+    description TEXT,
+    generated_grid_url TEXT,
+    chosen_avatar_index INTEGER,
+    chosen_avatar_url TEXT,
+    generated_descriptions JSONB DEFAULT '[]',
+    chosen_description_index INTEGER,
+    chosen_description TEXT,
+    tokens_spent INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
