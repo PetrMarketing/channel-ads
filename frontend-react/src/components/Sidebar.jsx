@@ -160,6 +160,7 @@ const menuItems = [
     category: 'billing', label: 'Подписка', icon: icons.billing,
     items: [
       { path: '/billing', label: 'Тарифы', icon: icons.billing },
+      { path: '/ai-tokens', label: 'ИИ Токены', icon: icons.ai },
       { path: '/referrals', label: 'Реферальная система', icon: icons.links },
     ],
   },

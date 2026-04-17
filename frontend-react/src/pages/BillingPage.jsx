@@ -6,12 +6,6 @@ import Loading from '../components/Loading';
 
 const CHANNEL_DISCOUNT_PERCENT = 10;
 
-const AI_PLANS = [
-  { id: 1, tokens: 100, price: 300 },
-  { id: 2, tokens: 300, price: 800, originalPrice: 900, discount: 11 },
-  { id: 3, tokens: 1000, price: 2550, originalPrice: 3000, discount: 15 },
-];
-
 export default function BillingPage() {
   const { channels } = useChannels();
   const { showToast } = useToast();
@@ -19,8 +13,6 @@ export default function BillingPage() {
   const [buying, setBuying] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState(1);
   const [email, setEmail] = useState('');
-  const [buyingTokens, setBuyingTokens] = useState(false);
-  const [tokenEmail, setTokenEmail] = useState('');
   const [durations, setDurations] = useState([]);
   // Per-channel config: { [tracking_code]: { selected: bool, users: number } }
   const [channelConfigs, setChannelConfigs] = useState({});
@@ -393,65 +385,6 @@ export default function BillingPage() {
           !selectedCount ? 'Выберите каналы' :
           `Оплатить ${price.total.toLocaleString('ru-RU')} ₽`}
       </button>
-
-      {/* AI Tokens */}
-      <div style={{ borderTop: '2px solid var(--border)', marginTop: 40, paddingTop: 24 }}>
-        <h2 style={{ marginBottom: 16 }}>ИИ Токены</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: 16 }}>
-          Токены используются для генерации контента с помощью ИИ: аватарки, описания, контент-планы.
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 20 }}>
-          {AI_PLANS.map(plan => (
-            <div key={plan.id} style={{
-              background: 'var(--bg-glass)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)', padding: '20px', textAlign: 'center',
-              position: 'relative', overflow: 'hidden',
-            }}>
-              {plan.discount && (
-                <div style={{
-                  position: 'absolute', top: 8, right: -28, background: '#ef4444', color: '#fff',
-                  padding: '2px 30px', fontSize: '0.7rem', fontWeight: 700, transform: 'rotate(45deg)',
-                }}>-{plan.discount}%</div>
-              )}
-              <div style={{ fontSize: '2rem', fontWeight: 700, color: '#7B68EE' }}>{plan.tokens}</div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 8 }}>токенов</div>
-              {plan.originalPrice && (
-                <div style={{ fontSize: '0.82rem', color: '#aaa', textDecoration: 'line-through' }}>
-                  {plan.originalPrice.toLocaleString('ru-RU')} ₽
-                </div>
-              )}
-              <div style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: 12 }}>
-                {plan.price.toLocaleString('ru-RU')} ₽
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 10 }}>
-                {(plan.price / plan.tokens).toFixed(1)} ₽ / токен
-              </div>
-              <button className="btn btn-primary" style={{ width: '100%' }} disabled={buyingTokens}
-                onClick={async () => {
-                  if (!tokenEmail) { showToast('Введите email для чека', 'error'); return; }
-                  setBuyingTokens(true);
-                  try {
-                    const data = await api.post('/billing/ai-tokens/buy', { plan_id: plan.id, email: tokenEmail });
-                    if (data.success && data.payment_url) {
-                      window.location.href = data.payment_url;
-                    } else {
-                      showToast(data.detail || 'Ошибка', 'error');
-                    }
-                  } catch (e) { showToast(e.message || 'Ошибка', 'error'); }
-                  finally { setBuyingTokens(false); }
-                }}
-              >
-                {buyingTokens ? '...' : 'Купить'}
-              </button>
-            </div>
-          ))}
-        </div>
-        <div style={{ maxWidth: 400 }}>
-          <label className="form-label">Email для чека</label>
-          <input className="form-input" value={tokenEmail} onChange={e => setTokenEmail(e.target.value)}
-            placeholder="your@email.com" type="email" />
-        </div>
-      </div>
     </div>
   );
 }

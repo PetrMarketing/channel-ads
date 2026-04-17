@@ -17,6 +17,7 @@ import ServicesPage from './pages/ServicesPage';
 import ShopPage from './pages/ShopPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import AiDesignPage from './pages/AiDesignPage';
+import AiTokensPage from './pages/AiTokensPage';
 import CommentsPage from './pages/CommentsPage';
 import OrdPage from './pages/OrdPage';
 import ReferralPage from './pages/ReferralPage';
@@ -96,6 +97,7 @@ export default function App() {
         <Route path="content" element={<ContentPage />} />
         <Route path="giveaways" element={<GiveawaysPage />} />
         <Route path="billing" element={<BillingPage />} />
+        <Route path="ai-tokens" element={<AiTokensPage />} />
         <Route path="referrals" element={<ReferralPage />} />
         <Route path="staff" element={<StaffPage />} />
         <Route path="paid-chats" element={<PaidChatsPage />} />

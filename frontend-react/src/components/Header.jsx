@@ -94,6 +94,18 @@ export default function Header({ onToggleSidebar }) {
     if (ch) selectChannel(ch);
   };
 
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (!e.target.closest('.profile-dropdown-wrap')) {
+        const dd = document.querySelector('.profile-dropdown');
+        if (dd) dd.style.display = 'none';
+      }
+    };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, []);
+
   const [unlinkModal, setUnlinkModal] = useState(false);
   const [unlinkCode, setUnlinkCode] = useState('');
   const [unlinkPlatform, setUnlinkPlatform] = useState('');
@@ -144,49 +156,54 @@ export default function Header({ onToggleSidebar }) {
             )}
           </div>
         )}
-        {user && (
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginRight: '4px' }}>
-            {user.first_name || user.username || ''}
-          </span>
-        )}
-        {user?.id && (
-          <span
-            style={{
-              fontSize: '0.72rem', color: 'var(--text-secondary)', background: 'var(--bg-glass)',
-              padding: '2px 7px', borderRadius: '4px', border: '1px solid var(--border)',
-              cursor: 'pointer', userSelect: 'all', marginRight: '4px',
-            }}
-            title="Нажмите, чтобы скопировать"
-            onClick={() => { navigator.clipboard.writeText(String(user.id)); }}
-          >
-            PKid: {user.id}
-          </span>
-        )}
-        {user && (
-          <span
-            style={{
-              fontSize: '0.72rem', color: '#7B68EE', background: 'rgba(123,104,238,0.1)',
-              padding: '2px 7px', borderRadius: '4px', border: '1px solid rgba(123,104,238,0.3)',
-              marginRight: '4px', fontWeight: 600,
-            }}
-          >
-            {user.ai_tokens || 0} токенов
-          </span>
-        )}
-        {user && (
-          <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
-            <PlatformBadge platform="max" user={user} channels={channels} onUnlink={handleUnlink} />
-          </span>
-        )}
       </div>
       <div className="header-right">
         <ThemeToggle />
-        <button className="btn btn-primary" onClick={() => navigate('/')}>
-          + Добавить канал
+        <button className="btn btn-primary" onClick={() => navigate('/')} style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+          + Канал
         </button>
-        <button className="btn btn-outline" onClick={handleLogout} title="Выйти">
-          &#128682; Выйти
-        </button>
+        {user && (
+          <div style={{ position: 'relative' }} className="profile-dropdown-wrap">
+            <button className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', fontSize: '0.8rem' }}
+              onClick={() => {
+                const dd = document.querySelector('.profile-dropdown');
+                if (dd) dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
+              }}>
+              <span>{user.first_name || user.username || 'Профиль'}</span>
+              <span style={{ fontSize: '0.65rem', color: '#7B68EE', fontWeight: 700 }}>{user.ai_tokens || 0}</span>
+              <span style={{ fontSize: 10 }}>&#9660;</span>
+            </button>
+            <div className="profile-dropdown" style={{
+              display: 'none', position: 'absolute', right: 0, top: '100%', marginTop: 4,
+              background: 'var(--bg-primary, #fff)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius, 8px)', boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+              minWidth: 200, zIndex: 100, padding: '8px 0',
+            }}>
+              <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{user.first_name || user.username}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2, cursor: 'pointer' }}
+                  onClick={() => { navigator.clipboard.writeText(String(user.id)); }}
+                  title="Нажмите, чтобы скопировать">
+                  PKid: {user.id}
+                </div>
+              </div>
+              <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem' }}>ИИ Токены</span>
+                <span style={{ fontSize: '0.82rem', color: '#7B68EE', fontWeight: 700 }}>{user.ai_tokens || 0}</span>
+              </div>
+              <div style={{ padding: '4px 8px' }}>
+                <PlatformBadge platform="max" user={user} channels={channels} onUnlink={handleUnlink} />
+              </div>
+              <button onClick={handleLogout} style={{
+                width: '100%', padding: '8px 16px', border: 'none', background: 'none',
+                textAlign: 'left', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--error, #e63946)',
+                borderTop: '1px solid var(--border)',
+              }}>
+                Выйти
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Unlink code modal */}
