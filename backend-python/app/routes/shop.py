@@ -53,7 +53,16 @@ async def get_settings(tc: str, user=Depends(get_current_user)):
         sid = await execute_returning_id(
             "INSERT INTO shop_settings (channel_id) VALUES ($1) RETURNING id", channel["id"])
         s = await fetch_one("SELECT * FROM shop_settings WHERE id = $1", sid)
-    return {"success": True, "settings": s}
+    result = dict(s)
+    # Merge JSONB settings into top level
+    extra = result.get("settings")
+    if extra:
+        if isinstance(extra, str):
+            try: extra = json.loads(extra)
+            except: extra = {}
+        if isinstance(extra, dict):
+            result.update(extra)
+    return {"success": True, "settings": result}
 
 
 @router.post("/{tc}/settings")
@@ -64,10 +73,15 @@ async def save_settings(tc: str, request: Request, user=Depends(get_current_user
     body = await request.json()
     existing = await fetch_one("SELECT id FROM shop_settings WHERE channel_id = $1", channel["id"])
     if existing:
+        # Extra style settings stored in JSONB column
+        extra_keys = ["header_text_color", "page_text_color", "bg_type", "bg_color",
+                      "gradient_from", "gradient_to", "gradient_direction",
+                      "page_bg_type", "page_bg_color", "page_gradient_from", "page_gradient_to", "page_gradient_direction"]
+        extra = {k: body[k] for k in extra_keys if k in body}
         await execute(
             """UPDATE shop_settings SET shop_name=$1, primary_color=$2, banner_url=$3, welcome_text=$4,
                currency=$5, min_order_amount=$6, require_phone=$7, require_email=$8, require_address=$9,
-               manager_user_id=$10, manager_contact_url=$11, banners=$12 WHERE channel_id = $13""",
+               manager_user_id=$10, manager_contact_url=$11, banners=$12, settings=$13 WHERE channel_id = $14""",
             body.get("shop_name", ""), body.get("primary_color", "#4F46E5"),
             body.get("banner_url"), body.get("welcome_text", ""),
             body.get("currency", "RUB"), float(body.get("min_order_amount", 0)),
@@ -76,13 +90,18 @@ async def save_settings(tc: str, request: Request, user=Depends(get_current_user
             int(body["manager_user_id"]) if body.get("manager_user_id") else None,
             body.get("manager_contact_url", ""),
             json.dumps(body.get("banners", []), ensure_ascii=False),
+            json.dumps(extra, ensure_ascii=False),
             channel["id"],
         )
     else:
+        extra_keys = ["header_text_color", "page_text_color", "bg_type", "bg_color",
+                      "gradient_from", "gradient_to", "gradient_direction",
+                      "page_bg_type", "page_bg_color", "page_gradient_from", "page_gradient_to", "page_gradient_direction"]
+        extra = {k: body[k] for k in extra_keys if k in body}
         await execute(
             """INSERT INTO shop_settings (channel_id, shop_name, primary_color, banner_url, welcome_text,
-               currency, min_order_amount, require_phone, require_email, require_address, manager_user_id, manager_contact_url, banners)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
+               currency, min_order_amount, require_phone, require_email, require_address, manager_user_id, manager_contact_url, banners, settings)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)""",
             channel["id"], body.get("shop_name", ""), body.get("primary_color", "#4F46E5"),
             body.get("banner_url"), body.get("welcome_text", ""),
             body.get("currency", "RUB"), float(body.get("min_order_amount", 0)),
@@ -91,6 +110,7 @@ async def save_settings(tc: str, request: Request, user=Depends(get_current_user
             int(body["manager_user_id"]) if body.get("manager_user_id") else None,
             body.get("manager_contact_url", ""),
             json.dumps(body.get("banners", []), ensure_ascii=False),
+            json.dumps(extra, ensure_ascii=False),
         )
     return {"success": True}
 
@@ -342,22 +362,53 @@ async def import_feed(tc: str, request: Request, user=Depends(get_current_user))
     except aiohttp.ClientError as e:
         raise HTTPException(status_code=400, detail=f"Не удалось загрузить фид: {e}")
 
-    # Parse XML
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as e:
         raise HTTPException(status_code=400, detail=f"Ошибка парсинга XML: {e}")
 
-    # Find categories and offers (YML format)
+    return await _parse_and_import_feed(root, channel["id"])
+
+
+@router.post("/{tc}/import-feed-file")
+async def import_feed_file(tc: str, request: Request, user=Depends(get_current_user)):
+    """Import products from uploaded YML/XML file."""
+    from xml.etree import ElementTree as ET
+
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+
+    form = await request.form()
+    file = form.get("file")
+    if not file or not hasattr(file, "read"):
+        raise HTTPException(status_code=400, detail="Файл не загружен")
+
+    xml_bytes = await file.read()
+    try:
+        xml_text = xml_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        xml_text = xml_bytes.decode("windows-1251", errors="replace")
+
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as e:
+        raise HTTPException(status_code=400, detail=f"Ошибка парсинга XML: {e}")
+
+    return await _parse_and_import_feed(root, channel["id"])
+
+
+async def _parse_and_import_feed(root, ch_id: int):
+    """Shared feed parsing logic for URL and file import."""
+    from xml.etree import ElementTree as ET
+
     shop_el = root.find(".//shop") or root
     categories_el = shop_el.find("categories")
     offers_el = shop_el.find("offers")
 
-    ch_id = channel["id"]
-    cat_map = {}  # feed_category_id -> db_category_id
+    cat_map = {}
     cats_imported = 0
 
-    # Import categories
     if categories_el is not None:
         for cat in categories_el.findall("category"):
             cat_id = cat.get("id")
@@ -367,20 +418,16 @@ async def import_feed(tc: str, request: Request, user=Depends(get_current_user))
                 continue
             parent_db_id = cat_map.get(parent_feed_id) if parent_feed_id else None
             existing = await fetch_one(
-                "SELECT id FROM shop_categories WHERE channel_id = $1 AND name = $2",
-                ch_id, cat_name,
-            )
+                "SELECT id FROM shop_categories WHERE channel_id = $1 AND name = $2", ch_id, cat_name)
             if existing:
                 cat_map[cat_id] = existing["id"]
             else:
                 new_id = await execute_returning_id(
                     "INSERT INTO shop_categories (channel_id, name, parent_id) VALUES ($1, $2, $3) RETURNING id",
-                    ch_id, cat_name, parent_db_id,
-                )
+                    ch_id, cat_name, parent_db_id)
                 cat_map[cat_id] = new_id
                 cats_imported += 1
 
-    # Import products (offers)
     products_imported = 0
     if offers_el is not None:
         for offer in offers_el.findall("offer"):
@@ -408,7 +455,6 @@ async def import_feed(tc: str, request: Request, user=Depends(get_current_user))
             cat_feed_id = offer.findtext("categoryId")
             cat_db_id = cat_map.get(cat_feed_id)
 
-            # Additional images
             images = []
             for pic in offer.findall("picture"):
                 pic_url = (pic.text or "").strip()
@@ -418,18 +464,15 @@ async def import_feed(tc: str, request: Request, user=Depends(get_current_user))
             stock_text = offer.findtext("stock_quantity") or offer.findtext("count")
             stock = int(stock_text) if stock_text and stock_text.isdigit() else -1
 
-            # Upsert by SKU
             if sku:
                 existing = await fetch_one(
-                    "SELECT id FROM shop_products WHERE channel_id = $1 AND sku = $2", ch_id, sku,
-                )
+                    "SELECT id FROM shop_products WHERE channel_id = $1 AND sku = $2", ch_id, sku)
                 if existing:
                     await execute(
                         """UPDATE shop_products SET name=$1, description=$2, price=$3, compare_at_price=$4,
                            image_url=$5, images=$6, category_id=$7, stock=$8 WHERE id=$9""",
                         name, description, price, compare_at, image_url,
-                        json.dumps(images), cat_db_id, stock, existing["id"],
-                    )
+                        json.dumps(images), cat_db_id, stock, existing["id"])
                     products_imported += 1
                     continue
 
@@ -437,8 +480,7 @@ async def import_feed(tc: str, request: Request, user=Depends(get_current_user))
                 """INSERT INTO shop_products (channel_id, category_id, name, description, price, compare_at_price,
                    sku, image_url, images, stock) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
                 ch_id, cat_db_id, name, description, price, compare_at,
-                sku, image_url, json.dumps(images), stock,
-            )
+                sku, image_url, json.dumps(images), stock)
             products_imported += 1
 
     return {"success": True, "imported": products_imported, "categories_imported": cats_imported}
@@ -790,10 +832,18 @@ async def public_appearance(tc: str):
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
     s = await fetch_one("SELECT * FROM shop_settings WHERE channel_id = $1", channel["id"])
+    result = dict(s) if s else {"primary_color": "#4F46E5", "welcome_text": "", "currency": "RUB"}
+    extra = result.get("settings")
+    if extra:
+        if isinstance(extra, str):
+            try: extra = json.loads(extra)
+            except: extra = {}
+        if isinstance(extra, dict):
+            result.update(extra)
     return {
         "success": True,
         "channel_title": channel.get("title", ""),
-        "settings": s or {"primary_color": "#4F46E5", "welcome_text": "", "currency": "RUB"},
+        "settings": result,
         "privacy_policy_url": channel.get("privacy_policy_url", ""),
     }
 

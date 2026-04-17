@@ -136,18 +136,33 @@ async def list_users(
 ):
     offset = (page - 1) * limit
     if search:
-        like = f"%{search}%"
-        total = await fetch_one(
-            "SELECT COUNT(*) as c FROM users WHERE username ILIKE $1 OR first_name ILIKE $1 OR CAST(telegram_id AS TEXT) LIKE $1",
-            like,
-        )
-        rows = await fetch_all(
-            """SELECT u.*, (SELECT COUNT(*) FROM channels WHERE user_id = u.id) as channel_count
-               FROM users u
-               WHERE u.username ILIKE $1 OR u.first_name ILIKE $1 OR CAST(u.telegram_id AS TEXT) LIKE $1
-               ORDER BY u.created_at DESC LIMIT $2 OFFSET $3""",
-            like, limit, offset,
-        )
+        # Search by PKid (exact), username, first_name, telegram_id, max_user_id
+        if search.strip().isdigit():
+            pk_id = int(search.strip())
+            total = await fetch_one(
+                "SELECT COUNT(*) as c FROM users WHERE id = $1 OR CAST(telegram_id AS TEXT) LIKE $2 OR max_user_id = $3",
+                pk_id, f"%{search}%", search.strip(),
+            )
+            rows = await fetch_all(
+                """SELECT u.*, (SELECT COUNT(*) FROM channels WHERE user_id = u.id) as channel_count
+                   FROM users u
+                   WHERE u.id = $1 OR CAST(u.telegram_id AS TEXT) LIKE $2 OR u.max_user_id = $3
+                   ORDER BY u.created_at DESC LIMIT $4 OFFSET $5""",
+                pk_id, f"%{search}%", search.strip(), limit, offset,
+            )
+        else:
+            like = f"%{search}%"
+            total = await fetch_one(
+                "SELECT COUNT(*) as c FROM users WHERE username ILIKE $1 OR first_name ILIKE $1 OR max_user_id = $2",
+                like, search.strip(),
+            )
+            rows = await fetch_all(
+                """SELECT u.*, (SELECT COUNT(*) FROM channels WHERE user_id = u.id) as channel_count
+                   FROM users u
+                   WHERE u.username ILIKE $1 OR u.first_name ILIKE $1 OR u.max_user_id = $2
+                   ORDER BY u.created_at DESC LIMIT $3 OFFSET $4""",
+                like, search.strip(), limit, offset,
+            )
     else:
         total = await fetch_one("SELECT COUNT(*) as c FROM users")
         rows = await fetch_all(

@@ -1084,8 +1084,6 @@ async def _handle_conversation(max_api, chat_id: str, max_user_id: str, text: st
 
     action = state["action"]
     step = state["step"]
-    print(f"[MAX Bot] Conversation: action={action}, step={step}, text={text[:30]}")
-
     # Cancel
     if text.lower() in ("/cancel", "отмена", "отменить"):
         del _conversation_state[max_user_id]
@@ -1630,7 +1628,6 @@ async def process_max_update(body: dict):
 
             # Check conversation state first (for multi-step flows)
             if not cmd.startswith("/"):
-                print(f"[MAX Bot] Checking conversation: user={max_user_id}, has_state={max_user_id in _conversation_state}")
                 try:
                     handled = await _handle_conversation(max_api, chat_id, max_user_id, text)
                 except Exception as conv_err:

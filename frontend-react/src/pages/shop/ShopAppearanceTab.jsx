@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react';
 import ImageUploadField from '../../components/ImageUploadField';
 
+const colorSwatch = (val, onChange) => (
+  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+    <div style={{ width: 36, height: 36, borderRadius: 6, background: val, border: '1px solid var(--border)', cursor: 'pointer', position: 'relative', overflow: 'hidden' }}>
+      <input type="color" value={val} onChange={onChange}
+        style={{ position: 'absolute', inset: -4, width: 'calc(100% + 8px)', height: 'calc(100% + 8px)', cursor: 'pointer', opacity: 0 }} />
+    </div>
+    <input className="form-input" value={val} onChange={onChange} style={{ width: 100 }} />
+  </div>
+);
+
 export default function ShopAppearanceTab({
   settings, setSettings, tc, showToast,
   saveSettings, savingSettings,
@@ -10,10 +20,11 @@ export default function ShopAppearanceTab({
   const [previewBanner, setPreviewBanner] = useState(0);
   const u = (field) => (e) => setSettings(prev => ({ ...prev, [field]: e.target.value }));
   const uCheck = (field) => (e) => setSettings(prev => ({ ...prev, [field]: e.target.checked }));
-  const pc = settings.primary_color || '#4F46E5';
-  const banners = (settings.banners && Array.isArray(settings.banners) ? settings.banners : []).filter(Boolean);
+  const s = settings;
+  const pc = s.primary_color || '#4F46E5';
+  const banners = (s.banners && Array.isArray(s.banners) ? s.banners : []).filter(Boolean);
   // Also include legacy banner_url
-  const allBanners = settings.banner_url && !banners.includes(settings.banner_url) ? [settings.banner_url, ...banners] : banners;
+  const allBanners = s.banner_url && !banners.includes(s.banner_url) ? [s.banner_url, ...banners] : banners;
 
   // Auto-rotate banners every 10s
   useEffect(() => {
@@ -31,6 +42,19 @@ export default function ShopAppearanceTab({
     { id: 'checkout', label: 'Форма' },
   ];
 
+  // Header background style
+  const headerBgStyle = s.bg_type === 'gradient'
+    ? { background: `linear-gradient(${s.gradient_direction || '135deg'}, ${s.gradient_from || pc}, ${s.gradient_to || '#7C3AED'})` }
+    : { background: s.bg_color || pc };
+
+  // Page background style
+  const pageBgStyle = s.page_bg_type === 'gradient'
+    ? { background: `linear-gradient(${s.page_gradient_direction || '180deg'}, ${s.page_gradient_from || '#f5f5f5'}, ${s.page_gradient_to || '#e0e7ff'})` }
+    : { background: s.page_bg_color || '#ffffff' };
+
+  const headerTextColor = s.header_text_color || '#ffffff';
+  const pageTextColor = s.page_text_color || '#1f2937';
+
   return (
     <div className="pc-section">
       <h2 style={{ marginBottom: 16 }}>Настройки магазина</h2>
@@ -38,73 +62,158 @@ export default function ShopAppearanceTab({
       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
         {/* Settings form */}
         <div style={{ flex: 1, minWidth: 300 }}>
-          <div style={{
-            background: 'var(--bg-glass)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)', padding: '16px',
-          }}>
-            <div className="form-group">
-              <label className="form-label">Название магазина</label>
-              <input className="form-input" value={settings.shop_name || ''} onChange={u('shop_name')} placeholder="Мой магазин" />
-            </div>
+          <div className="form-group">
+            <label className="form-label">Название магазина</label>
+            <input className="form-input" value={s.shop_name || ''} onChange={u('shop_name')} placeholder="Мой магазин" />
+          </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-group">
+            <label className="form-label">Валюта</label>
+            <select className="form-input" value={s.currency || 'RUB'} onChange={u('currency')} style={{ maxWidth: 200 }}>
+              <option value="RUB">RUB</option><option value="USD">USD</option><option value="EUR">EUR</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Основной цвет</label>
+            {colorSwatch(pc, e => setSettings(p => ({ ...p, primary_color: e.target.value })))}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+            <div className="form-group">
+              <label className="form-label">Цвет текста шапки</label>
+              {colorSwatch(s.header_text_color || '#ffffff', e => setSettings(p => ({ ...p, header_text_color: e.target.value })))}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Цвет текста страницы</label>
+              {colorSwatch(s.page_text_color || '#1f2937', e => setSettings(p => ({ ...p, page_text_color: e.target.value })))}
+            </div>
+          </div>
+
+          {/* Header background type */}
+          <div className="form-group" style={{ marginTop: 16 }}>
+            <label className="form-label">Тип фона шапки</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[{ id: 'color', label: 'Цвет' }, { id: 'gradient', label: 'Градиент' }].map(t => (
+                <button key={t.id} className={`btn ${s.bg_type === t.id ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ fontSize: '0.82rem', padding: '6px 14px' }}
+                  onClick={() => setSettings(p => ({ ...p, bg_type: t.id }))}>{t.label}</button>
+              ))}
+            </div>
+          </div>
+
+          {s.bg_type === 'color' && (
+            <div className="form-group" style={{ marginTop: 12 }}>
+              <label className="form-label">Цвет фона</label>
+              {colorSwatch(s.bg_color || pc, e => setSettings(p => ({ ...p, bg_color: e.target.value })))}
+            </div>
+          )}
+
+          {s.bg_type === 'gradient' && (
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div className="form-group">
-                <label className="form-label">Основной цвет</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input type="color" value={pc} onChange={u('primary_color')}
-                    style={{ width: 40, height: 36, border: 'none', cursor: 'pointer', borderRadius: 4 }} />
-                  <input className="form-input" value={settings.primary_color || ''} onChange={u('primary_color')} style={{ flex: 1 }} />
-                </div>
+                <label className="form-label">Цвет 1</label>
+                {colorSwatch(s.gradient_from || pc, e => setSettings(p => ({ ...p, gradient_from: e.target.value })))}
               </div>
               <div className="form-group">
-                <label className="form-label">Валюта</label>
-                <select className="form-input" value={settings.currency || 'RUB'} onChange={u('currency')}>
-                  <option value="RUB">RUB</option><option value="USD">USD</option><option value="EUR">EUR</option>
+                <label className="form-label">Цвет 2</label>
+                {colorSwatch(s.gradient_to || '#7C3AED', e => setSettings(p => ({ ...p, gradient_to: e.target.value })))}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Направление</label>
+                <select className="form-input" value={s.gradient_direction || '135deg'}
+                  onChange={e => setSettings(p => ({ ...p, gradient_direction: e.target.value }))}>
+                  <option value="0deg">Сверху вниз</option>
+                  <option value="90deg">Слева направо</option>
+                  <option value="135deg">По диагонали</option>
+                  <option value="180deg">Снизу вверх</option>
                 </select>
               </div>
             </div>
+          )}
 
-            <div className="form-group">
-              <label className="form-label">Баннеры (слайдер)</label>
-              {allBanners.map((url, i) => (
-                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
-                  <img src={url} alt="" style={{ width: 60, height: 36, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)' }} />
-                  <span style={{ flex: 1, fontSize: '0.72rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url.split('/').pop()}</span>
-                  <button type="button" className="btn btn-danger" style={{ padding: '2px 8px', fontSize: '0.72rem' }}
-                    onClick={() => {
-                      const updated = allBanners.filter((_, j) => j !== i);
-                      setSettings(s => ({ ...s, banners: updated, banner_url: updated[0] || '' }));
-                    }}>&#10005;</button>
-                </div>
-              ))}
-              <ImageUploadField label="" value="" placeholder="Добавить баннер..."
-                onChange={v => { if (v) { const updated = [...allBanners, v]; setSettings(s => ({ ...s, banners: updated, banner_url: updated[0] || '' })); } }}
-                uploadUrl={`/shop/${tc}/upload-image`} />
-              <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 4 }}>Баннеры переключаются каждые 10 секунд. Рекомендуемый размер: 1080x540</p>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Приветственный текст</label>
-              <textarea className="form-input" rows={2} value={settings.welcome_text || ''} onChange={u('welcome_text')} placeholder="Добро пожаловать!" />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Мин. сумма заказа</label>
-              <input type="number" className="form-input" value={settings.min_order_amount || ''} onChange={u('min_order_amount')} placeholder="0" />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-              {[['require_phone', 'Требовать телефон'], ['require_email', 'Требовать email'], ['require_address', 'Требовать адрес']].map(([k, l]) => (
-                <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={!!settings[k]} onChange={uCheck(k)} /> {l}
-                </label>
+          {/* Page background */}
+          <h4 style={{ marginTop: 20, marginBottom: 8, fontSize: '0.95rem' }}>Фон страницы</h4>
+          <div className="form-group">
+            <label className="form-label">Тип фона</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[{ id: 'color', label: 'Цвет' }, { id: 'gradient', label: 'Градиент' }].map(t => (
+                <button key={t.id} className={`btn ${s.page_bg_type === t.id ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ fontSize: '0.82rem', padding: '6px 14px' }}
+                  onClick={() => setSettings(p => ({ ...p, page_bg_type: t.id }))}>{t.label}</button>
               ))}
             </div>
-
-            <button className="btn btn-primary" onClick={saveSettings} disabled={savingSettings} style={{ marginTop: 16 }}>
-              {savingSettings ? 'Сохранение...' : 'Сохранить'}
-            </button>
           </div>
+          {s.page_bg_type === 'color' && (
+            <div className="form-group" style={{ marginTop: 8 }}>
+              <label className="form-label">Цвет фона</label>
+              {colorSwatch(s.page_bg_color || '#ffffff', e => setSettings(p => ({ ...p, page_bg_color: e.target.value })))}
+            </div>
+          )}
+          {s.page_bg_type === 'gradient' && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="form-group">
+                <label className="form-label">Цвет 1</label>
+                {colorSwatch(s.page_gradient_from || '#f5f5f5', e => setSettings(p => ({ ...p, page_gradient_from: e.target.value })))}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Цвет 2</label>
+                {colorSwatch(s.page_gradient_to || '#e0e7ff', e => setSettings(p => ({ ...p, page_gradient_to: e.target.value })))}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Направление</label>
+                <select className="form-input" value={s.page_gradient_direction || '180deg'}
+                  onChange={e => setSettings(p => ({ ...p, page_gradient_direction: e.target.value }))}>
+                  <option value="0deg">Сверху вниз</option>
+                  <option value="90deg">Слева направо</option>
+                  <option value="135deg">По диагонали</option>
+                  <option value="180deg">Снизу вверх</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Banners */}
+          <div className="form-group" style={{ marginTop: 16 }}>
+            <label className="form-label">Баннеры (слайдер)</label>
+            {allBanners.map((url, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                <img src={url} alt="" style={{ width: 60, height: 36, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)' }} />
+                <span style={{ flex: 1, fontSize: '0.72rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url.split('/').pop()}</span>
+                <button type="button" className="btn btn-danger" style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                  onClick={() => {
+                    const updated = allBanners.filter((_, j) => j !== i);
+                    setSettings(prev => ({ ...prev, banners: updated, banner_url: updated[0] || '' }));
+                  }}>&#10005;</button>
+              </div>
+            ))}
+            <ImageUploadField label="" value="" placeholder="Добавить баннер..."
+              onChange={v => { if (v) { const updated = [...allBanners, v]; setSettings(prev => ({ ...prev, banners: updated, banner_url: updated[0] || '' })); } }}
+              uploadUrl={`/shop/${tc}/upload-image`} />
+            <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 4 }}>Баннеры переключаются каждые 10 секунд. Рекомендуемый размер: 1080x540</p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Приветственный текст</label>
+            <textarea className="form-input" rows={2} value={s.welcome_text || ''} onChange={u('welcome_text')} placeholder="Добро пожаловать!" />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Мин. сумма заказа</label>
+            <input type="number" className="form-input" value={s.min_order_amount || ''} onChange={u('min_order_amount')} placeholder="0" />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+            {[['require_phone', 'Требовать телефон'], ['require_email', 'Требовать email'], ['require_address', 'Требовать адрес']].map(([k, l]) => (
+              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer' }}>
+                <input type="checkbox" checked={!!s[k]} onChange={uCheck(k)} /> {l}
+              </label>
+            ))}
+          </div>
+
+          <button className="btn btn-primary" onClick={saveSettings} disabled={savingSettings} style={{ marginTop: 16 }}>
+            {savingSettings ? 'Сохранение...' : 'Сохранить'}
+          </button>
         </div>
 
         {/* Preview */}
@@ -122,12 +231,12 @@ export default function ShopAppearanceTab({
             ))}
           </div>
 
-          <div style={{ borderRadius: 16, overflow: 'hidden', border: '1px solid var(--border)', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', height: 462, display: 'flex', flexDirection: 'column', background: '#fff' }}>
+          <div style={{ borderRadius: 16, overflow: 'hidden', border: '1px solid var(--border)', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', height: 462, display: 'flex', flexDirection: 'column' }}>
             {/* Header */}
-            <div style={{ background: pc, padding: '14px 16px', color: '#fff', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <div style={{ ...headerBgStyle, padding: '14px 16px', color: headerTextColor, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               {previewScreen !== 'home' && <span style={{ cursor: 'pointer' }}>&#8592;</span>}
               <span style={{ flex: 1, fontWeight: 600, fontSize: 14 }}>
-                {previewScreen === 'home' ? (settings.shop_name || 'Магазин') :
+                {previewScreen === 'home' ? (s.shop_name || 'Магазин') :
                  previewScreen === 'categories' ? 'Категории' :
                  previewScreen === 'category' ? 'Электроника' :
                  previewScreen === 'product' ? 'Смартфон Pro' :
@@ -137,7 +246,7 @@ export default function ShopAppearanceTab({
             </div>
 
             {/* Content */}
-            <div style={{ flex: 1, overflowY: 'auto', fontSize: 12 }}>
+            <div style={{ flex: 1, overflowY: 'auto', fontSize: 12, color: pageTextColor, ...pageBgStyle }}>
               {/* Home */}
               {previewScreen === 'home' && (
                 <div>
@@ -164,7 +273,7 @@ export default function ShopAppearanceTab({
                     </div>
                   )}
                   <div style={{ padding: '10px 12px' }}>
-                    {settings.welcome_text && <p style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>{settings.welcome_text.slice(0, 60)}</p>}
+                    {s.welcome_text && <p style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>{s.welcome_text.slice(0, 60)}</p>}
                     <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Хиты</div>
                     <div style={{ display: 'flex', gap: 6, overflowX: 'hidden', marginBottom: 12 }}>
                       {['Смартфон', 'Наушники'].map((n, i) => (

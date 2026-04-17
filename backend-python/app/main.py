@@ -1357,9 +1357,7 @@ function resolveUid() {{
       if (u && u.id) uid = String(u.id);
       if (u) S.userName = ((u.first_name || '') + ' ' + (u.last_name || '')).trim();
     }}
-    // Debug: log what bridge provides
-    if (wa) console.log('[Shop] WebApp:', wa.platform, 'initData:', !!wa.initData, 'user:', JSON.stringify(wa.initDataUnsafe?.user || null));
-  }} catch(e) {{ console.log('[Shop] resolveUid error:', e); }}
+  }} catch(e) {{ /* resolveUid error */ }}
   if (!uid) {{ uid = localStorage.getItem('shop_uid'); if (!uid) {{ uid = 'anon_' + Math.random().toString(36).slice(2,10); localStorage.setItem('shop_uid', uid); }} }}
 }}
 
@@ -1420,14 +1418,27 @@ function pc() {{ return S.appearance.primary_color || '#4F46E5'; }}
 
 function cartCount() {{ return S.cartItems.reduce((s,i)=>s+i.quantity, 0); }}
 
+function headerBg() {{
+  var a = S.appearance;
+  if (a.bg_type === 'gradient' && a.gradient_from && a.gradient_to)
+    return 'linear-gradient(' + (a.gradient_direction || '135deg') + ',' + a.gradient_from + ',' + a.gradient_to + ')';
+  return a.bg_color || pc();
+}}
+function headerTextColor() {{ return S.appearance.header_text_color || '#fff'; }}
+function pageBg() {{
+  var a = S.appearance;
+  if (a.page_bg_type === 'gradient' && a.page_gradient_from && a.page_gradient_to)
+    return 'linear-gradient(' + (a.page_gradient_direction || '180deg') + ',' + a.page_gradient_from + ',' + a.page_gradient_to + ')';
+  return a.page_bg_color || '#fff';
+}}
+
 function headerHtml(title, back) {{
-  return `<div class="header" style="background:${{pc()}}">
-    ${{back ? '<button class="back" onclick="goBack()">&#8592;</button>' : '<div style="width:28px"></div>'}}
-    <h1>${{title}}</h1>
-    <button class="cart-icon" onclick="go(\'cart\')">
-      &#128722;${{cartCount() ? '<span class="cart-badge">' + cartCount() + '</span>' : ''}}
-    </button>
-  </div>`;
+  return '<div class="header" style="background:' + headerBg() + ';color:' + headerTextColor() + '">' +
+    (back ? '<button class="back" onclick="goBack()" style="color:' + headerTextColor() + '">&#8592;</button>' : '<div style="width:28px"></div>') +
+    '<h1>' + title + '</h1>' +
+    '<button class="cart-icon" onclick="go(&#39;cart&#39;)" style="color:' + headerTextColor() + '">' +
+      '&#128722;' + (cartCount() ? '<span class="cart-badge">' + cartCount() + '</span>' : '') +
+    '</button></div>';
 }}
 
 function go(screen, data) {{
@@ -1645,7 +1656,7 @@ async function submitOrder() {{
       S.screen = 'success'; render();
       updateBackButton();
     }} else {{ alert(d.detail || 'Ошибка оформления'); if(btn){{ btn.disabled=false; btn.textContent='Оплатить'; }} }}
-  }} catch(e) {{ alert('Ошибка: ' + e.message); if(btn){{ btn.disabled=false; btn.textContent='Оплатить'; }} }}
+  }} catch(e) {{ alert('Ошибка оформления: ' + (e.message || e)); if(btn){{ btn.disabled=false; btn.textContent='Оплатить'; }} }}
 }}
 
 async function fillPhone() {{

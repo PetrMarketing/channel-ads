@@ -42,7 +42,11 @@ export default function ShopCategoriesTab({
       </div>
 
       {categories.length === 0 && (
-        <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: 40 }}>Нет категорий. Добавьте первую.</p>
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📁</div>
+          <div style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 4 }}>Нет категорий</div>
+          <p style={{ fontSize: '0.85rem', maxWidth: 300, margin: '0 auto' }}>Создайте категории для организации товаров в каталоге</p>
+        </div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

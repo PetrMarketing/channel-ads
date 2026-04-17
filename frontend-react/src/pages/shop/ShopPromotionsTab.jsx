@@ -63,7 +63,11 @@ export default function ShopPromotionsTab({
       </div>
 
       {promotions.length === 0 && (
-        <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: 40 }}>Нет акций. Создайте первую.</p>
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>🏷</div>
+          <div style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 4 }}>Нет акций</div>
+          <p style={{ fontSize: '0.85rem', maxWidth: 300, margin: '0 auto' }}>Создайте промокоды и скидки для привлечения покупателей</p>
+        </div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

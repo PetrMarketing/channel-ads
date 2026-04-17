@@ -14,18 +14,33 @@ export default function ShopProductsTab({
   const [unlimitedStock, setUnlimitedStock] = useState(false);
   const [showFeedModal, setShowFeedModal] = useState(false);
   const [feedUrl, setFeedUrl] = useState('');
+  const [feedFile, setFeedFile] = useState(null);
   const [importing, setImporting] = useState(false);
   const [feedResult, setFeedResult] = useState(null);
 
   const handleImportFeed = async () => {
-    if (!feedUrl.trim()) { showToast('Введите URL фида', 'error'); return; }
+    if (!feedUrl.trim() && !feedFile) { showToast('Введите URL или выберите файл', 'error'); return; }
     setImporting(true);
     setFeedResult(null);
     try {
-      const res = await api.post(`/shop/${tc}/import-feed`, { url: feedUrl.trim() });
+      let res;
+      if (feedFile) {
+        const fd = new FormData();
+        fd.append('file', feedFile);
+        const resp = await fetch(`/api/shop/${tc}/import-feed-file`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+          body: fd,
+        });
+        res = await resp.json();
+      } else {
+        res = await api.post(`/shop/${tc}/import-feed`, { url: feedUrl.trim() });
+      }
       if (res.success) {
         setFeedResult({ ok: true, imported: res.imported, categories: res.categories_imported });
         loadProducts();
+      } else {
+        setFeedResult({ ok: false, error: res.detail || res.error || 'Ошибка' });
       }
     } catch (e) {
       setFeedResult({ ok: false, error: e.message || 'Ошибка импорта' });
@@ -91,7 +106,11 @@ export default function ShopProductsTab({
       </div>
 
       {products.length === 0 && (
-        <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: 40 }}>Нет товаров. Добавьте первый.</p>
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📦</div>
+          <div style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 4 }}>Нет товаров</div>
+          <p style={{ fontSize: '0.85rem', maxWidth: 300, margin: '0 auto' }}>Добавьте товары вручную или импортируйте из фида</p>
+        </div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -207,10 +226,19 @@ export default function ShopProductsTab({
       <Modal isOpen={showFeedModal} onClose={() => setShowFeedModal(false)} title="Импортировать фид">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
-            Вставьте ссылку на YML/XML фид (Яндекс.Маркет, InSales, Tilda, 1С-Битрикс и др.)
+            Вставьте ссылку на YML/XML фид или загрузите файл
           </p>
           <input className="form-input" placeholder="https://example.com/feed.yml" value={feedUrl}
-            onChange={e => setFeedUrl(e.target.value)} />
+            onChange={e => { setFeedUrl(e.target.value); setFeedFile(null); }} disabled={!!feedFile} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>или</span>
+            <label className="btn btn-outline" style={{ padding: '6px 14px', fontSize: '0.82rem', cursor: 'pointer' }}>
+              {feedFile ? feedFile.name : 'Выбрать файл'}
+              <input type="file" accept=".yml,.yaml,.xml" style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) { setFeedFile(f); setFeedUrl(''); } }} />
+            </label>
+            {feedFile && <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={() => setFeedFile(null)}>x</button>}
+          </div>
           {feedResult && (
             <div style={{
               padding: '10px 14px', borderRadius: 8, fontSize: '0.85rem',

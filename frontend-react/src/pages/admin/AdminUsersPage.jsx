@@ -26,13 +26,13 @@ export default function AdminUsersPage() {
   return (
     <div>
       <h2 style={{ margin: '0 0 16px' }}>Пользователи</h2>
-      <input placeholder="Поиск по username, имени, telegram_id..." value={search}
+      <input placeholder="Поиск по PKid, username, имени..." value={search}
         onChange={e => { setSearch(e.target.value); setPage(1); }}
         style={{ width: 360, padding: 8, border: '1px solid #ddd', borderRadius: 6, marginBottom: 16, fontSize: 13 }} />
       <table style={tableStyle}>
         <thead><tr>
-          <th style={thStyle}>ID</th><th style={thStyle}>Username</th><th style={thStyle}>Имя</th>
-          <th style={thStyle}>Telegram ID</th><th style={thStyle}>Каналов</th><th style={thStyle}>Дата</th>
+          <th style={thStyle}>PKid</th><th style={thStyle}>Username</th><th style={thStyle}>Имя</th>
+          <th style={thStyle}>TG / MAX ID</th><th style={thStyle}>Каналов</th><th style={thStyle}>Дата</th>
         </tr></thead>
         <tbody>
           {users.map(u => (

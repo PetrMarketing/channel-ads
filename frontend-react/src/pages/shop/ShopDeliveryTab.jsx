@@ -42,7 +42,11 @@ export default function ShopDeliveryTab({
       </div>
 
       {deliveryMethods.length === 0 && (
-        <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: 40 }}>Нет способов доставки. Добавьте первый.</p>
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>🚚</div>
+          <div style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 4 }}>Нет способов доставки</div>
+          <p style={{ fontSize: '0.85rem', maxWidth: 300, margin: '0 auto' }}>Добавьте способы доставки для оформления заказов</p>
+        </div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
