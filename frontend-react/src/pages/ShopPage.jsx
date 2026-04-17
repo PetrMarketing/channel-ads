@@ -12,6 +12,7 @@ import ShopPromotionsTab from './shop/ShopPromotionsTab';
 import ShopOrdersTab from './shop/ShopOrdersTab';
 import ShopClientsTab from './shop/ShopClientsTab';
 import ShopAppearanceTab from './shop/ShopAppearanceTab';
+import ShopAttributesTab from './shop/ShopAttributesTab';
 
 export default function ShopPage() {
   const { currentChannel } = useChannels();
@@ -59,6 +60,9 @@ export default function ShopPage() {
   const [orderStats, setOrderStats] = useState({ total_products: 0, total_orders: 0, total_revenue: 0 });
   const [orderStatusFilter, setOrderStatusFilter] = useState('');
 
+  // Attributes
+  const [attributes, setAttributes] = useState([]);
+
   // Clients
   const [clients, setClients] = useState([]);
 
@@ -66,6 +70,7 @@ export default function ShopPage() {
     { id: 'main', label: 'Главная' },
     { id: 'categories', label: 'Категории' },
     { id: 'products', label: 'Товары' },
+    { id: 'attributes', label: 'Параметры' },
     { id: 'payment', label: 'Оплата' },
     { id: 'delivery', label: 'Доставка' },
     { id: 'promotions', label: 'Акции' },
@@ -135,6 +140,14 @@ export default function ShopPage() {
     } catch {}
   }, [tc]);
 
+  const loadAttributes = useCallback(async () => {
+    if (!tc) return;
+    try {
+      const data = await api.get(`/shop/${tc}/attributes`);
+      if (data.success) setAttributes(data.attributes || []);
+    } catch {}
+  }, [tc]);
+
   const loadClients = useCallback(async () => {
     if (!tc) return;
     try {
@@ -147,6 +160,7 @@ export default function ShopPage() {
     if (tab === 'main') { loadOrderStats(); loadProducts(); loadSettings(); }
     if (tab === 'categories') loadCategories();
     if (tab === 'products') { loadProducts(); loadCategories(); }
+    if (tab === 'attributes') loadAttributes();
     if (tab === 'delivery') loadDeliveryMethods();
     if (tab === 'promotions') loadPromotions();
     if (tab === 'orders') { loadOrders(); loadOrderStats(); }
@@ -320,6 +334,13 @@ export default function ShopPage() {
           productForm={productForm} setProductForm={setProductForm}
           savingProduct={savingProduct} saveProduct={saveProduct}
           productFilter={productFilter} setProductFilter={setProductFilter}
+        />
+      )}
+
+      {tab === 'attributes' && (
+        <ShopAttributesTab
+          tc={tc} showToast={showToast}
+          attributes={attributes} loadAttributes={loadAttributes}
         />
       )}
 

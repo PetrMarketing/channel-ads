@@ -487,6 +487,137 @@ async def _parse_and_import_feed(root, ch_id: int):
 
 
 # ═══════════════════════════════════════
+# ATTRIBUTES (параметры товаров)
+# ═══════════════════════════════════════
+
+@router.get("/{tc}/attributes")
+async def list_attributes(tc: str, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    attrs = await fetch_all(
+        "SELECT * FROM shop_attributes WHERE channel_id = $1 ORDER BY sort_order, name", channel["id"])
+    result = []
+    for a in attrs:
+        values = await fetch_all(
+            "SELECT * FROM shop_attribute_values WHERE attribute_id = $1 ORDER BY sort_order, value", a["id"])
+        result.append({**dict(a), "values": [dict(v) for v in values]})
+    return {"success": True, "attributes": result}
+
+
+@router.post("/{tc}/attributes")
+async def create_attribute(tc: str, request: Request, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    body = await request.json()
+    aid = await execute_returning_id(
+        "INSERT INTO shop_attributes (channel_id, name, sort_order) VALUES ($1,$2,$3) RETURNING id",
+        channel["id"], body.get("name", ""), body.get("sort_order", 0))
+    # Create values if provided
+    for v in body.get("values", []):
+        await execute_returning_id(
+            "INSERT INTO shop_attribute_values (attribute_id, value, color_hex, image_url, sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id",
+            aid, v.get("value", ""), v.get("color_hex"), v.get("image_url"), v.get("sort_order", 0))
+    return {"success": True, "id": aid}
+
+
+@router.put("/{tc}/attributes/{aid}")
+async def update_attribute(tc: str, aid: int, request: Request, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    body = await request.json()
+    await execute("UPDATE shop_attributes SET name = $1, sort_order = $2 WHERE id = $3 AND channel_id = $4",
+                  body.get("name", ""), body.get("sort_order", 0), aid, channel["id"])
+    # Sync values: delete old, insert new
+    if "values" in body:
+        await execute("DELETE FROM shop_attribute_values WHERE attribute_id = $1", aid)
+        for v in body["values"]:
+            await execute_returning_id(
+                "INSERT INTO shop_attribute_values (attribute_id, value, color_hex, image_url, sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id",
+                aid, v.get("value", ""), v.get("color_hex"), v.get("image_url"), v.get("sort_order", 0))
+    return {"success": True}
+
+
+@router.delete("/{tc}/attributes/{aid}")
+async def delete_attribute(tc: str, aid: int, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    await execute("DELETE FROM shop_attributes WHERE id = $1 AND channel_id = $2", aid, channel["id"])
+    return {"success": True}
+
+
+# Product images (multiple, up to 5)
+@router.post("/{tc}/products/{pid}/images")
+async def upload_product_image(tc: str, pid: int, request: Request, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    form = await request.form()
+    file = form.get("file")
+    if not file or not hasattr(file, "read"):
+        raise HTTPException(status_code=400, detail="Файл не загружен")
+    from ..services.file_storage import save_upload
+    from ..config import settings
+    file_path, _, _ = await save_upload(file, photo_only=True)
+    rel = file_path.replace(settings.UPLOAD_DIR, "").lstrip("/")
+    url = f"/uploads/{rel}"
+    # Get current images
+    prod = await fetch_one("SELECT images, image_url FROM shop_products WHERE id = $1 AND channel_id = $2", pid, channel["id"])
+    if not prod:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    images = prod.get("images") or []
+    if isinstance(images, str):
+        try: images = json.loads(images)
+        except: images = []
+    if not isinstance(images, list):
+        images = []
+    if len(images) >= 5:
+        raise HTTPException(status_code=400, detail="Максимум 5 изображений")
+    images.append(url)
+    # Set first image as main if no main image
+    main_url = prod.get("image_url") or url
+    await execute("UPDATE shop_products SET images = $1, image_url = $2 WHERE id = $3",
+                  json.dumps(images), main_url, pid)
+    return {"success": True, "url": url, "images": images}
+
+
+@router.delete("/{tc}/products/{pid}/images/{idx}")
+async def delete_product_image(tc: str, pid: int, idx: int, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    prod = await fetch_one("SELECT images, image_url FROM shop_products WHERE id = $1 AND channel_id = $2", pid, channel["id"])
+    if not prod:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    images = prod.get("images") or []
+    if isinstance(images, str):
+        try: images = json.loads(images)
+        except: images = []
+    if 0 <= idx < len(images):
+        removed = images.pop(idx)
+        main_url = prod.get("image_url")
+        if main_url == removed:
+            main_url = images[0] if images else ""
+        await execute("UPDATE shop_products SET images = $1, image_url = $2 WHERE id = $3",
+                      json.dumps(images), main_url, pid)
+    return {"success": True, "images": images}
+
+
+@router.put("/{tc}/products/{pid}/main-image")
+async def set_main_image(tc: str, pid: int, request: Request, user=Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    body = await request.json()
+    await execute("UPDATE shop_products SET image_url = $1 WHERE id = $2 AND channel_id = $3",
+                  body.get("image_url", ""), pid, channel["id"])
+    return {"success": True}
+
+
+# ═══════════════════════════════════════
 # PRODUCT VARIANTS
 # ═══════════════════════════════════════
 
@@ -514,10 +645,13 @@ async def create_variant(tc: str, pid: int, request: Request, user=Depends(get_c
         raise HTTPException(status_code=404, detail="Товар не найден")
     body = await request.json()
     vid = await execute_returning_id(
-        """INSERT INTO shop_product_variants (product_id, name, sku, price, stock)
-           VALUES ($1,$2,$3,$4,$5) RETURNING id""",
+        """INSERT INTO shop_product_variants (product_id, name, sku, price, stock, image_url, attribute_values)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id""",
         pid, body.get("name", ""), body.get("sku"),
-        float(body.get("price", 0)), int(body.get("stock", 0)),
+        float(body.get("price", 0)) if body.get("price") else None,
+        int(body.get("stock", -1)),
+        body.get("image_url", ""),
+        json.dumps(body.get("attribute_values", []), ensure_ascii=False),
     )
     return {"success": True, "id": vid}
 
@@ -530,11 +664,15 @@ async def update_variant(tc: str, pid: int, vid: int, request: Request, user=Dep
     body = await request.json()
     fields, params = [], []
     idx = 1
-    for key in ("name", "sku", "price", "stock"):
+    for key in ("name", "sku", "price", "stock", "image_url"):
         if key in body:
             fields.append(f"{key} = ${idx}")
             params.append(body[key])
             idx += 1
+    if "attribute_values" in body:
+        fields.append(f"attribute_values = ${idx}")
+        params.append(json.dumps(body["attribute_values"], ensure_ascii=False))
+        idx += 1
     if fields:
         params.extend([vid, pid])
         await execute(

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Modal from '../../components/Modal';
 import { api } from '../../services/api';
 import ImageUploadField from '../../components/ImageUploadField';
@@ -17,6 +17,9 @@ export default function ShopProductsTab({
   const [feedFile, setFeedFile] = useState(null);
   const [importing, setImporting] = useState(false);
   const [feedResult, setFeedResult] = useState(null);
+  const [productImages, setProductImages] = useState([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageInputRef = useRef(null);
 
   const handleImportFeed = async () => {
     if (!feedUrl.trim() && !feedFile) { showToast('Введите URL или выберите файл', 'error'); return; }
@@ -49,10 +52,63 @@ export default function ShopProductsTab({
     }
   };
 
+  const loadProductImages = async (productId) => {
+    try {
+      const data = await api.get(`/shop/${tc}/products/${productId}/images`);
+      if (data.success) setProductImages(data.images || []);
+      else setProductImages([]);
+    } catch {
+      setProductImages([]);
+    }
+  };
+
+  const uploadProductImage = async (file) => {
+    if (!editingProduct) return;
+    if (file.size > 10 * 1024 * 1024) { showToast('Максимум 10 МБ', 'error'); return; }
+    setUploadingImage(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const data = await api.upload(`/shop/${tc}/products/${editingProduct.id}/images`, fd);
+      if (data.success) {
+        await loadProductImages(editingProduct.id);
+        showToast('Изображение загружено');
+      } else {
+        showToast(data.detail || 'Ошибка загрузки', 'error');
+      }
+    } catch (e) {
+      showToast(e.message || 'Ошибка загрузки', 'error');
+    } finally {
+      setUploadingImage(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  };
+
+  const setMainImage = async (imageIndex) => {
+    if (!editingProduct) return;
+    try {
+      await api.put(`/shop/${tc}/products/${editingProduct.id}/main-image`, { index: imageIndex });
+      await loadProductImages(editingProduct.id);
+      loadProducts();
+      showToast('Главное изображение установлено');
+    } catch (e) { showToast(e.message || 'Ошибка', 'error'); }
+  };
+
+  const deleteProductImage = async (imageIndex) => {
+    if (!editingProduct) return;
+    try {
+      await api.delete(`/shop/${tc}/products/${editingProduct.id}/images/${imageIndex}`);
+      await loadProductImages(editingProduct.id);
+      loadProducts();
+      showToast('Изображение удалено');
+    } catch (e) { showToast(e.message || 'Ошибка', 'error'); }
+  };
+
   const openCreate = () => {
     setEditingProduct(null);
     setProductForm({ name: '', description: '', category_id: '', price: '', compare_at_price: '', sku: '', stock: -1, is_hit: false, is_new: false, image_url: '' });
     setUnlimitedStock(true);
+    setProductImages([]);
     setShowProductModal(true);
   };
 
@@ -72,6 +128,8 @@ export default function ShopProductsTab({
       is_new: !!prod.is_new,
       image_url: prod.image_url || '',
     });
+    setProductImages([]);
+    loadProductImages(prod.id);
     setShowProductModal(true);
   };
 
@@ -198,9 +256,75 @@ export default function ShopProductsTab({
               </label>
             </div>
           </div>
+          {/* Multiple images section (available after product creation) */}
+          {editingProduct && (
+            <div className="form-group">
+              <label className="form-label">Изображения (до 5)</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                {productImages.map((img, idx) => (
+                  <div key={idx} style={{
+                    position: 'relative', width: 72, height: 72,
+                    borderRadius: 8, overflow: 'hidden',
+                    border: img.is_main ? '2px solid #3b82f6' : '1px solid var(--border)',
+                    cursor: 'pointer', flexShrink: 0,
+                  }}
+                    onClick={() => setMainImage(idx)}
+                    title={img.is_main ? 'Главное изображение' : 'Нажмите, чтобы сделать главным'}
+                  >
+                    <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); deleteProductImage(idx); }}
+                      style={{
+                        position: 'absolute', top: 2, right: 2,
+                        width: 18, height: 18, borderRadius: '50%',
+                        background: 'rgba(0,0,0,0.6)', color: '#fff',
+                        border: 'none', cursor: 'pointer', fontSize: '0.7rem',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        lineHeight: 1, padding: 0,
+                      }}
+                    >&times;</button>
+                    {img.is_main && (
+                      <div style={{
+                        position: 'absolute', bottom: 0, left: 0, right: 0,
+                        background: 'rgba(59,130,246,0.85)', color: '#fff',
+                        fontSize: '0.6rem', textAlign: 'center', padding: '1px 0',
+                      }}>главная</div>
+                    )}
+                  </div>
+                ))}
+                {productImages.length < 5 && (
+                  <div>
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadProductImage(f); }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      style={{ width: 72, height: 72, fontSize: '1.5rem', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={uploadingImage}
+                    >
+                      {uploadingImage ? '...' : '+'}
+                    </button>
+                  </div>
+                )}
+              </div>
+              {!editingProduct && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+                  Загрузка изображений доступна после создания товара
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="form-group">
             <ImageUploadField
-              label="Изображение"
+              label={editingProduct ? 'Изображение (URL)' : 'Изображение'}
               value={productForm.image_url}
               onChange={v => setProductForm(p => ({ ...p, image_url: v }))}
               uploadUrl={`/shop/${tc}/upload-image`}
