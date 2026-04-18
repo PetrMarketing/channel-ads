@@ -1,0 +1,1 @@
+ALTER TABLE ai_design_sessions ADD COLUMN IF NOT EXISTS regen_count INTEGER DEFAULT 0;

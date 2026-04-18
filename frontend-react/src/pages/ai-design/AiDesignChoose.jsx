@@ -1,8 +1,11 @@
 /**
- * Компонент выбора аватарки и описания — сетка 3x3 + 3 варианта описаний.
+ * Компонент выбора аватарки и описания — сетка 3x3 + 3 варианта описаний + перегенерация.
  */
-export default function AiDesignChoose({ avatars, descriptions, chosenAvatar, chosenDesc, onSelectAvatar, onSelectDesc, onApply, onBack, loading }) {
+const MAX_REGENS = 2;
+
+export default function AiDesignChoose({ avatars, descriptions, chosenAvatar, chosenDesc, regenCount, onSelectAvatar, onSelectDesc, onApply, onRegenerate, onBack, loading }) {
   const canApply = chosenAvatar !== null && chosenDesc !== null;
+  const canRegen = (regenCount || 0) < MAX_REGENS;
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '20px' }}>
@@ -14,7 +17,15 @@ export default function AiDesignChoose({ avatars, descriptions, chosenAvatar, ch
 
       {/* Сетка аватарок */}
       <div style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 10 }}>Аватарка</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Аватарка</h3>
+          {canRegen && (
+            <button className="btn" onClick={onRegenerate} disabled={loading}
+              style={{ padding: '5px 12px', fontSize: '0.78rem' }}>
+              {loading ? 'Генерация...' : `Перегенерировать (${MAX_REGENS - (regenCount || 0)} осталось)`}
+            </button>
+          )}
+        </div>
         {avatars.length > 0 ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
             {avatars.map((url, i) => (

@@ -192,18 +192,25 @@ async def generate_avatars(tc: str, session_id: int, user: Dict[str, Any] = Depe
     colors = _parse_json_field(session.get("colors")) or []
     color_str = f" Используй цвета: {', '.join(colors)}." if colors else ""
 
+    # Проверяем лимит перегенераций (макс 2 перегенерации = 3 генерации всего)
+    regen_count = session.get("regen_count") or 0
+    if regen_count > 2:
+        raise HTTPException(status_code=400, detail="Достигнут лимит перегенераций (макс 2)")
+
+    # Фото используется при любом стиле
     photo_base64, photo_instruction = None, ""
     if session.get("photo_path") and os.path.exists(session["photo_path"]):
         with open(session["photo_path"], "rb") as f:
             photo_base64 = base64.b64encode(f.read()).decode()
-        photo_instruction = " Используй приложенное фото как основу."
+        photo_instruction = " На каждой аватарке используй приложенное фото как элемент дизайна."
 
     prompt = (
         f"Создай ровную сетку 3x3 из 9 квадратных аватарок для канала в тематике «{niche}» "
         f"в {style} стиле.{color_str}{photo_instruction} "
-        f"Важно: между аватарками не должно быть отступов, рамок или промежутков. "
-        f"Каждая аватарка занимает ровно 1/3 ширины и 1/3 высоты изображения. "
-        f"Все элементы на каждой аватарке должны быть отцентрованы."
+        f"Важно: между аватарками не должно быть отступов, рамок, промежутков или границ. "
+        f"Сетка должна быть ровно 3 колонки и 3 ряда, без зазоров. "
+        f"Каждая аватарка занимает ровно 1/3 ширины и 1/3 высоты всего изображения. "
+        f"Главный элемент каждой аватарки расположен строго по центру клетки."
     )
 
     # Генерируем и сохраняем изображение
@@ -218,11 +225,11 @@ async def generate_avatars(tc: str, session_id: int, user: Dict[str, Any] = Depe
 
     await execute(
         """UPDATE ai_design_sessions
-           SET generated_grid_url=$1, status='choose_avatar', updated_at=NOW()
+           SET generated_grid_url=$1, status='choose_avatar', regen_count=COALESCE(regen_count,0)+1, updated_at=NOW()
            WHERE id=$2""",
         json_mod.dumps(avatar_urls), session_id
     )
-    return {"success": True, "grid_url": f"/uploads/{grid_filename}", "avatars": avatar_urls}
+    return {"success": True, "grid_url": f"/uploads/{grid_filename}", "avatars": avatar_urls, "regen_count": regen_count + 1}
 
 
 # ---- Генерация описаний ----
@@ -390,6 +397,7 @@ async def get_session(tc: str, session_id: int, user: Dict[str, Any] = Depends(g
             "chosen_description_index": session.get("chosen_description_index"),
             "chosen_description": session.get("chosen_description"),
             "tokens_spent": session.get("tokens_spent"),
+            "regen_count": session.get("regen_count") or 0,
             "lm_ideas": _parse_json_field(session.get("lm_ideas")),
             "lm_chosen_idea_index": session.get("lm_chosen_idea_index"),
             "lm_chosen_idea": _parse_json_field(session.get("lm_chosen_idea")),

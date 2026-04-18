@@ -38,6 +38,7 @@ export default function AiDesignPage() {
   const [chosenAvatar, setChosenAvatar] = useState(null);
   const [descriptions, setDescriptions] = useState([]);
   const [chosenDesc, setChosenDesc] = useState(null);
+  const [regenCount, setRegenCount] = useState(0);
 
   // Лид-магнит
   const [lmPdf, setLmPdf] = useState(null);
@@ -125,6 +126,22 @@ export default function AiDesignPage() {
     catch (e) { showToast(e.message, 'error'); }
   };
 
+  // Перегенерация аватарок (макс 2 раза)
+  const handleRegenerate = async () => {
+    setLoading(true);
+    try {
+      setStep('generating');
+      const [aRes, dRes] = await Promise.all([
+        api.post(`/ai-design/${sUrl}/generate-avatars`),
+        api.post(`/ai-design/${sUrl}/generate-descriptions`),
+      ]);
+      if (aRes.success) { setAvatars(aRes.avatars || []); setRegenCount(aRes.regen_count || regenCount + 1); }
+      if (dRes.success) setDescriptions(dRes.descriptions || []);
+      setChosenAvatar(null); setChosenDesc(null); setStep('choose');
+    } catch (e) { showToast(e.message, 'error'); setStep('choose'); }
+    finally { setLoading(false); }
+  };
+
   // Применение аватара и описания
   const handleApply = async () => {
     if (chosenAvatar === null) { showToast('Выберите аватарку', 'error'); return; }
@@ -189,7 +206,7 @@ export default function AiDesignPage() {
   const handleReset = () => {
     setStep('start'); setSessionId(null); setSessionTc(null);
     setSurvey({ niche: '', colors: ['#7B68EE'], photo: null, photoPreview: null, style: 'минимализм', contactLink: '', description: '' });
-    setAvatars([]); setChosenAvatar(null); setDescriptions([]); setChosenDesc(null);
+    setAvatars([]); setChosenAvatar(null); setDescriptions([]); setChosenDesc(null); setRegenCount(0);
     setLmPdf(null); setLmPdfUploaded(false); setLmUploading(false);
     setLmWishes(''); setLmIdeas([]); setLmChosenIdea(null);
     setLmContent(''); setLmPostText(''); setLmBannerUrl(null);
@@ -278,7 +295,7 @@ export default function AiDesignPage() {
     }
 
     // Выбор аватара и описания
-    if (step === 'choose') return <AiDesignChoose avatars={avatars} descriptions={descriptions} chosenAvatar={chosenAvatar} chosenDesc={chosenDesc} onSelectAvatar={handleSelectAvatar} onSelectDesc={handleSelectDesc} onApply={handleApply} onBack={handleReset} loading={loading} />;
+    if (step === 'choose') return <AiDesignChoose avatars={avatars} descriptions={descriptions} chosenAvatar={chosenAvatar} chosenDesc={chosenDesc} regenCount={regenCount} onSelectAvatar={handleSelectAvatar} onSelectDesc={handleSelectDesc} onApply={handleApply} onRegenerate={handleRegenerate} onBack={handleReset} loading={loading} />;
 
     // Лид-магнит: опрос
     if (step === 'lm_survey') return <LmSurvey lmPdf={lmPdf} lmPdfUploaded={lmPdfUploaded} lmUploading={lmUploading} lmWishes={lmWishes} setLmWishes={setLmWishes} onUploadPdf={handleUploadLmPdf} onSubmit={handleSubmitLmSurvey} onSkip={() => setStep('done')} loading={loading} />;
