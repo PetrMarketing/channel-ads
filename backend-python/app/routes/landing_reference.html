@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAX: заработок на новой площадке — полный курс</title>
+<meta name="description" content="Пошаговый курс по созданию, продвижению и монетизации каналов на платформе MAX. 4 блока, 3 тарифа, рассрочка 0%.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a14;--bg2:#10101e;--bg3:#161630;--card:#12122a;--card-h:#1a1a3a;
+  --accent:#6c5ce7;--accent2:#a78bfa;--cta:#00cec9;--cta-h:#00b3ad;
+  --gold:#fbbf24;--danger:#ff6b6b;
+  --text:#f0f0f8;--muted:#8888a0;--dim:#55556a;--border:#1e1e38;
+  --r:16px;--rs:10px;--font:'Montserrat',-apple-system,sans-serif;
+}
+html{scroll-behavior:smooth}
+body,html{font-family:'Montserrat',-apple-system,sans-serif !important;background:#0a0a14 !important;color:#f0f0f8 !important;line-height:1.7 !important;overflow-x:hidden;font-size:18px !important}
+body div,body p,body span,body li,body h1,body h2,body h3,body h4,body strong,body b,body i,body em,body label,body td,body th{font-family:'Montserrat',-apple-system,sans-serif !important}
+.container{max-width:1100px;margin:0 auto;padding:0 24px}
+a{color:var(--cta);text-decoration:none}
+h1,h2,h3{line-height:1.2;color:#f0f0f8 !important}
+p,li,span,div,td,th,label,strong,b{color:inherit !important}
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:18px 40px;border-radius:var(--rs);font-size:18px;font-weight:700;border:none;cursor:pointer;transition:all .25s;text-decoration:none;position:relative;overflow:hidden}
+.btn-cta{background:var(--cta);color:#fff;box-shadow:0 4px 24px rgba(0,206,201,.3)}
+.btn-cta:hover{background:var(--cta-h);transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,206,201,.4)}
+.btn-cta::after{content:'';position:absolute;top:-50%;left:-60%;width:40%;height:200%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);transform:skewX(-20deg);animation:shimmer 3s infinite}
+@keyframes shimmer{0%{left:-60%}100%{left:160%}}
+.btn-accent{background:var(--accent);color:#fff;box-shadow:0 4px 20px rgba(108,92,231,.3)}
+.btn-accent:hover{background:#5a4bd1;transform:translateY(-2px)}
+.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border);padding:14px 28px}
+.btn-outline:hover{background:var(--card);border-color:var(--accent)}
+.btn-gold{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;box-shadow:0 4px 20px rgba(245,158,11,.3)}
+.btn-gold:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(245,158,11,.4)}
+/* Sticky bar */
+.sticky-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(10,10,20,.95);backdrop-filter:blur(12px);border-top:1px solid var(--border);padding:12px 24px;z-index:100;display:flex;align-items:center;justify-content:center;gap:16px;transform:translateY(100%);transition:transform .3s}
+.sticky-bar.visible{transform:translateY(0)}
+.sticky-bar span{font-size:15px;color:#8888a0 !important}
+/* Hero */
+.hero{padding:100px 0 80px;text-align:center;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:800px;background:radial-gradient(circle,rgba(108,92,231,.15) 0%,transparent 70%);pointer-events:none}
+.hero-badge{display:inline-block;background:rgba(108,92,231,.15) !important;color:#a78bfa !important;padding:10px 24px;border-radius:50px;font-size:15px;font-weight:600;letter-spacing:.5px;margin-bottom:28px;border:1px solid rgba(108,92,231,.2)}
+.hero h1{font-size:clamp(2.4rem,5.5vw,3.6rem);font-weight:900;margin-bottom:24px;background:linear-gradient(135deg,#fff 30%,var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p{font-size:1.3rem;color:var(--muted) !important;max-width:680px;margin:0 auto 40px}
+.hero-stats{display:flex;justify-content:center;gap:40px;margin-top:48px;flex-wrap:wrap}
+.hero-stat{text-align:center}
+.hero-stat .num{font-size:2.4rem;font-weight:800;color:#00cec9 !important}
+.hero-stat .label{font-size:.9rem;color:#8888a0 !important;margin-top:4px}
+/* Section */
+.section{padding:80px 0}
+.section-title{font-size:clamp(1.8rem,4vw,2.6rem) !important;font-weight:800 !important;text-align:center !important;margin-bottom:20px;color:#f0f0f8 !important}
+.section-sub{text-align:center !important;color:#8888a0 !important;max-width:650px;margin:0 auto 48px;font-size:1.15rem !important}
+/* For who */
+.who-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.who-card{background:var(--card) !important;border:1px solid var(--border);border-radius:var(--r);padding:24px;display:flex;gap:16px;align-items:flex-start;transition:all .2s}
+.who-card:hover{border-color:var(--accent);background:var(--card-h);transform:translateY(-2px)}
+.who-icon{width:48px;height:48px;border-radius:12px;background:rgba(108,92,231,.12);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0}
+.who-card h3{font-size:1.1rem;font-weight:600;margin-bottom:6px;color:#f0f0f8 !important}
+.who-card p{font-size:1rem;color:var(--muted) !important;line-height:1.6}
+/* Results */
+.results-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.result-card{background:var(--card) !important;border:1px solid var(--border);border-radius:var(--r);padding:28px 24px;text-align:center;transition:all .2s}
+.result-card:hover{border-color:var(--cta);transform:translateY(-3px)}
+.result-icon{font-size:2.2rem;margin-bottom:12px}
+.result-card h3{font-size:1.1rem;font-weight:700;margin-bottom:8px;color:#f0f0f8 !important}
+.result-card p{font-size:.95rem;color:var(--muted) !important}
+/* Program */
+.program-block{margin-bottom:16px;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:#12122a !important}
+.program-header{padding:20px 24px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:16px;transition:background .2s}
+.program-header:hover{background:var(--card-h)}
+.program-header .num{width:40px;height:40px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.1rem;flex-shrink:0}
+.program-header .title{flex:1;font-weight:700;font-size:1.15rem;color:#f0f0f8 !important}
+.program-header .tag{font-size:.72rem;padding:4px 10px;border-radius:20px;background:rgba(0,206,201,.12);color:#00cec9 !important;font-weight:600;white-space:nowrap}
+.program-header .chevron{font-size:1.4rem;color:var(--muted);transition:transform .3s}
+.program-block.open .chevron{transform:rotate(180deg)}
+.program-body{max-height:0;overflow:hidden;transition:max-height .4s ease}
+.program-block.open .program-body{max-height:2000px}
+.program-content{padding:0 24px 24px}
+.program-list{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.program-list li{padding:12px 16px;background:rgba(108,92,231,.06);border-radius:var(--rs);font-size:1rem;color:#f0f0f8 !important;display:flex;align-items:flex-start;gap:10px}
+.program-list li::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:8px}
+.program-result{background:rgba(0,206,201,.08);border:1px solid rgba(0,206,201,.15);border-radius:var(--rs);padding:16px 20px}
+.program-result h4{font-size:1rem;color:var(--cta);font-weight:700;margin-bottom:8px}
+.program-result p{font-size:.95rem;color:var(--muted) !important}
+/* Why now */
+.why-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.why-card{background:#12122a !important;border:1px solid var(--border);border-radius:var(--r);padding:24px;display:flex;gap:14px;align-items:flex-start}
+.why-card .icon{font-size:1.6rem;flex-shrink:0}
+.why-card h3{font-size:1.1rem;font-weight:700;margin-bottom:6px;color:#f0f0f8 !important}
+.why-card p{font-size:1rem;color:var(--muted) !important}
+/* Tariffs */
+.tariffs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;align-items:stretch}
+.tariff-card{background:#12122a !important;border:2px solid var(--border);border-radius:var(--r);padding:32px 28px;display:flex;flex-direction:column;position:relative;transition:all .3s}
+.tariff-card:hover{border-color:var(--accent);transform:translateY(-4px)}
+.tariff-card.popular{border-color:var(--cta);box-shadow:0 0 40px rgba(0,206,201,.15)}
+.tariff-card.popular::before{content:'ПОПУЛЯРНЫЙ';position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:var(--cta);color:#fff;padding:4px 16px;border-radius:20px;font-size:.72rem;font-weight:700;letter-spacing:.5px}
+.tariff-card.vip{border-color:var(--gold);box-shadow:0 0 40px rgba(251,191,36,.1)}
+.tariff-card.vip::before{content:'VIP';position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;padding:4px 16px;border-radius:20px;font-size:.72rem;font-weight:700}
+.tariff-name{font-size:1.25rem;font-weight:700;margin-bottom:8px;color:#f0f0f8 !important}
+.tariff-price{font-size:2.4rem;font-weight:900;margin-bottom:4px;color:#f0f0f8 !important}
+.tariff-price span{font-size:1rem;font-weight:500;color:#8888a0 !important}
+.tariff-installment{font-size:.95rem;color:#00cec9 !important;margin-bottom:20px}
+.tariff-features{list-style:none;flex:1;margin-bottom:24px}
+.tariff-features li{padding:10px 0;font-size:1rem;color:#f0f0f8 !important;display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid rgba(255,255,255,.04)}
+.tariff-features li::before{content:'✓';color:#00cec9 !important;font-weight:700;flex-shrink:0}
+.tariff-card .btn{width:100%;justify-content:center;font-size:17px;padding:18px}
+/* Speaker */
+.speaker{display:flex;gap:40px;align-items:center;flex-wrap:wrap}
+.speaker-photo{width:280px;height:280px;border-radius:20px;object-fit:cover;flex-shrink:0;border:3px solid var(--accent)}
+.speaker-info{flex:1;min-width:280px}
+.speaker-info h3{font-size:1.7rem;font-weight:800;margin-bottom:8px;color:#f0f0f8 !important}
+.speaker-info .role{color:#a78bfa !important;font-size:1.05rem;margin-bottom:16px}
+.speaker-info p{color:var(--muted) !important;margin-bottom:12px;font-size:1.05rem}
+.speaker-stats{display:flex;gap:24px;margin-top:16px;flex-wrap:wrap}
+.speaker-stats div{text-align:center}
+.speaker-stats .n{font-size:1.8rem;font-weight:800;color:#00cec9 !important}
+.speaker-stats .l{font-size:.88rem;color:#8888a0 !important}
+/* Reviews */
+.reviews-track{display:flex;gap:16px;overflow-x:auto;padding:8px 0 16px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.reviews-track::-webkit-scrollbar{display:none}
+.review-card{min-width:320px;max-width:360px;scroll-snap-align:start;background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:24px;flex-shrink:0}
+.review-card .stars{color:var(--gold);margin-bottom:10px;font-size:1.1rem}
+.review-card .text{font-size:.9rem;color:var(--muted);margin-bottom:14px;line-height:1.6;font-style:italic}
+.review-card .author{font-weight:600;font-size:.88rem}
+.review-card .meta{font-size:.78rem;color:var(--dim)}
+/* FAQ */
+.faq-item{border:1px solid var(--border);border-radius:var(--rs);margin-bottom:10px;overflow:hidden}
+.faq-q{padding:20px 24px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:1.05rem;color:#f0f0f8 !important;background:var(--card);transition:background .2s}
+.faq-q:hover{background:var(--card-h)}
+.faq-q .ch{font-size:1.2rem;color:var(--muted);transition:transform .3s}
+.faq-item.open .ch{transform:rotate(45deg)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .3s}
+.faq-item.open .faq-a{max-height:400px}
+.faq-a-inner{padding:0 24px 20px;font-size:1rem;color:var(--muted) !important;line-height:1.7}
+/* Contact */
+.contact-form{max-width:500px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.contact-form input,.contact-form textarea{background:var(--card);border:1px solid var(--border);border-radius:var(--rs);padding:14px 18px;color:var(--text);font-family:var(--font);font-size:.95rem;outline:none;transition:border-color .2s}
+.contact-form input:focus,.contact-form textarea:focus{border-color:var(--accent)}
+.contact-form textarea{resize:vertical;min-height:100px}
+/* Footer */
+footer{border-top:1px solid #1e1e38;padding:40px 0;text-align:center !important;color:#55556a !important;font-size:.88rem}
+footer a{color:#8888a0 !important}
+footer p{color:#55556a !important}
+/* Scroll reveal */
+.sr{opacity:0;transform:translateY(30px);transition:opacity .6s,transform .6s}
+.sr.visible{opacity:1;transform:translateY(0)}
+/* Responsive */
+@media(max-width:768px){
+  .hero{padding:80px 0 60px}
+  .hero h1{font-size:1.8rem}
+  .hero-stats{gap:24px}
+  .speaker{flex-direction:column;text-align:center}
+  .speaker-photo{width:200px;height:200px;margin:0 auto}
+  .speaker-stats{justify-content:center}
+  .tariffs-grid{grid-template-columns:1fr}
+  .who-grid,.why-grid{grid-template-columns:1fr}
+  .results-grid{grid-template-columns:1fr}
+  .sticky-bar span{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- Sticky bar -->
+<div class="sticky-bar" id="stickyBar">
+  <span>Начните зарабатывать на MAX уже через 2 недели</span>
+  <a href="#tariffs" class="btn btn-cta" style="padding:12px 28px;font-size:14px">Выбрать тариф</a>
+</div>
+
+<!-- HERO -->
+<section class="hero">
+<div class="container">
+  <div class="hero-badge">НОВЫЙ КУРС 2026</div>
+  <h1>Зайди в MAX первым: пошаговый курс по заработку на новой площадке</h1>
+  <p>Начни зарабатывать на растущем тренде, пока нишу не заняли киты. 4 блока, от создания до монетизации.</p>
+  <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
+    <a href="#tariffs" class="btn btn-cta" style="padding:18px 44px;font-size:17px">Выбрать тариф</a>
+    <a href="#program" class="btn btn-outline">Программа курса</a>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="num">4</div><div class="label">блока обучения</div></div>
+    <div class="hero-stat"><div class="num">30+</div><div class="label">уроков</div></div>
+    <div class="hero-stat"><div class="num">0%</div><div class="label">рассрочка</div></div>
+    <div class="hero-stat"><div class="num">24/7</div><div class="label">доступ к материалам</div></div>
+  </div>
+</div>
+</section>
+
+<!-- FOR WHO -->
+<section class="section" style="background:#10101e !important">
+<div class="container">
+  <div style="text-align:center !important;width:100%"><h2 class="section-title sr" style="text-align:center !important;color:#f0f0f8 !important">Для кого этот курс</h2></div>
+  <div style="text-align:center !important;width:100%"><p class="section-sub sr" style="text-align:center !important;color:#8888a0 !important;margin-left:auto !important;margin-right:auto !important">Если хотя бы один пункт про вас — этот курс создан для вас</p></div>
+  <div class="who-grid">
+    <div class="who-card sr"><div class="who-icon">🌊</div><div><h3>Заскочить на волну</h3><p>Для тех, кто хочет начать развиваться и зарабатывать деньги на растущем тренде</p></div></div>
+    <div class="who-card sr"><div class="who-icon">🚀</div><div><h3>Не упустить площадку</h3><p>Для тех, кто не хочет упустить новую площадку и быть в числе первых</p></div></div>
+    <div class="who-card sr"><div class="who-icon">💼</div><div><h3>Развивать бизнес</h3><p>Для тех, кто хочет развивать свой бизнес и наращивать новые точки контакта</p></div></div>
+    <div class="who-card sr"><div class="who-icon">🎯</div><div><h3>Продавать услуги</h3><p>Для тех, кто хочет помогать бизнесу и продавать свои услуги по продвижению</p></div></div>
+    <div class="who-card sr"><div class="who-icon">⏳</div><div><h3>Занять нишу первым</h3><p>Для тех, кто хочет подготовить площадку, пока её не заняли киты и воротилы</p></div></div>
+    <div class="who-card sr"><div class="who-icon">💰</div><div><h3>Заработать на новом</h3><p>Для тех, кто не боится нового, а думает, как на нём заработать</p></div></div>
+  </div>
+</div>
+</section>
+
+<!-- SPEAKER (after For Who) -->
+<section class="section">
+<div class="container">
+  <div style="text-align:center !important;width:100%"><h2 class="section-title sr" style="text-align:center !important;color:#f0f0f8 !important">Автор курса</h2></div>
+  <div class="speaker sr" style="margin-top:40px">
+    <img src="https://itcakes.ru/max_course/speaker.jpg" alt="Сергей Смирнов" class="speaker-photo">
+    <div class="speaker-info">
+      <h3>Сергей Смирнов</h3>
+      <div class="role">Эксперт по продвижению в MAX и Telegram</div>
+      <p>Один из первых, кто начал системно работать с площадкой MAX. Создал более 15 каналов, средний доход с одного — от 200 000 ₽/мес.</p>
+      <p>Провёл 50+ консультаций для предпринимателей и маркетологов по запуску каналов. Автор методики быстрого роста аудитории.</p>
+      <div class="speaker-stats">
+        <div><div class="n">15+</div><div class="l">каналов</div></div>
+        <div><div class="n">200K+</div><div class="l">₽/мес с канала</div></div>
+        <div><div class="n">50+</div><div class="l">консультаций</div></div>
+        <div><div class="n">3 000+</div><div class="l">учеников</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- RESULTS -->
+<section class="section" style="background:#10101e !important">
+<div class="container">
+  <div style="text-align:center !important;width:100%"><h2 class="section-title sr" style="text-align:center !important;color:#f0f0f8 !important">Что вы получите после курса</h2></div>
+  <div style="text-align:center !important;width:100%"><p class="section-sub sr" style="text-align:center !important;color:#8888a0 !important;margin-left:auto !important;margin-right:auto !important">Конкретные навыки и результаты, которые начнут приносить деньги</p></div>
+  <div class="results-grid">
+    <div class="result-card sr"><div class="result-icon">🛡</div><h3>Защищённый аккаунт</h3><p>Настройте безопасность так, чтобы ни спам, ни атаки вам не грозили</p></div>
+    <div class="result-card sr"><div class="result-icon">📈</div><h3>Быстрый рост канала</h3><p>Освоите все механизмы бесплатного и платного привлечения подписчиков</p></div>
+    <div class="result-card sr"><div class="result-icon">💰</div><h3>Монетизация от 50 000 ₽/мес</h3><p>Превратите канал в «печатный станок» — реклама, партнёрки, свои продукты</p></div>
+    <div class="result-card sr"><div class="result-icon">🏭</div><h3>Каналы на заказ</h3><p>Научитесь делать каналы для клиентов и зарабатывать на этом</p></div>
+    <div class="result-card sr"><div class="result-icon">📊</div><h3>Аналитика и оптимизация</h3><p>Поймёте, какие метрики отслеживать и как удешевить трафик в 3–5 раз</p></div>
+  </div>
+</div>
+</section>
+
+<!-- PROGRAM -->
+<section class="section" id="program" style="background:#10101e !important">
+<div class="container">
+  <div style="text-align:center !important;width:100%"><h2 class="section-title sr" style="text-align:center !important;color:#f0f0f8 !important">Программа курса</h2></div>
+  <div style="text-align:center !important;width:100%"><p class="section-sub sr" style="text-align:center !important;color:#8888a0 !important;margin-left:auto !important;margin-right:auto !important">4 блока от основ до монетизации. Видео-уроки + практические задания</p></div>
+
+  <div class="program-block sr open">
+    <div class="program-header" onclick="this.parentElement.classList.toggle('open')">
+      <div class="num">1</div>
+      <div class="title">СТАРТ. Заходим в MAX первыми</div>
+      <div class="tag">5 уроков</div>
+      <div class="chevron">▾</div>
+    </div>
+    <div class="program-body"><div class="program-content">
+      <ul class="program-list">
+        <li>Развеиваем мифы: Безопасность в MAX. Почему его боятся и почему НЕ нужно бояться (спойлер: это твоя возможность)</li>
+        <li>Жесткий тайм-менеджмент: Почему нужно действовать СЕЙЧАС, а не ждать, когда Telegram окончательно накроют</li>
+        <li>3 рабочих схемы создания канала: Через юрлицо, через свою группу A+, через «болванку» в ВК или ТГ (разберём каждый шаг)</li>
+        <li>Лайфхак: Как за 10 минут создать «болванку» в ТГ для MAX</li>
+        <li>Альтернатива: Покупать ли чужой канал? Где и почём? Плюсы и риски</li>
+      </ul>
+      <div class="program-result"><h4>Ты получишь:</h4><p>Защищённый от атак и посягательств аккаунт в МАКС и канал, который будет работать. Сможешь делать каналы для заказчиков и зарабатывать на этом. Будешь разбираться во всех видах каналов и уметь делать закрытые каналы для быстрого продвижения. Сможешь консультировать клиентов и брать их на продвижение.</p></div>
+    </div></div>
+  </div>
+
+  <div class="program-block sr">
+    <div class="program-header" onclick="this.parentElement.classList.toggle('open')">
+      <div class="num">2</div>
+      <div class="title">НАСТРОЙКА. Делаем канал-магнит</div>
+      <div class="tag">6 уроков</div>
+      <div class="chevron">▾</div>
+    </div>
+    <div class="program-body"><div class="program-content">
+      <ul class="program-list">
+        <li>Оформление-убийца: Секретные нюансы в аватарке, описании и закреплённом посте, которые дают +30% к конверсии</li>
+        <li>Пост как инструмент роста: Оформление постов и обязательный «байт на подписку» в каждом</li>
+        <li>Чаты и их сила: Как создавать «чаты-прокладки» и привязывать их к каналу для взрывного роста</li>
+        <li>Магия разметки: Делаем посты не просто красивыми, а кликабельными. Скрытые ссылки, правильные кнопки</li>
+        <li>Технические хаки: Как сжать видео в 10 раз без потери качества (экономим время и трафик)</li>
+        <li>Армия ботов: Лучшие боты для постинга, отложки, настройки рекламы и глубокой аналитики статистики</li>
+      </ul>
+      <div class="program-result"><h4>Ты получишь:</h4><p>Механику удешевления привлечения подписчиков. Механику более эффективной работы с контентом. Научишься делать контент продающим и удобоваримым. Освоишься в океане дополнительных ботов и сервисов для продвижения канала, для создания полноценной инфраструктуры внутри своего канала. Освоишь секретные механики и сервисы для развития канала.</p></div>
+    </div></div>
+  </div>
+
+  <div class="program-block sr">
+    <div class="program-header" onclick="this.parentElement.classList.toggle('open')">
+      <div class="num">3</div>
+      <div class="title">ПРОДВИЖЕНИЕ. Гоняем трафик как профи</div>
+      <div class="tag">5 уроков</div>
+      <div class="chevron">▾</div>
+    </div>
+    <div class="program-body"><div class="program-content">
+      <ul class="program-list">
+        <li>Бесплатные методы: Приглашения, «чаты-прокладки», взаимопиары</li>
+        <li>Платный трафик: Тонкости настройки рекламы из ВК и РСЯ в MAX. Как не слить бюджет</li>

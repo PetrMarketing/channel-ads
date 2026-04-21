@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Paywall from '../components/Paywall';
 import { useChannels } from '../contexts/ChannelContext';
 import { api } from '../services/api';
@@ -9,6 +10,7 @@ import Modal from '../components/Modal';
 const APP_URL = window.location.origin;
 
 export default function LinksPage() {
+  const navigate = useNavigate();
   const { currentChannel } = useChannels();
   const { showToast } = useToast();
   const [links, setLinks] = useState([]);
@@ -315,6 +317,21 @@ export default function LinksPage() {
                       Страница с подарком + подписка
                     </span>
                   </label>
+                  <div onClick={() => { setShowModal(false); navigate('/ai-landing'); }} style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+                    padding: '14px 10px', borderRadius: 'var(--radius)',
+                    border: '2px solid var(--border)',
+                    cursor: 'pointer', background: 'transparent',
+                    transition: 'all 0.2s',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = '#7B68EE'; e.currentTarget.style.background = 'rgba(123,104,238,0.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'transparent'; }}>
+                    <span style={{ fontSize: '1.5rem' }}>🌐</span>
+                    <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>ИИ Лендинг</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                      Генерация HTML страницы с ИИ
+                    </span>
+                  </div>
                 </div>
               </div>
             )}

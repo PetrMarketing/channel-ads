@@ -17,6 +17,7 @@ import ServicesPage from './pages/ServicesPage';
 import ShopPage from './pages/ShopPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import AiDesignPage from './pages/AiDesignPage';
+import AiLandingPage from './pages/AiLandingPage';
 import AiTokensPage from './pages/AiTokensPage';
 import CommentsPage from './pages/CommentsPage';
 import OrdPage from './pages/OrdPage';
@@ -44,6 +45,7 @@ import AdminAdminsPage from './pages/admin/AdminAdminsPage';
 import AdminTariffsPage from './pages/admin/AdminTariffsPage';
 import AdminFinancePage from './pages/admin/AdminFinancePage';
 import AdminLandingsPage from './pages/admin/AdminLandingsPage';
+import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
 
 function PrivateRoute({ children }) {
   const { token } = useAuth();
@@ -83,6 +85,7 @@ export default function App() {
         <Route path="admins" element={<AdminAdminsPage />} />
         <Route path="tariffs" element={<AdminTariffsPage />} />
         <Route path="finance" element={<AdminFinancePage />} />
+        <Route path="generations" element={<AdminGenerationsPage />} />
         <Route path="landings" element={<AdminLandingsPage />} />
       </Route>
 
@@ -90,6 +93,7 @@ export default function App() {
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<DashboardPage />} />
         <Route path="ai-design" element={<AiDesignPage />} />
+        <Route path="ai-landing" element={<AiLandingPage />} />
         <Route path="links" element={<LinksPage />} />
         <Route path="pins" element={<PinsPage />} />
         <Route path="broadcasts" element={<BroadcastsPage />} />

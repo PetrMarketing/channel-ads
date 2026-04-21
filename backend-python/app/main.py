@@ -160,10 +160,13 @@ app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
 from .routes import ai_design, ai_design_lm
 app.include_router(ai_design.router, prefix="/api/ai-design", tags=["ai-design"])
 app.include_router(ai_design_lm.router, prefix="/api/ai-design", tags=["ai-design-lm"])
+from .routes import ai_landings
+app.include_router(ai_landings.router, prefix="/api/ai-landing", tags=["ai-landing"])
 
 # ========================
 # API Routes — Public
 # ========================
+app.include_router(ai_landings.public_router, tags=["ai-landing-public"])
 app.include_router(tracking.router, prefix="/api/track", tags=["tracking"])
 app.include_router(max_webhook.router, prefix="/webhook/max", tags=["max-webhook"])
 app.include_router(billing.public_router, prefix="/api/billing/public", tags=["billing-public"])
