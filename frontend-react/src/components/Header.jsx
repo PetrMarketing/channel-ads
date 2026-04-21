@@ -164,13 +164,14 @@ export default function Header({ onToggleSidebar }) {
         </button>
         {user && (
           <div style={{ position: 'relative' }} className="profile-dropdown-wrap">
-            <button className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', fontSize: '0.8rem' }}
+            <button className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', fontSize: '0.78rem' }}
               onClick={() => {
                 const dd = document.querySelector('.profile-dropdown');
                 if (dd) dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
               }}>
-              <span>{user.first_name || user.username || 'Профиль'}</span>
-              <span style={{ fontSize: '0.65rem', color: '#7B68EE', fontWeight: 700 }}>{user.ai_tokens || 0}</span>
+              <span>Профиль</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>PKid: {user.id}</span>
+              <span style={{ color: '#7B68EE', fontSize: '0.72rem', fontWeight: 700 }}>Токены: {user.ai_tokens || 0}</span>
               <span style={{ fontSize: 10 }}>&#9660;</span>
             </button>
             <div className="profile-dropdown" style={{

@@ -24,6 +24,7 @@ export default function LinksPage() {
   const [saving, setSaving] = useState(false);
   const [leadMagnets, setLeadMagnets] = useState([]);
   const [lmImageFile, setLmImageFile] = useState(null);
+  const [aiLandings, setAiLandings] = useState([]);
 
   const tc = currentChannel?.tracking_code;
 
@@ -44,6 +45,7 @@ export default function LinksPage() {
   useEffect(() => {
     if (!tc) return;
     api.get(`/pins/${tc}/lead-magnets`).then(d => { if (d.success) setLeadMagnets(d.lead_magnets || d.leadMagnets || []); }).catch(() => {});
+    api.get(`/ai-landing/${tc}/landings`).then(d => { if (d.success) setAiLandings((d.landings || []).filter(l => l.status === 'generated' || l.status === 'published')); }).catch(() => {});
   }, [tc]);
 
   const openCreate = () => {
@@ -257,6 +259,65 @@ export default function LinksPage() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* AI Landings */}
+        {aiLandings.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 12 }}>ИИ Лендинги</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {aiLandings.map(l => {
+                const url = `${APP_URL}/land/${l.slug}`;
+                return (
+                  <div key={`ail_${l.id}`} style={{
+                    background: 'var(--bg-glass)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius)', padding: '16px',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ flex: 1, minWidth: '200px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{l.niche || 'ИИ Лендинг'}</span>
+                          <span style={{
+                            display: 'inline-block', padding: '2px 8px', borderRadius: '12px',
+                            fontSize: '0.72rem', fontWeight: 500,
+                            background: 'rgba(123,104,238,0.15)', color: '#7B68EE',
+                          }}>ИИ Лендинг</span>
+                          <span style={{
+                            fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px',
+                            background: l.published ? 'rgba(16,185,129,0.15)' : 'rgba(244,162,97,0.15)',
+                            color: l.published ? '#10B981' : '#f4a261',
+                          }}>{l.published ? 'Опубликован' : 'Готов'}</span>
+                        </div>
+                        <code style={{ fontSize: '0.8rem', cursor: 'pointer', color: 'var(--primary)' }}
+                          onClick={() => { navigator.clipboard.writeText(url); showToast('Ссылка скопирована'); }}
+                          title="Нажмите чтобы скопировать">
+                          {url}
+                        </code>
+                        <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                          {l.design_style && <span>Стиль: {l.design_style}</span>}
+                          <span>{l.created_at ? new Date(l.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : ''}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button className="btn btn-outline" style={btnSmall}
+                          onClick={() => { navigator.clipboard.writeText(url); showToast('Ссылка скопирована'); }}>
+                          Копировать
+                        </button>
+                        <a href={url} target="_blank" rel="noopener noreferrer"
+                          className="btn btn-outline" style={{ ...btnSmall, textDecoration: 'none' }}>
+                          Открыть
+                        </a>
+                        <button className="btn btn-outline" style={btnSmall}
+                          onClick={() => navigate('/ai-landing')}>
+                          Редактировать
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

@@ -153,7 +153,7 @@ export default function ReferralPage() {
               </div>
               <code style={{ display: 'block', marginTop: 8, fontSize: '0.8rem', color: 'var(--primary)', cursor: 'pointer', wordBreak: 'break-all' }}
                 onClick={() => copyLink(link.code)}>
-                {APP_URL}/login?ref={link.code}
+                https://max.ru/{MAX_BOT_USERNAME}?start=auth_ref_{link.code}
               </code>
             </div>
           ))}

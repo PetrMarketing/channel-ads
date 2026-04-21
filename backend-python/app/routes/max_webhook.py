@@ -581,18 +581,24 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
     token = result["token"]
 
     # Реферальная регистрация через deep link: start=auth_ref_CODE
+    referrer_line = ""
     if payload.startswith("auth_ref_"):
-        ref_code = payload[9:]  # после "auth_ref_"
+        ref_code = payload[9:]
         if ref_code:
             try:
-                user = await fetch_one("SELECT id FROM users WHERE max_user_id = $1", max_user_id)
+                user = await fetch_one("SELECT id, referred_by FROM users WHERE max_user_id = $1", max_user_id)
+                print(f"[Referral] Deep link: ref_code={ref_code}, user={user['id'] if user else None}, max_user_id={max_user_id}")
                 if user:
                     ref_link = await fetch_one("SELECT id, user_id FROM referral_links WHERE code = $1", ref_code)
+                    print(f"[Referral] ref_link={ref_link}, self_ref={ref_link['user_id'] == user['id'] if ref_link else 'N/A'}")
                     if ref_link and ref_link["user_id"] != user["id"]:
+                        # Проверяем что пользователь ещё не привязан к кому-то
+                        already_referred = user.get("referred_by") is not None
                         existing = await fetch_one(
                             "SELECT id FROM referral_signups WHERE referred_user_id = $1", user["id"]
                         )
-                        if not existing:
+                        print(f"[Referral] already_referred={already_referred}, existing_signup={existing is not None}")
+                        if not existing and not already_referred:
                             await execute(
                                 """INSERT INTO referral_signups (referral_link_id, referrer_user_id, referred_user_id)
                                    VALUES ($1, $2, $3)""",
@@ -603,13 +609,21 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
                                 ref_link["user_id"], user["id"],
                             )
                             print(f"[Referral] User {user['id']} registered via bot deep link ref code {ref_code}")
+                            referrer = await fetch_one("SELECT first_name, username FROM users WHERE id = $1", ref_link["user_id"])
+                            if referrer:
+                                name = referrer.get("first_name") or referrer.get("username") or "пользователь"
+                                referrer_line = f"🤝 Вас пригласил **{name}**\n\n"
+                        elif not existing and already_referred:
+                            print(f"[Referral] User {user['id']} already has referred_by={user['referred_by']}, skipping")
             except Exception as e:
                 print(f"[Referral] Error registering via deep link: {e}")
+                import traceback
+                traceback.print_exc()
 
     login_url = f"{settings.APP_URL}/login?token={token}"
 
     await _send_to_chat(max_api, chat_id,
-        f"👋 Привет! Я помогу отслеживать подписчиков каналов.\n\n"
+        f"{referrer_line}👋 Привет! Я помогу отслеживать подписчиков каналов.\n\n"
         f"📌 **Как подключить канал:**\n"
         f"1. Откройте ваш канал → Настройки → Администраторы\n"
         f"2. Добавьте меня как администратора\n"
