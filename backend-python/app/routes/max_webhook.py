@@ -579,6 +579,33 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
 
     result = await _find_or_create_max_user(max_user_id, first_name, dialog_chat_id=chat_id)
     token = result["token"]
+
+    # Реферальная регистрация через deep link: start=auth_ref_CODE
+    if payload.startswith("auth_ref_"):
+        ref_code = payload[9:]  # после "auth_ref_"
+        if ref_code:
+            try:
+                user = await fetch_one("SELECT id FROM users WHERE max_user_id = $1", max_user_id)
+                if user:
+                    ref_link = await fetch_one("SELECT id, user_id FROM referral_links WHERE code = $1", ref_code)
+                    if ref_link and ref_link["user_id"] != user["id"]:
+                        existing = await fetch_one(
+                            "SELECT id FROM referral_signups WHERE referred_user_id = $1", user["id"]
+                        )
+                        if not existing:
+                            await execute(
+                                """INSERT INTO referral_signups (referral_link_id, referrer_user_id, referred_user_id)
+                                   VALUES ($1, $2, $3)""",
+                                ref_link["id"], ref_link["user_id"], user["id"],
+                            )
+                            await execute(
+                                "UPDATE users SET referred_by = $1 WHERE id = $2",
+                                ref_link["user_id"], user["id"],
+                            )
+                            print(f"[Referral] User {user['id']} registered via bot deep link ref code {ref_code}")
+            except Exception as e:
+                print(f"[Referral] Error registering via deep link: {e}")
+
     login_url = f"{settings.APP_URL}/login?token={token}"
 
     await _send_to_chat(max_api, chat_id,

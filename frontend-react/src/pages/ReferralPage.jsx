@@ -4,7 +4,7 @@ import { useToast } from '../components/Toast';
 import { useChannels } from '../contexts/ChannelContext';
 import Modal from '../components/Modal';
 
-const APP_URL = window.location.origin;
+const MAX_BOT_USERNAME = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
 
 const TIER_LABELS = { 1: '1 мес', 3: '3 мес', 6: '6 мес', 12: '12 мес' };
 
@@ -55,7 +55,7 @@ export default function ReferralPage() {
   };
 
   const copyLink = (code) => {
-    navigator.clipboard.writeText(`${APP_URL}/login?ref=${code}`);
+    navigator.clipboard.writeText(`https://max.ru/${MAX_BOT_USERNAME}?start=auth_ref_${code}`);
     showToast('Ссылка скопирована');
   };
 

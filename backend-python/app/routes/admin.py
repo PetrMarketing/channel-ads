@@ -1116,22 +1116,109 @@ async def finance_overview(
     except Exception:
         paid_chat = []
 
+    # AI Token purchases
+    try:
+        token_purchases = await fetch_all(
+            """SELECT atp.id, atp.tokens, atp.amount, atp.payment_status, atp.paid_at, atp.created_at,
+                      u.username as user_username, u.first_name as user_name
+               FROM ai_token_purchases atp
+               LEFT JOIN users u ON u.id = atp.user_id
+               WHERE atp.created_at > NOW() - INTERVAL '%s days'
+               ORDER BY atp.created_at DESC""" % days,
+        )
+    except Exception:
+        token_purchases = []
+
     # Totals
     total_billing = sum(float(p.get("amount", 0)) for p in billing if p.get("status") == "paid")
     total_paid_chat = sum(float(p.get("amount", 0)) for p in paid_chat if p.get("status") in ("paid", "success", "completed"))
+    total_ai_tokens = sum(float(p.get("amount", 0)) for p in token_purchases if p.get("payment_status") == "paid")
     pending_billing = sum(float(p.get("amount", 0)) for p in billing if p.get("status") == "pending")
 
     return {
         "success": True,
         "billing_payments": billing,
         "paid_chat_payments": paid_chat,
+        "token_purchases": token_purchases,
         "totals": {
             "billing": total_billing,
             "paid_chat": total_paid_chat,
-            "total": total_billing + total_paid_chat,
+            "ai_tokens": total_ai_tokens,
+            "total": total_billing + total_paid_chat + total_ai_tokens,
             "pending": pending_billing,
         },
         "period": period,
+    }
+
+
+# ===========================
+# AI Generations
+# ===========================
+
+@router.get("/generations")
+async def admin_generations(admin: Dict = Depends(get_current_admin)):
+    """Все ИИ генерации: дизайн, лендинги, использование токенов."""
+    # Генерации дизайна
+    try:
+        design_sessions = await fetch_all(
+            """SELECT ads.id, ads.status, ads.niche, ads.style, ads.regen_count,
+                      ads.tokens_spent, ads.created_at, ads.updated_at,
+                      u.username as user_username, u.first_name as user_name,
+                      c.title as channel_title
+               FROM ai_design_sessions ads
+               LEFT JOIN users u ON u.id = ads.user_id
+               LEFT JOIN channels c ON c.id = ads.channel_id
+               ORDER BY ads.created_at DESC LIMIT 100""",
+        )
+    except Exception:
+        design_sessions = []
+
+    # Генерации лендингов
+    try:
+        landing_sessions = await fetch_all(
+            """SELECT al.id, al.status, al.niche, al.design_style, al.regen_count,
+                      al.tokens_spent, al.published, al.slug, al.created_at, al.updated_at,
+                      u.username as user_username, u.first_name as user_name,
+                      c.title as channel_title
+               FROM ai_landings al
+               LEFT JOIN users u ON u.id = al.user_id
+               LEFT JOIN channels c ON c.id = al.channel_id
+               ORDER BY al.created_at DESC LIMIT 100""",
+        )
+    except Exception:
+        landing_sessions = []
+
+    # Использование токенов (последние 100)
+    try:
+        usage = await fetch_all(
+            """SELECT atu.id, atu.tokens_used, atu.action, atu.description, atu.created_at,
+                      u.username as user_username, u.first_name as user_name
+               FROM ai_token_usage atu
+               LEFT JOIN users u ON u.id = atu.user_id
+               ORDER BY atu.created_at DESC LIMIT 100""",
+        )
+    except Exception:
+        usage = []
+
+    # Сводка
+    try:
+        summary = await fetch_one(
+            """SELECT
+                 (SELECT COUNT(*) FROM ai_design_sessions) as total_designs,
+                 (SELECT COUNT(*) FROM ai_landings) as total_landings,
+                 (SELECT COALESCE(SUM(tokens_used), 0) FROM ai_token_usage) as total_tokens_used,
+                 (SELECT COUNT(*) FROM ai_design_sessions WHERE status IN ('generating', 'generating_avatars')) as queue_designs,
+                 (SELECT COUNT(*) FROM ai_landings WHERE status = 'draft') as queue_landings""",
+        )
+    except Exception:
+        summary = {}
+
+    return {
+        "success": True,
+        "design_sessions": design_sessions,
+        "landing_sessions": landing_sessions,
+        "usage": usage,
+        "summary": dict(summary) if summary else {},
     }
 
 

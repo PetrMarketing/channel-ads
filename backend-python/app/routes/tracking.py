@@ -236,16 +236,6 @@ async def check_subscription_by_visit(visit_id: int = Query(...)):
             visit["channel_id"], visit["max_user_id"],
         )
 
-    # Fallback: any recent subscription to same channel (within 10 min of visit)
-    if not sub:
-        sub = await fetch_one(
-            """SELECT * FROM subscriptions
-               WHERE channel_id = $1 AND subscribed_at > $2::timestamp - INTERVAL '1 minute'
-               AND subscribed_at < $2::timestamp + INTERVAL '10 minutes'
-               ORDER BY subscribed_at DESC LIMIT 1""",
-            visit["channel_id"], visit["visited_at"],
-        )
-
     return {"success": True, "subscribed": sub is not None, "subscription": sub}
 
 
