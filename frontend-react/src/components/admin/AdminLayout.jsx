@@ -29,6 +29,7 @@ const navItems = [
   { to: '/admin/tariffs', label: 'Тарифы' },
   { to: '/admin/finance', label: 'Финансы' },
   { to: '/admin/generations', label: 'Генерации' },
+  { to: '/admin/support', label: '❗ Обращения' },
   { to: '/admin/landings', label: 'Лендинги' },
 ];
 

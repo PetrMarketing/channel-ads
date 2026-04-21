@@ -46,6 +46,7 @@ import AdminTariffsPage from './pages/admin/AdminTariffsPage';
 import AdminFinancePage from './pages/admin/AdminFinancePage';
 import AdminLandingsPage from './pages/admin/AdminLandingsPage';
 import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
+import AdminSupportPage from './pages/admin/AdminSupportPage';
 
 function PrivateRoute({ children }) {
   const { token } = useAuth();
@@ -86,6 +87,7 @@ export default function App() {
         <Route path="tariffs" element={<AdminTariffsPage />} />
         <Route path="finance" element={<AdminFinancePage />} />
         <Route path="generations" element={<AdminGenerationsPage />} />
+        <Route path="support" element={<AdminSupportPage />} />
         <Route path="landings" element={<AdminLandingsPage />} />
       </Route>
 

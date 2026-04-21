@@ -27,6 +27,20 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
     return result.get("choices", [{}])[0].get("message", {}).get("content", "")
 
 
+async def openrouter_chat_messages(messages: list, model: str = None) -> str:
+    """Chat completions с полной историей сообщений."""
+    model = model or TEXT_MODEL
+    api_key = settings.OPENROUTER_API_KEY
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {"model": model, "messages": messages, "temperature": 0.4}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
+            result = await resp.json()
+    return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+
 async def openrouter_image_gen(prompt: str, photo_base64: str = None) -> str:
     """Генерация изображения через OpenRouter. Возвращает data URL или http URL."""
     api_key = settings.OPENROUTER_API_KEY

@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom';
 import { useState, useCallback } from 'react';
 import Header from './Header';
 import Sidebar from './Sidebar';
+import SupportChat from './SupportChat';
 import { ChannelProvider } from '../contexts/ChannelContext';
 import { ToastProvider } from './Toast';
 
@@ -33,6 +34,7 @@ export default function Layout() {
             </div>
           </div>
         </div>
+        <SupportChat />
       </ToastProvider>
     </ChannelProvider>
   );

@@ -162,6 +162,8 @@ app.include_router(ai_design.router, prefix="/api/ai-design", tags=["ai-design"]
 app.include_router(ai_design_lm.router, prefix="/api/ai-design", tags=["ai-design-lm"])
 from .routes import ai_landings
 app.include_router(ai_landings.router, prefix="/api/ai-landing", tags=["ai-landing"])
+from .routes import support
+app.include_router(support.router, prefix="/api/support", tags=["support"])
 
 # ========================
 # API Routes — Public

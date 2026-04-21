@@ -1367,3 +1367,79 @@ async def fix_comment_buttons(admin: Dict = Depends(get_current_admin)):
                 results.append({"post_id": post["id"], "type": post_type, "error": str(e)})
 
     return {"success": True, "results": results}
+
+
+# ===========================
+# Support Tickets (Admin)
+# ===========================
+
+@router.get("/support/tickets")
+async def admin_support_tickets(admin: Dict = Depends(get_current_admin), status: str = ""):
+    """Список тикетов поддержки."""
+    where = "WHERE 1=1"
+    if status:
+        where += f" AND st.status = '{status}'"
+
+    rows = await fetch_all(
+        f"""SELECT st.id, st.user_id, st.status, st.escalated, st.created_at, st.updated_at,
+                   u.first_name as user_name, u.username as user_username,
+                   (SELECT content FROM support_messages sm WHERE sm.ticket_id = st.id ORDER BY sm.created_at DESC LIMIT 1) as last_message,
+                   (SELECT role FROM support_messages sm WHERE sm.ticket_id = st.id ORDER BY sm.created_at DESC LIMIT 1) as last_role,
+                   (SELECT COUNT(*) FROM support_messages sm WHERE sm.ticket_id = st.id) as msg_count
+            FROM support_tickets st
+            LEFT JOIN users u ON u.id = st.user_id
+            {where}
+            ORDER BY st.updated_at DESC LIMIT 200""",
+    )
+    return {"success": True, "tickets": rows}
+
+
+@router.get("/support/tickets/{ticket_id}")
+async def admin_support_ticket_detail(ticket_id: int, admin: Dict = Depends(get_current_admin)):
+    """Детали тикета с сообщениями."""
+    ticket = await fetch_one(
+        """SELECT st.*, u.first_name as user_name, u.username as user_username
+           FROM support_tickets st LEFT JOIN users u ON u.id = st.user_id
+           WHERE st.id = $1""",
+        ticket_id,
+    )
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+
+    messages = await fetch_all(
+        "SELECT id, role, content, image_url, admin_id, created_at FROM support_messages WHERE ticket_id=$1 ORDER BY created_at",
+        ticket_id,
+    )
+    return {"success": True, "ticket": ticket, "messages": messages}
+
+
+@router.post("/support/tickets/{ticket_id}/reply")
+async def admin_support_reply(ticket_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    """Ответ админа на тикет."""
+    body = await request.json()
+    content = (body.get("content") or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Пустое сообщение")
+
+    ticket = await fetch_one("SELECT id FROM support_tickets WHERE id=$1", ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+
+    await execute(
+        "INSERT INTO support_messages (ticket_id, role, content, admin_id) VALUES ($1, 'admin', $2, $3)",
+        ticket_id, content, admin["id"],
+    )
+    await execute(
+        "UPDATE support_tickets SET status='answered', escalated=FALSE, updated_at=NOW() WHERE id=$1",
+        ticket_id,
+    )
+    return {"success": True}
+
+
+@router.post("/support/tickets/{ticket_id}/close")
+async def admin_close_ticket(ticket_id: int, admin: Dict = Depends(get_current_admin)):
+    """Закрыть тикет."""
+    await execute(
+        "UPDATE support_tickets SET status='closed', updated_at=NOW() WHERE id=$1", ticket_id
+    )
+    return {"success": True}
