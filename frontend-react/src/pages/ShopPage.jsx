@@ -65,6 +65,7 @@ export default function ShopPage() {
 
   // Clients
   const [clients, setClients] = useState([]);
+  const [clientsFunnel, setClientsFunnel] = useState({});
 
   const tabs = [
     { id: 'main', label: 'Главная' },
@@ -152,7 +153,10 @@ export default function ShopPage() {
     if (!tc) return;
     try {
       const data = await api.get(`/shop/${tc}/clients`);
-      if (data.success) setClients(data.clients || []);
+      if (data.success) {
+        setClients(data.clients || []);
+        setClientsFunnel({ funnel: data.funnel || {}, visitors: data.visitors || [], carts: data.carts || [] });
+      }
     } catch {}
   }, [tc]);
 
@@ -379,7 +383,7 @@ export default function ShopPage() {
       )}
 
       {tab === 'clients' && (
-        <ShopClientsTab clients={clients} />
+        <ShopClientsTab clients={clients} funnel={clientsFunnel.funnel} visitors={clientsFunnel.visitors} carts={clientsFunnel.carts} />
       )}
 
       {tab === 'appearance' && (

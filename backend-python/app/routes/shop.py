@@ -905,7 +905,7 @@ async def orders_stats(tc: str, user=Depends(get_current_user)):
 async def clients_funnel(tc: str, user=Depends(get_current_user)):
     channel = await _get_owned_channel(tc, user["id"])
     if not channel:
-        raise HTTPException(status_code=404, detail="Канал не найден")
+        raise HTTPException(status_code=404, detail="Канал не ��айден")
     ch_id = channel["id"]
     visited = await fetch_one(
         "SELECT COUNT(DISTINCT user_identifier) AS cnt FROM shop_visits WHERE channel_id = $1", ch_id)
@@ -916,6 +916,46 @@ async def clients_funnel(tc: str, user=Depends(get_current_user)):
         "SELECT COUNT(*) AS cnt FROM shop_orders WHERE channel_id = $1", ch_id)
     paid = await fetch_one(
         "SELECT COUNT(*) AS cnt FROM shop_orders WHERE channel_id = $1 AND payment_status = 'paid'", ch_id)
+
+    # Клиенты из заказов
+    clients_ordered = await fetch_all(
+        """SELECT
+             COALESCE(NULLIF(client_name, ''), user_identifier) AS name,
+             client_phone AS phone,
+             client_email AS email,
+             COUNT(*) AS orders_count,
+             SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) AS paid_count,
+             COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0)::float AS total_spent,
+             MIN(created_at) AS first_order,
+             MAX(created_at) AS last_order
+           FROM shop_orders
+           WHERE channel_id = $1
+           GROUP BY COALESCE(NULLIF(client_name, ''), user_identifier), client_phone, client_email
+           ORDER BY last_order DESC
+           LIMIT 500""",
+        ch_id,
+    )
+
+    # Посетители (user_identifier из shop_visits)
+    visitors = await fetch_all(
+        """SELECT user_identifier AS name, COUNT(*) AS visit_count,
+                  MIN(created_at) AS first_visit, MAX(created_at) AS last_visit
+           FROM shop_visits WHERE channel_id = $1
+           GROUP BY user_identifier ORDER BY last_visit DESC LIMIT 200""",
+        ch_id,
+    )
+
+    # Корзины (user_identifier из shop_carts с товарами)
+    carts = await fetch_all(
+        """SELECT c.user_identifier AS name, COUNT(ci.id) AS items_count,
+                  MAX(c.created_at) AS last_update
+           FROM shop_carts c
+           JOIN shop_cart_items ci ON ci.cart_id = c.id
+           WHERE c.channel_id = $1
+           GROUP BY c.user_identifier ORDER BY last_update DESC LIMIT 200""",
+        ch_id,
+    )
+
     return {
         "success": True,
         "funnel": {
@@ -924,7 +964,38 @@ async def clients_funnel(tc: str, user=Depends(get_current_user)):
             "ordered": ordered["cnt"] if ordered else 0,
             "paid": paid["cnt"] if paid else 0,
         },
+        "clients": clients_ordered,
+        "visitors": visitors,
+        "carts": carts,
     }
+
+
+@router.get("/{tc}/clients/{identifier}/orders")
+async def client_orders(tc: str, identifier: str, user=Depends(get_current_user)):
+    """Заказы конкретного клиента."""
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не най��ен")
+    orders = await fetch_all(
+        """SELECT o.*, d.name AS delivery_method_name
+           FROM shop_orders o
+           LEFT JOIN shop_delivery_methods d ON d.id = o.delivery_method_id
+           WHERE o.channel_id = $1
+             AND (COALESCE(NULLIF(o.client_name, ''), o.user_identifier) = $2
+                  OR o.client_phone = $2 OR o.client_email = $2)
+           ORDER BY o.created_at DESC""",
+        channel["id"], identifier,
+    )
+    # Подгружаем товары для каждого заказа
+    result = []
+    for o in orders:
+        items = await fetch_all(
+            "SELECT product_name, quantity, price FROM shop_order_items WHERE order_id = $1", o["id"]
+        )
+        d = dict(o)
+        d["items"] = items
+        result.append(d)
+    return {"success": True, "orders": result}
 
 
 # ═══════════════════════════════════════

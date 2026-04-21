@@ -164,6 +164,8 @@ from .routes import ai_landings
 app.include_router(ai_landings.router, prefix="/api/ai-landing", tags=["ai-landing"])
 from .routes import support
 app.include_router(support.router, prefix="/api/support", tags=["support"])
+from .routes import client_notes
+app.include_router(client_notes.router, prefix="/api/clients", tags=["client-notes"])
 
 # ========================
 # API Routes — Public
