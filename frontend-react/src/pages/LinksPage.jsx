@@ -25,6 +25,8 @@ export default function LinksPage() {
   const [leadMagnets, setLeadMagnets] = useState([]);
   const [lmImageFile, setLmImageFile] = useState(null);
   const [aiLandings, setAiLandings] = useState([]);
+  const [expandedStats, setExpandedStats] = useState({});
+  const [dailyStats, setDailyStats] = useState({});
 
   const tc = currentChannel?.tracking_code;
 
@@ -229,13 +231,55 @@ export default function LinksPage() {
                         </code>
                       </div>
                     )}
-                    <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '0.82rem', color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center' }}>
                       <span>Визиты: <b>{link.visit_count ?? 0}</b></span>
                       <span>Подписки: <b>{link.sub_count ?? 0}</b></span>
                       {link.utm_source && <span>UTM: {link.utm_source}</span>}
                       {link.ym_counter_id && <span>YM: {link.ym_counter_id}</span>}
                       {link.vk_pixel_id && <span>VK: {link.vk_pixel_id}</span>}
+                      <button onClick={async () => {
+                        const isOpen = expandedStats[link.id];
+                        setExpandedStats(p => ({ ...p, [link.id]: !isOpen }));
+                        if (!isOpen && !dailyStats[link.id]) {
+                          try {
+                            const data = await api.get(`/links/${tc}/${link.id}/daily-stats`);
+                            if (data.success) setDailyStats(p => ({ ...p, [link.id]: data.days || [] }));
+                          } catch {}
+                        }
+                      }} style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                        fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 500,
+                      }}>
+                        {expandedStats[link.id] ? 'Скрыть статистику ▲' : 'По дням ▼'}
+                      </button>
                     </div>
+                    {expandedStats[link.id] && (
+                      <div style={{ marginTop: 8, padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: '0.8rem' }}>
+                        {!(dailyStats[link.id]?.length) ? (
+                          <span style={{ color: 'var(--text-secondary)' }}>Нет данных</span>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <div style={{ display: 'flex', gap: 8, fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.72rem', padding: '2px 0' }}>
+                              <span style={{ width: 90 }}>Дата</span>
+                              <span style={{ width: 60, textAlign: 'right' }}>Визиты</span>
+                              <span style={{ width: 60, textAlign: 'right' }}>Подписки</span>
+                              <span style={{ width: 60, textAlign: 'right' }}>CR%</span>
+                            </div>
+                            {dailyStats[link.id].map((d, i) => {
+                              const cr = d.visits > 0 ? ((d.subs / d.visits) * 100).toFixed(1) : '—';
+                              return (
+                                <div key={i} style={{ display: 'flex', gap: 8, padding: '2px 0', borderBottom: '1px solid var(--border)' }}>
+                                  <span style={{ width: 90, color: 'var(--text-secondary)' }}>{d.day?.slice(0, 10)}</span>
+                                  <span style={{ width: 60, textAlign: 'right' }}>{d.visits}</span>
+                                  <span style={{ width: 60, textAlign: 'right', fontWeight: 600, color: d.subs > 0 ? 'var(--success, #10B981)' : 'inherit' }}>{d.subs}</span>
+                                  <span style={{ width: 60, textAlign: 'right', color: 'var(--text-secondary)' }}>{cr}{cr !== '—' ? '%' : ''}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <button className="btn btn-outline" style={btnSmall} onClick={() => copyLink(link.short_code)}>

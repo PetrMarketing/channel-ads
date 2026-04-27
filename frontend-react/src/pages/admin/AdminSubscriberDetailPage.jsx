@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { adminApi } from '../../services/adminApi';
-
-const cardStyle = { background: '#fff', borderRadius: 8, padding: 20, marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' };
+import { pageTitle, card, tableWrap, th, td, badge, fmtDate, emptyState } from './adminStyles';
 
 export default function AdminSubscriberDetailPage() {
   const { identifier } = useParams();
@@ -20,70 +19,111 @@ export default function AdminSubscriberDetailPage() {
     setMessages(prev => prev.filter(m => m.id !== msgId));
   };
 
-  if (!data) return <div>Загрузка...</div>;
+  if (!data) return <div style={{ ...emptyState, marginTop: 60 }}>Загрузка...</div>;
   const { user, subscriptions } = data;
 
   return (
     <div>
-      <button onClick={() => navigate('/admin/subscribers')} style={{ background: 'none', border: 'none', color: '#4361ee', cursor: 'pointer', marginBottom: 12, fontSize: 13 }}>
+      <button
+        onClick={() => navigate('/admin/subscribers')}
+        style={{
+          background: 'none', border: 'none', color: '#4361ee', cursor: 'pointer',
+          marginBottom: 16, fontSize: 13, fontWeight: 600, padding: 0,
+        }}
+      >
         &larr; К списку
       </button>
 
-      <div style={cardStyle}>
-        <h3 style={{ margin: '0 0 12px' }}>{user.first_name || user.username || `#${user.id}`}</h3>
-        <div style={{ fontSize: 13, color: '#666', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <div>Telegram ID: {user.telegram_id || '-'}</div>
-          <div>MAX ID: {user.max_user_id || '-'}</div>
-          <div>Username: {user.username || '-'}</div>
-          <div>Дата: {user.created_at ? new Date(user.created_at).toLocaleDateString('ru') : '-'}</div>
+      <h1 style={{ ...pageTitle, marginBottom: 20 }}>
+        {user.first_name || user.username || `#${user.id}`}
+      </h1>
+
+      {/* Info card */}
+      <div style={{ ...card, marginBottom: 16 }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12,
+          fontSize: 13, color: '#555',
+        }}>
+          <div><span style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.3 }}>Telegram ID</span><br />{user.telegram_id || '—'}</div>
+          <div><span style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.3 }}>MAX ID</span><br />{user.max_user_id || '—'}</div>
+          <div><span style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.3 }}>Username</span><br />{user.username || '—'}</div>
+          <div><span style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.3 }}>Дата регистрации</span><br />{fmtDate(user.created_at)}</div>
         </div>
       </div>
 
-      <div style={cardStyle}>
-        <h4 style={{ margin: '0 0 12px' }}>Подписки на каналы</h4>
-        {subscriptions.length === 0 ? <div style={{ fontSize: 13, color: '#999' }}>Нет подписок</div> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead><tr>
-              <th style={{ padding: '6px 10px', textAlign: 'left', color: '#888', borderBottom: '1px solid #eee', fontSize: 12 }}>Канал</th>
-              <th style={{ padding: '6px 10px', textAlign: 'left', color: '#888', borderBottom: '1px solid #eee', fontSize: 12 }}>Платформа</th>
-              <th style={{ padding: '6px 10px', textAlign: 'left', color: '#888', borderBottom: '1px solid #eee', fontSize: 12 }}>Дата</th>
-            </tr></thead>
-            <tbody>{subscriptions.map((s, i) => (
-              <tr key={i}>
-                <td style={{ padding: '6px 10px', borderBottom: '1px solid #f5f5f5' }}>{s.channel_title}</td>
-                <td style={{ padding: '6px 10px', borderBottom: '1px solid #f5f5f5' }}>{s.platform}</td>
-                <td style={{ padding: '6px 10px', borderBottom: '1px solid #f5f5f5' }}>{s.subscribed_at ? new Date(s.subscribed_at).toLocaleDateString('ru') : '-'}</td>
+      {/* Subscriptions table */}
+      <div style={{ ...tableWrap, marginBottom: 16 }}>
+        <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid #f0f0f0' }}>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#1a1a2e' }}>Подписки на каналы</h2>
+        </div>
+        {subscriptions.length === 0 ? (
+          <div style={emptyState}>Нет подписок</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={th}>Канал</th>
+                <th style={th}>Платформа</th>
+                <th style={th}>Дата</th>
               </tr>
-            ))}</tbody>
+            </thead>
+            <tbody>
+              {subscriptions.map((s, i) => (
+                <tr key={i} style={{ transition: 'background 0.15s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <td style={td}>{s.channel_title}</td>
+                  <td style={td}>
+                    <span style={badge(
+                      s.platform === 'telegram' ? '#dbeafe' : '#f3f4f6',
+                      s.platform === 'telegram' ? '#1e40af' : '#6b7280',
+                    )}>{s.platform}</span>
+                  </td>
+                  <td style={td}>{fmtDate(s.subscribed_at)}</td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         )}
       </div>
 
-      <div style={cardStyle}>
-        <h4 style={{ margin: '0 0 12px' }}>Диалог с ботом</h4>
-        {messages.length === 0 ? <div style={{ fontSize: 13, color: '#999' }}>Нет сообщений</div> : (
+      {/* Dialog */}
+      <div style={{ ...card }}>
+        <h2 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: '#1a1a2e' }}>Диалог с ботом</h2>
+        {messages.length === 0 ? (
+          <div style={emptyState}>Нет сообщений</div>
+        ) : (
           <div style={{ maxHeight: 500, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {messages.map(msg => (
               <div key={msg.id} style={{
-                display: 'flex', justifyContent: msg.direction === 'outgoing' ? 'flex-end' : 'flex-start',
+                display: 'flex',
+                justifyContent: msg.direction === 'outgoing' ? 'flex-end' : 'flex-start',
                 alignItems: 'flex-start', gap: 8,
               }}>
                 <div style={{
-                  maxWidth: '70%', padding: '8px 12px', borderRadius: 12,
-                  background: msg.direction === 'outgoing' ? '#4361ee' : '#e8e8e8',
-                  color: msg.direction === 'outgoing' ? '#fff' : '#333', fontSize: 13,
-                  position: 'relative',
+                  maxWidth: '70%', padding: '10px 14px', borderRadius: 14,
+                  background: msg.direction === 'outgoing' ? '#4361ee' : '#f3f4f6',
+                  color: msg.direction === 'outgoing' ? '#fff' : '#333',
+                  fontSize: 13, lineHeight: 1.5,
+                  boxShadow: msg.direction === 'outgoing'
+                    ? '0 2px 8px rgba(67,97,238,0.25)'
+                    : '0 1px 3px rgba(0,0,0,0.04)',
                 }}>
                   <div>{msg.message_text || '(без текста)'}</div>
-                  <div style={{ fontSize: 10, marginTop: 4, opacity: 0.7 }}>
-                    {msg.created_at ? new Date(msg.created_at).toLocaleString('ru') : ''}
+                  <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6 }}>
+                    {fmtDate(msg.created_at)}
                     {msg.platform !== 'telegram' && ` [${msg.platform}]`}
                   </div>
                 </div>
                 <button onClick={() => handleDeleteMsg(msg.id)} style={{
-                  background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 14, padding: 2,
-                  alignSelf: 'center',
-                }} title="Удалить">&times;</button>
+                  background: 'none', border: 'none', color: '#ccc', cursor: 'pointer',
+                  fontSize: 16, padding: 2, alignSelf: 'center', transition: 'color 0.15s',
+                  lineHeight: 1,
+                }} title="Удалить"
+                  onMouseEnter={e => e.currentTarget.style.color = '#dc2626'}
+                  onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
+                >&times;</button>
               </div>
             ))}
           </div>

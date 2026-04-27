@@ -1,17 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { adminApi } from '../../services/adminApi';
+import {
+  pageTitle, card, tableWrap, th, td, btnPrimary, btnOutline, btnDanger,
+  badge, statCard, fmtDate, fmtMoney, emptyState, modalOverlay, modalBox,
+} from './adminStyles';
 
-const cardStyle = { background: '#fff', borderRadius: 8, padding: 20, marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' };
-const tabBtn = (active) => ({
-  padding: '8px 16px', border: 'none', borderBottom: active ? '2px solid #4361ee' : '2px solid transparent',
-  background: 'none', cursor: 'pointer', fontWeight: active ? 600 : 400, fontSize: 13, color: active ? '#4361ee' : '#666',
+const pillTab = (active) => ({
+  padding: '8px 20px', borderRadius: 20, border: 'none',
+  background: active ? '#4361ee' : '#f3f4f6',
+  color: active ? '#fff' : '#888',
+  fontSize: 12, fontWeight: active ? 600 : 500, cursor: 'pointer',
+  transition: 'all 0.2s',
 });
-const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
-const thS = { padding: '8px 10px', textAlign: 'left', fontSize: 12, color: '#888', borderBottom: '1px solid #eee' };
-const tdS = { padding: '8px 10px', borderBottom: '1px solid #f5f5f5' };
-const btnDanger = { background: '#e63946', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12 };
-const btnPrimary = { background: '#4361ee', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12 };
+
+const linkStyle = { color: '#4361ee', cursor: 'pointer', fontWeight: 500 };
 
 export default function AdminUserProfilePage() {
   const { userId } = useParams();
@@ -35,7 +38,7 @@ export default function AdminUserProfilePage() {
     }).catch(() => setTabData([]));
   }, [tab, userId]);
 
-  if (!data) return <div>Загрузка...</div>;
+  if (!data) return <div style={emptyState}>Загрузка...</div>;
   const { user } = data;
 
   const handleDelete = async (type, id) => {
@@ -56,168 +59,247 @@ export default function AdminUserProfilePage() {
     { key: 'giveaways', label: 'Розыгрыши' }, { key: 'referrals', label: 'Рефералы' },
   ];
 
+  const statusColor = (s) => s === 'active' ? '#22c55e' : '#ef4444';
+
   return (
     <div>
-      <button onClick={() => navigate('/admin/users')} style={{ background: 'none', border: 'none', color: '#4361ee', cursor: 'pointer', marginBottom: 12, fontSize: 13 }}>
-        &larr; К списку
+      {/* Back button */}
+      <button onClick={() => navigate('/admin/users')} style={{ ...btnOutline, marginBottom: 16, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        &larr; К списку пользователей
       </button>
-      <div style={cardStyle}>
-        <h3 style={{ margin: '0 0 12px' }}>{user.first_name || user.username || `User #${user.id}`}</h3>
-        <div style={{ fontSize: 13, color: '#666', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <div>ID: {user.id}</div>
-          <div>Username: {user.username || '-'}</div>
-          <div>Telegram ID: {user.telegram_id || '-'}</div>
-          <div>MAX ID: {user.max_user_id || '-'}</div>
-          <div>Email: {user.email || '-'}</div>
-          <div>Дата: {user.created_at ? new Date(user.created_at).toLocaleDateString('ru') : '-'}</div>
+
+      {/* Page title */}
+      <h1 style={{ ...pageTitle, marginBottom: 20 }}>{user.first_name || user.username || `User #${user.id}`}</h1>
+
+      {/* Stat cards row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <div style={statCard('#4361ee')}>
+          <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>Telegram ID</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a2e', marginTop: 4 }}>{user.telegram_id || '—'}</div>
         </div>
-        {/* AI Tokens */}
-        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: '#7B68EE', fontWeight: 700 }}>Токены: {user.ai_tokens || 0}</span>
-          <input id="addTokens" type="number" placeholder="Кол-во" style={{ width: 80, padding: '4px 8px', border: '1px solid #ddd', borderRadius: 4, fontSize: 12 }} />
+        <div style={statCard('#22c55e')}>
+          <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>AI Токены</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a2e', marginTop: 4 }}>{(user.ai_tokens || 0).toLocaleString('ru-RU')}</div>
+        </div>
+        <div style={statCard('#f59e0b')}>
+          <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>MAX ID</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a2e', marginTop: 4 }}>{user.max_user_id || '—'}</div>
+        </div>
+        <div style={statCard('#8b5cf6')}>
+          <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>Регистрация</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a2e', marginTop: 4 }}>{fmtDate(user.created_at)}</div>
+        </div>
+      </div>
+
+      {/* User info card */}
+      <div style={{ ...card, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px', fontSize: 13 }}>
+          <div><span style={{ color: '#999', fontWeight: 500 }}>ID:</span> <span style={{ fontWeight: 600, color: '#1a1a2e' }}>{user.id}</span></div>
+          <div><span style={{ color: '#999', fontWeight: 500 }}>Username:</span> <span style={{ fontWeight: 600, color: '#1a1a2e' }}>{user.username || '—'}</span></div>
+          <div><span style={{ color: '#999', fontWeight: 500 }}>Telegram ID:</span> <span style={{ fontWeight: 600, color: '#1a1a2e' }}>{user.telegram_id || '—'}</span></div>
+          <div><span style={{ color: '#999', fontWeight: 500 }}>MAX ID:</span> <span style={{ fontWeight: 600, color: '#1a1a2e' }}>{user.max_user_id || '—'}</span></div>
+          <div style={{ gridColumn: '1 / -1' }}><span style={{ color: '#999', fontWeight: 500 }}>Email:</span> <span style={{ fontWeight: 600, color: '#1a1a2e' }}>{user.email || '—'}</span></div>
+        </div>
+
+        {/* AI Tokens add */}
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 13, color: '#8b5cf6', fontWeight: 700 }}>Начислить токены:</span>
+          <input id="addTokens" type="number" placeholder="Кол-во"
+            style={{ width: 100, padding: '6px 12px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, outline: 'none' }} />
           <button style={btnPrimary} onClick={async () => {
             const val = parseInt(document.getElementById('addTokens').value);
             if (!val) return;
             try {
               await adminApi.post(`/users/${userId}/add-tokens`, { tokens: val });
-              setUser(prev => ({ ...prev, ai_tokens: (prev.ai_tokens || 0) + val }));
+              setData(prev => ({ ...prev, user: { ...prev.user, ai_tokens: (prev.user.ai_tokens || 0) + val } }));
               document.getElementById('addTokens').value = '';
             } catch {}
           }}>Начислить</button>
         </div>
       </div>
 
-      <div style={{ borderBottom: '1px solid #ddd', marginBottom: 16, display: 'flex', gap: 4 }}>
-        {tabs.map(t => <button key={t.key} onClick={() => setTab(t.key)} style={tabBtn(tab === t.key)}>{t.label}</button>)}
+      {/* Pill tabs */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
+        {tabs.map(t => <button key={t.key} onClick={() => setTab(t.key)} style={pillTab(tab === t.key)}>{t.label}</button>)}
       </div>
 
+      {/* Tab content */}
       {tab === 'channels' && (
-        <table style={tableStyle}>
-          <thead><tr><th style={thS}>ID</th><th style={thS}>Название</th><th style={thS}>Платформа</th><th style={thS}>Статус</th><th style={thS}>Истекает</th><th style={thS}></th></tr></thead>
-          <tbody>{tabData.map(ch => (
-            <tr key={ch.id}>
-              <td style={tdS}>{ch.id}</td>
-              <td style={{...tdS, cursor: 'pointer', color: '#4361ee'}} onClick={() => navigate(`/admin/channels/${ch.id}`)}>{ch.title || ch.username}</td>
-              <td style={tdS}>{ch.platform}</td>
-              <td style={tdS}><span style={{ color: ch.billing_status === 'active' ? '#2a9d8f' : '#e63946' }}>{ch.billing_status || 'нет'}</span></td>
-              <td style={tdS}>{ch.billing_expires ? new Date(ch.billing_expires).toLocaleDateString('ru') : '-'}</td>
-              <td style={tdS}><button style={btnPrimary} onClick={() => setExtendModal(ch.id)}>Продлить</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
+        tabData.length === 0 ? <div style={emptyState}>Нет каналов</div> : (
+        <div style={tableWrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={th}>ID</th><th style={th}>Название</th><th style={th}>Платформа</th>
+              <th style={th}>Статус</th><th style={th}>Истекает</th><th style={th}></th>
+            </tr></thead>
+            <tbody>{tabData.map(ch => (
+              <tr key={ch.id} style={{ transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background='#fafbfc'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                <td style={td}>{ch.id}</td>
+                <td style={{ ...td, ...linkStyle }} onClick={() => navigate(`/admin/channels/${ch.id}`)}>{ch.title || ch.username}</td>
+                <td style={td}><span style={badge('#ede9fe', '#7c3aed')}>{ch.platform}</span></td>
+                <td style={td}><span style={badge(ch.billing_status === 'active' ? '#dcfce7' : '#fef2f2', ch.billing_status === 'active' ? '#166534' : '#991b1b')}>{ch.billing_status || 'нет'}</span></td>
+                <td style={td}>{fmtDate(ch.billing_expires)}</td>
+                <td style={td}><button style={btnPrimary} onClick={() => setExtendModal(ch.id)}>Продлить</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>)
       )}
 
       {tab === 'pins' && (
-        <table style={tableStyle}>
-          <thead><tr><th style={thS}>ID</th><th style={thS}>Канал</th><th style={thS}>Заголовок</th><th style={thS}>Статус</th><th style={thS}></th></tr></thead>
-          <tbody>{tabData.map(p => (
-            <tr key={p.id}>
-              <td style={tdS}>{p.id}</td><td style={tdS}>{p.channel_title}</td><td style={tdS}>{p.title || '-'}</td><td style={tdS}>{p.status}</td>
-              <td style={tdS}><button style={btnDanger} onClick={() => handleDelete('pins', p.id)}>Удалить</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
+        tabData.length === 0 ? <div style={emptyState}>Нет закрепов</div> : (
+        <div style={tableWrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><th style={th}>ID</th><th style={th}>Канал</th><th style={th}>Заголовок</th><th style={th}>Статус</th><th style={th}></th></tr></thead>
+            <tbody>{tabData.map(p => (
+              <tr key={p.id} style={{ transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background='#fafbfc'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                <td style={td}>{p.id}</td><td style={td}>{p.channel_title}</td><td style={td}>{p.title || '—'}</td>
+                <td style={td}><span style={badge('#f3f4f6', '#6b7280')}>{p.status}</span></td>
+                <td style={td}><button style={btnDanger} onClick={() => handleDelete('pins', p.id)}>Удалить</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>)
       )}
 
       {tab === 'leadMagnets' && (
-        <table style={tableStyle}>
-          <thead><tr><th style={thS}>ID</th><th style={thS}>Канал</th><th style={thS}>Заголовок</th><th style={thS}>Код</th><th style={thS}></th></tr></thead>
-          <tbody>{tabData.map(lm => (
-            <tr key={lm.id}>
-              <td style={tdS}>{lm.id}</td><td style={tdS}>{lm.channel_title}</td><td style={tdS}>{lm.title || '-'}</td><td style={tdS}>{lm.code}</td>
-              <td style={tdS}><button style={btnDanger} onClick={() => handleDelete('lead-magnets', lm.id)}>Удалить</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
+        tabData.length === 0 ? <div style={emptyState}>Нет лид-магнитов</div> : (
+        <div style={tableWrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><th style={th}>ID</th><th style={th}>Канал</th><th style={th}>Заголовок</th><th style={th}>Код</th><th style={th}></th></tr></thead>
+            <tbody>{tabData.map(lm => (
+              <tr key={lm.id} style={{ transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background='#fafbfc'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                <td style={td}>{lm.id}</td><td style={td}>{lm.channel_title}</td><td style={td}>{lm.title || '—'}</td>
+                <td style={td}><code style={{ background: '#f3f4f6', padding: '2px 8px', borderRadius: 6, fontSize: 12 }}>{lm.code}</code></td>
+                <td style={td}><button style={btnDanger} onClick={() => handleDelete('lead-magnets', lm.id)}>Удалить</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>)
       )}
 
       {tab === 'broadcasts' && (
-        <table style={tableStyle}>
-          <thead><tr><th style={thS}>ID</th><th style={thS}>Канал</th><th style={thS}>Заголовок</th><th style={thS}>Статус</th><th style={thS}></th></tr></thead>
-          <tbody>{tabData.map(b => (
-            <tr key={b.id}>
-              <td style={tdS}>{b.id}</td><td style={tdS}>{b.channel_title}</td><td style={tdS}>{b.title || '-'}</td><td style={tdS}>{b.status || '-'}</td>
-              <td style={tdS}><button style={btnDanger} onClick={() => handleDelete('broadcasts', b.id)}>Удалить</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
+        tabData.length === 0 ? <div style={emptyState}>Нет рассылок</div> : (
+        <div style={tableWrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><th style={th}>ID</th><th style={th}>Канал</th><th style={th}>Заголовок</th><th style={th}>Статус</th><th style={th}></th></tr></thead>
+            <tbody>{tabData.map(b => (
+              <tr key={b.id} style={{ transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background='#fafbfc'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                <td style={td}>{b.id}</td><td style={td}>{b.channel_title}</td><td style={td}>{b.title || '—'}</td>
+                <td style={td}><span style={badge('#f3f4f6', '#6b7280')}>{b.status || '—'}</span></td>
+                <td style={td}><button style={btnDanger} onClick={() => handleDelete('broadcasts', b.id)}>Удалить</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>)
       )}
 
       {tab === 'giveaways' && (
-        <table style={tableStyle}>
-          <thead><tr><th style={thS}>ID</th><th style={thS}>Канал</th><th style={thS}>Заголовок</th><th style={thS}>Статус</th><th style={thS}></th></tr></thead>
-          <tbody>{tabData.map(g => (
-            <tr key={g.id}>
-              <td style={tdS}>{g.id}</td><td style={tdS}>{g.channel_title}</td><td style={tdS}>{g.title || g.message_text?.slice(0, 40) || '-'}</td><td style={tdS}>{g.status}</td>
-              <td style={tdS}><button style={btnDanger} onClick={() => handleDelete('giveaways', g.id)}>Удалить</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
+        tabData.length === 0 ? <div style={emptyState}>Нет розыгрышей</div> : (
+        <div style={tableWrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><th style={th}>ID</th><th style={th}>Канал</th><th style={th}>Заголовок</th><th style={th}>Статус</th><th style={th}></th></tr></thead>
+            <tbody>{tabData.map(g => (
+              <tr key={g.id} style={{ transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background='#fafbfc'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                <td style={td}>{g.id}</td><td style={td}>{g.channel_title}</td><td style={td}>{g.title || g.message_text?.slice(0, 40) || '—'}</td>
+                <td style={td}><span style={badge('#f3f4f6', '#6b7280')}>{g.status}</span></td>
+                <td style={td}><button style={btnDanger} onClick={() => handleDelete('giveaways', g.id)}>Удалить</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>)
       )}
 
       {tab === 'referrals' && tabData && (
         <div>
-          <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-            <div style={{ padding: '12px 20px', background: '#f0fdf4', borderRadius: 8, borderLeft: '3px solid #22c55e' }}>
-              <div style={{ fontSize: 20, fontWeight: 700 }}>{(tabData.balance || 0).toLocaleString('ru-RU')} ₽</div>
-              <div style={{ fontSize: 12, color: '#888' }}>Баланс</div>
+          {/* Referral stat cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
+            <div style={statCard('#22c55e')}>
+              <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>Баланс</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a2e', marginTop: 4 }}>{fmtMoney(tabData.balance)}</div>
             </div>
-            <div style={{ padding: '12px 20px', background: '#f0f9ff', borderRadius: 8, borderLeft: '3px solid #3b82f6' }}>
-              <div style={{ fontSize: 20, fontWeight: 700 }}>{tabData.signups?.length || 0}</div>
-              <div style={{ fontSize: 12, color: '#888' }}>Рефералов</div>
+            <div style={statCard('#3b82f6')}>
+              <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>Рефералов</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a2e', marginTop: 4 }}>{tabData.signups?.length || 0}</div>
             </div>
           </div>
+
+          {/* Referral links */}
           {tabData.links?.length > 0 && (
-            <>
-              <h4 style={{ fontSize: 14, marginBottom: 8 }}>Ссылки</h4>
-              <table style={tableStyle}>
-                <thead><tr><th style={thS}>Код</th><th style={thS}>Название</th><th style={thS}>Дата</th></tr></thead>
-                <tbody>{tabData.links.map(l => (
-                  <tr key={l.id}><td style={tdS}>{l.code}</td><td style={tdS}>{l.name || '—'}</td><td style={tdS}>{l.created_at ? new Date(l.created_at).toLocaleDateString('ru') : '—'}</td></tr>
-                ))}</tbody>
-              </table>
-            </>
+            <div style={{ marginBottom: 20 }}>
+              <h4 style={{ fontSize: 14, fontWeight: 700, color: '#1a1a2e', marginBottom: 10 }}>Ссылки</h4>
+              <div style={tableWrap}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={th}>Код</th><th style={th}>Название</th><th style={th}>Дата</th></tr></thead>
+                  <tbody>{tabData.links.map(l => (
+                    <tr key={l.id}>
+                      <td style={td}><code style={{ background: '#f3f4f6', padding: '2px 8px', borderRadius: 6, fontSize: 12 }}>{l.code}</code></td>
+                      <td style={td}>{l.name || '—'}</td>
+                      <td style={td}>{fmtDate(l.created_at)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
           )}
+
+          {/* Referral signups */}
           {tabData.signups?.length > 0 && (
-            <>
-              <h4 style={{ fontSize: 14, margin: '16px 0 8px' }}>Приглашённые</h4>
-              <table style={tableStyle}>
-                <thead><tr><th style={thS}>Имя</th><th style={thS}>Username</th><th style={thS}>Дата</th></tr></thead>
-                <tbody>{tabData.signups.map(s => (
-                  <tr key={s.id}><td style={tdS}>{s.referred_name || '—'}</td><td style={tdS}>{s.referred_username || '—'}</td><td style={tdS}>{s.created_at ? new Date(s.created_at).toLocaleDateString('ru') : '—'}</td></tr>
-                ))}</tbody>
-              </table>
-            </>
+            <div style={{ marginBottom: 20 }}>
+              <h4 style={{ fontSize: 14, fontWeight: 700, color: '#1a1a2e', marginBottom: 10 }}>Приглашённые</h4>
+              <div style={tableWrap}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={th}>Имя</th><th style={th}>Username</th><th style={th}>Дата</th></tr></thead>
+                  <tbody>{tabData.signups.map(s => (
+                    <tr key={s.id}>
+                      <td style={td}>{s.referred_name || '—'}</td>
+                      <td style={td}>{s.referred_username || '—'}</td>
+                      <td style={td}>{fmtDate(s.created_at)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
           )}
+
+          {/* Referral earnings */}
           {tabData.earnings?.length > 0 && (
-            <>
-              <h4 style={{ fontSize: 14, margin: '16px 0 8px' }}>Начисления</h4>
-              <table style={tableStyle}>
-                <thead><tr><th style={thS}>Сумма</th><th style={thS}>Комиссия</th><th style={thS}>Дата</th></tr></thead>
-                <tbody>{tabData.earnings.map(e => (
-                  <tr key={e.id}><td style={tdS}>{e.amount} ₽</td><td style={{ ...tdS, color: '#22c55e', fontWeight: 600 }}>+{e.commission_amount} ₽ ({e.commission_percent}%)</td><td style={tdS}>{e.created_at ? new Date(e.created_at).toLocaleDateString('ru') : '—'}</td></tr>
-                ))}</tbody>
-              </table>
-            </>
+            <div style={{ marginBottom: 20 }}>
+              <h4 style={{ fontSize: 14, fontWeight: 700, color: '#1a1a2e', marginBottom: 10 }}>Начисления</h4>
+              <div style={tableWrap}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={th}>Сумма</th><th style={th}>Комиссия</th><th style={th}>Дата</th></tr></thead>
+                  <tbody>{tabData.earnings.map(e => (
+                    <tr key={e.id}>
+                      <td style={td}>{fmtMoney(e.amount)}</td>
+                      <td style={{ ...td, color: '#22c55e', fontWeight: 600 }}>+{fmtMoney(e.commission_amount)} ({e.commission_percent}%)</td>
+                      <td style={td}>{fmtDate(e.created_at)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
           )}
+
           {!tabData.links?.length && !tabData.signups?.length && (
-            <div style={{ color: '#aaa', textAlign: 'center', padding: 20 }}>Нет реферальных данных</div>
+            <div style={emptyState}>Нет реферальных данных</div>
           )}
         </div>
       )}
 
+      {/* Extend tariff modal */}
       {extendModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
-          <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 320 }}>
-            <h3 style={{ margin: '0 0 16px' }}>Продлить тариф</h3>
+        <div style={modalOverlay}>
+          <div style={modalBox}>
+            <h3 style={{ margin: '0 0 20px', fontSize: 18, fontWeight: 700, color: '#1a1a2e' }}>Продлить тариф</h3>
             <select value={extendMonths} onChange={e => setExtendMonths(Number(e.target.value))}
-              style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #ddd', marginBottom: 16 }}>
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #e5e7eb', fontSize: 13, marginBottom: 20, outline: 'none' }}>
               <option value={1}>1 месяц</option><option value={3}>3 месяца</option>
               <option value={6}>6 месяцев</option><option value={12}>12 месяцев</option>
             </select>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleExtend} style={{ ...btnPrimary, padding: '8px 16px' }}>Продлить</button>
-              <button onClick={() => setExtendModal(null)} style={{ padding: '8px 16px', border: '1px solid #ddd', borderRadius: 4, background: '#fff', cursor: 'pointer' }}>Отмена</button>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setExtendModal(null)} style={btnOutline}>Отмена</button>
+              <button onClick={handleExtend} style={btnPrimary}>Продлить</button>
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../../services/api';
 import Loading from '../../components/Loading';
+import { useTrackingPixels } from '../../hooks/useTrackingPixels';
 
 export default function LeadMagnetLandingPage() {
   const { shortCode } = useParams();
@@ -34,38 +35,12 @@ export default function LeadMagnetLandingPage() {
 
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  // Inject Yandex Metrika
-  useEffect(() => {
-    if (!info) return;
-    const counterId = info.ym_counter_id || info.yandex_metrika_id;
-    if (!counterId) return;
-    window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
-    window.ym.l = Date.now();
-    window.ym(Number(counterId), 'init', { clickmap: true, trackLinks: true, accurateTrackBounce: true });
-    const script = document.createElement('script');
-    script.src = 'https://mc.yandex.ru/metrika/tag.js';
-    script.async = true;
-    document.head.appendChild(script);
-    return () => { try { document.head.removeChild(script); } catch {} };
-  }, [info]);
-
-  // Inject VK Pixel
-  useEffect(() => {
-    if (!info) return;
-    const pixelId = info.vk_pixel_id;
-    if (!pixelId) return;
-    window._tmr = window._tmr || [];
-    window._tmr.push({ id: pixelId, type: 'pageView', start: Date.now() });
-    const script = document.createElement('script');
-    script.src = 'https://top-fwz1.mail.ru/js/code.js';
-    script.async = true;
-    document.head.appendChild(script);
-    return () => { try { document.head.removeChild(script); } catch {} };
-  }, [info]);
+  const { fireGoals } = useTrackingPixels(info);
 
   // Poll for subscription
   useEffect(() => {
     if (!visitId || subscribed) return;
+    let cleanupRetry;
     const interval = setInterval(async () => {
       if (goalFired.current) return;
       try {
@@ -74,21 +49,12 @@ export default function LeadMagnetLandingPage() {
           goalFired.current = true;
           setSubscribed(true);
           clearInterval(interval);
-          const counterId = info?.ym_counter_id || info?.yandex_metrika_id;
-          const goalName = info?.ym_goal_name || 'subscribe_channel';
-          if (counterId && window.ym) {
-            try { window.ym(Number(counterId), 'reachGoal', goalName); } catch {}
-          }
-          const vkPixelId = info?.vk_pixel_id;
-          const vkGoalName = info?.vk_goal_name || 'subscribe_channel';
-          if (vkPixelId && window._tmr) {
-            try { window._tmr.push({ id: vkPixelId, type: 'reachGoal', goal: vkGoalName }); } catch {}
-          }
+          cleanupRetry = fireGoals();
         }
       } catch {}
     }, 5000);
-    return () => clearInterval(interval);
-  }, [visitId, subscribed, info]);
+    return () => { clearInterval(interval); cleanupRetry?.(); };
+  }, [visitId, subscribed, fireGoals]);
 
   const getBotUrl = () => {
     if (!info) return null;

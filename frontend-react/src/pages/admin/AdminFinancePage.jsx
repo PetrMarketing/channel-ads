@@ -1,23 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { adminApi } from '../../services/adminApi';
-
-const cardStyle = (color) => ({
-  background: '#fff', borderRadius: 12, padding: 20, flex: '1 1 180px',
-  boxShadow: '0 1px 4px rgba(0,0,0,0.06)', borderLeft: `4px solid ${color}`,
-});
-const tableStyle = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' };
-const thStyle = { padding: '10px 14px', textAlign: 'left', fontSize: 12, color: '#888', borderBottom: '1px solid #eee', fontWeight: 600 };
-const tdStyle = { padding: '10px 14px', fontSize: 13, borderBottom: '1px solid #f5f5f5' };
-const periodBtn = (active) => ({
-  padding: '6px 14px', border: active ? '2px solid #4361ee' : '1px solid #ddd',
-  borderRadius: 6, background: active ? '#eef1ff' : '#fff', cursor: 'pointer',
-  fontSize: 13, fontWeight: active ? 600 : 400, color: active ? '#4361ee' : '#666',
-});
-const statusBadge = (status) => {
-  const map = { paid: ['#d4edda', '#155724'], success: ['#d4edda', '#155724'], completed: ['#d4edda', '#155724'], pending: ['#fff3cd', '#856404'] };
-  const [bg, color] = map[status] || ['#f8d7da', '#721c24'];
-  return { display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: bg, color };
-};
+import {
+  pageTitle, periodWrap, periodBtn, statCard, tableWrap, th, td,
+  statusBadge, fmtDate, fmtMoney, emptyState,
+} from './adminStyles';
 
 const periods = [
   { key: '7d', label: '7 дней' },
@@ -26,6 +12,14 @@ const periods = [
   { key: '90d', label: '90 дней' },
   { key: '365d', label: 'Год' },
 ];
+
+const tabBtn = (active) => ({
+  padding: '7px 18px', borderRadius: 20, border: 'none',
+  background: active ? '#4361ee' : '#f3f4f6',
+  color: active ? '#fff' : '#888',
+  fontSize: 12, fontWeight: active ? 600 : 500, cursor: 'pointer',
+  transition: 'all 0.2s',
+});
 
 export default function AdminFinancePage() {
   const [data, setData] = useState(null);
@@ -40,18 +34,16 @@ export default function AdminFinancePage() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, [period]);
 
-  const fmtDate = (d) => d ? new Date(d).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
-  const fmtMoney = (n) => Number(n || 0).toLocaleString('ru-RU', { minimumFractionDigits: 0 }) + ' \u20BD';
-
-  if (loading && !data) return <div style={{ padding: 20 }}>Загрузка...</div>;
+  if (loading && !data) return <div style={{ padding: 20, color: '#999' }}>Загрузка...</div>;
 
   const totals = data?.totals || {};
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Финансы</h2>
-        <div style={{ display: 'flex', gap: 6 }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+        <h2 style={pageTitle}>Финансы</h2>
+        <div style={periodWrap}>
           {periods.map(p => (
             <button key={p.key} style={periodBtn(period === p.key)} onClick={() => setPeriod(p.key)}>{p.label}</button>
           ))}
@@ -59,136 +51,139 @@ export default function AdminFinancePage() {
       </div>
 
       {/* Summary cards */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
-        <div style={cardStyle('#2a9d8f')}>
-          <div style={{ fontSize: 13, color: '#888' }}>Итого</div>
-          <div style={{ fontSize: 28, fontWeight: 700, margin: '8px 0' }}>{fmtMoney(totals.total)}</div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
+        <div style={{ ...statCard('#2a9d8f'), flex: '1 1 180px' }}>
+          <div style={{ fontSize: 12, color: '#999', fontWeight: 500 }}>Итого</div>
+          <div style={{ fontSize: 28, fontWeight: 800, margin: '8px 0', color: '#1a1a2e' }}>{fmtMoney(totals.total)}</div>
         </div>
-        <div style={cardStyle('#4361ee')}>
-          <div style={{ fontSize: 13, color: '#888' }}>Подписки на сервис</div>
-          <div style={{ fontSize: 24, fontWeight: 700, margin: '8px 0' }}>{fmtMoney(totals.billing)}</div>
+        <div style={{ ...statCard('#4361ee'), flex: '1 1 180px' }}>
+          <div style={{ fontSize: 12, color: '#999', fontWeight: 500 }}>Подписки на сервис</div>
+          <div style={{ fontSize: 22, fontWeight: 700, margin: '8px 0', color: '#1a1a2e' }}>{fmtMoney(totals.billing)}</div>
         </div>
-        <div style={cardStyle('#7b68ee')}>
-          <div style={{ fontSize: 13, color: '#888' }}>Платные чаты</div>
-          <div style={{ fontSize: 24, fontWeight: 700, margin: '8px 0' }}>{fmtMoney(totals.paid_chat)}</div>
+        <div style={{ ...statCard('#7b68ee'), flex: '1 1 180px' }}>
+          <div style={{ fontSize: 12, color: '#999', fontWeight: 500 }}>Платные чаты</div>
+          <div style={{ fontSize: 22, fontWeight: 700, margin: '8px 0', color: '#1a1a2e' }}>{fmtMoney(totals.paid_chat)}</div>
         </div>
-        <div style={cardStyle('#e76f51')}>
-          <div style={{ fontSize: 13, color: '#888' }}>ИИ Токены</div>
-          <div style={{ fontSize: 24, fontWeight: 700, margin: '8px 0' }}>{fmtMoney(totals.ai_tokens)}</div>
+        <div style={{ ...statCard('#e76f51'), flex: '1 1 180px' }}>
+          <div style={{ fontSize: 12, color: '#999', fontWeight: 500 }}>ИИ Токены</div>
+          <div style={{ fontSize: 22, fontWeight: 700, margin: '8px 0', color: '#1a1a2e' }}>{fmtMoney(totals.ai_tokens)}</div>
         </div>
-        <div style={cardStyle('#f4a261')}>
-          <div style={{ fontSize: 13, color: '#888' }}>Ожидают оплаты</div>
-          <div style={{ fontSize: 24, fontWeight: 700, margin: '8px 0' }}>{fmtMoney(totals.pending)}</div>
+        <div style={{ ...statCard('#f4a261'), flex: '1 1 180px' }}>
+          <div style={{ fontSize: 12, color: '#999', fontWeight: 500 }}>Ожидают оплаты</div>
+          <div style={{ fontSize: 22, fontWeight: 700, margin: '8px 0', color: '#1a1a2e' }}>{fmtMoney(totals.pending)}</div>
         </div>
       </div>
 
       {/* Tab selector */}
-      <div style={{ borderBottom: '1px solid #ddd', marginBottom: 16, display: 'flex', gap: 4 }}>
-        <button onClick={() => setTab('billing')} style={{
-          padding: '8px 16px', border: 'none', borderBottom: tab === 'billing' ? '2px solid #4361ee' : '2px solid transparent',
-          background: 'none', cursor: 'pointer', fontWeight: tab === 'billing' ? 600 : 400, fontSize: 13, color: tab === 'billing' ? '#4361ee' : '#666',
-        }}>Подписки ({data?.billing_payments?.length || 0})</button>
-        <button onClick={() => setTab('paidchat')} style={{
-          padding: '8px 16px', border: 'none', borderBottom: tab === 'paidchat' ? '2px solid #4361ee' : '2px solid transparent',
-          background: 'none', cursor: 'pointer', fontWeight: tab === 'paidchat' ? 600 : 400, fontSize: 13, color: tab === 'paidchat' ? '#4361ee' : '#666',
-        }}>Платные чаты ({data?.paid_chat_payments?.length || 0})</button>
-        <button onClick={() => setTab('tokens')} style={{
-          padding: '8px 16px', border: 'none', borderBottom: tab === 'tokens' ? '2px solid #4361ee' : '2px solid transparent',
-          background: 'none', cursor: 'pointer', fontWeight: tab === 'tokens' ? 600 : 400, fontSize: 13, color: tab === 'tokens' ? '#4361ee' : '#666',
-        }}>ИИ Токены ({data?.token_purchases?.length || 0})</button>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+        <button onClick={() => setTab('billing')} style={tabBtn(tab === 'billing')}>
+          Подписки ({data?.billing_payments?.length || 0})
+        </button>
+        <button onClick={() => setTab('paidchat')} style={tabBtn(tab === 'paidchat')}>
+          Платные чаты ({data?.paid_chat_payments?.length || 0})
+        </button>
+        <button onClick={() => setTab('tokens')} style={tabBtn(tab === 'tokens')}>
+          ИИ Токены ({data?.token_purchases?.length || 0})
+        </button>
       </div>
 
       {/* Billing payments */}
       {tab === 'billing' && (
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>ID</th>
-              <th style={thStyle}>Дата</th>
-              <th style={thStyle}>Пользователь</th>
-              <th style={thStyle}>Канал</th>
-              <th style={thStyle}>Сумма</th>
-              <th style={thStyle}>Статус</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(data?.billing_payments || []).map(p => (
-              <tr key={p.id}>
-                <td style={tdStyle}>{p.id}</td>
-                <td style={tdStyle}>{fmtDate(p.created_at)}</td>
-                <td style={tdStyle}>{p.user_name || p.user_username || '-'}</td>
-                <td style={tdStyle}>{p.channel_title || '-'}</td>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>{fmtMoney(p.amount)}</td>
-                <td style={tdStyle}><span style={statusBadge(p.status)}>{p.status}</span></td>
+        <div style={tableWrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={th}>ID</th>
+                <th style={th}>Дата</th>
+                <th style={th}>Пользователь</th>
+                <th style={th}>Канал</th>
+                <th style={th}>Сумма</th>
+                <th style={th}>Статус</th>
               </tr>
-            ))}
-            {!(data?.billing_payments?.length) && (
-              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: '#aaa' }}>Нет платежей за период</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {(data?.billing_payments || []).map(p => (
+                <tr key={p.id}>
+                  <td style={td}>{p.id}</td>
+                  <td style={td}>{fmtDate(p.created_at)}</td>
+                  <td style={td}>{p.user_name || p.user_username || '—'}</td>
+                  <td style={td}>{p.channel_title || '—'}</td>
+                  <td style={{ ...td, fontWeight: 600 }}>{fmtMoney(p.amount)}</td>
+                  <td style={td}><span style={statusBadge(p.status)}>{p.status}</span></td>
+                </tr>
+              ))}
+              {!(data?.billing_payments?.length) && (
+                <tr><td colSpan={6} style={emptyState}>Нет платежей за период</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Paid chat payments */}
       {tab === 'paidchat' && (
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>ID</th>
-              <th style={thStyle}>Дата</th>
-              <th style={thStyle}>Чат</th>
-              <th style={thStyle}>Канал</th>
-              <th style={thStyle}>Сумма</th>
-              <th style={thStyle}>Статус</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(data?.paid_chat_payments || []).map(p => (
-              <tr key={p.id}>
-                <td style={tdStyle}>{p.id}</td>
-                <td style={tdStyle}>{fmtDate(p.created_at)}</td>
-                <td style={tdStyle}>{p.chat_title || '-'}</td>
-                <td style={tdStyle}>{p.channel_title || '-'}</td>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>{fmtMoney(p.amount)}</td>
-                <td style={tdStyle}><span style={statusBadge(p.status)}>{p.status}</span></td>
+        <div style={tableWrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={th}>ID</th>
+                <th style={th}>Дата</th>
+                <th style={th}>Чат</th>
+                <th style={th}>Канал</th>
+                <th style={th}>Сумма</th>
+                <th style={th}>Статус</th>
               </tr>
-            ))}
-            {!(data?.paid_chat_payments?.length) && (
-              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: '#aaa' }}>Нет платежей за период</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {(data?.paid_chat_payments || []).map(p => (
+                <tr key={p.id}>
+                  <td style={td}>{p.id}</td>
+                  <td style={td}>{fmtDate(p.created_at)}</td>
+                  <td style={td}>{p.chat_title || '—'}</td>
+                  <td style={td}>{p.channel_title || '—'}</td>
+                  <td style={{ ...td, fontWeight: 600 }}>{fmtMoney(p.amount)}</td>
+                  <td style={td}><span style={statusBadge(p.status)}>{p.status}</span></td>
+                </tr>
+              ))}
+              {!(data?.paid_chat_payments?.length) && (
+                <tr><td colSpan={6} style={emptyState}>Нет платежей за период</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Token purchases */}
       {tab === 'tokens' && (
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>ID</th>
-              <th style={thStyle}>Дата</th>
-              <th style={thStyle}>Пользователь</th>
-              <th style={thStyle}>Токены</th>
-              <th style={thStyle}>Сумма</th>
-              <th style={thStyle}>Статус</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(data?.token_purchases || []).map(p => (
-              <tr key={p.id}>
-                <td style={tdStyle}>{p.id}</td>
-                <td style={tdStyle}>{fmtDate(p.created_at || p.paid_at)}</td>
-                <td style={tdStyle}>{p.user_name || p.user_username || '-'}</td>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>{p.tokens}</td>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>{fmtMoney(p.amount)}</td>
-                <td style={tdStyle}><span style={statusBadge(p.payment_status)}>{p.payment_status}</span></td>
+        <div style={tableWrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={th}>ID</th>
+                <th style={th}>Дата</th>
+                <th style={th}>Пользователь</th>
+                <th style={th}>Токены</th>
+                <th style={th}>Сумма</th>
+                <th style={th}>Статус</th>
               </tr>
-            ))}
-            {!(data?.token_purchases?.length) && (
-              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: '#aaa' }}>Нет покупок за период</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {(data?.token_purchases || []).map(p => (
+                <tr key={p.id}>
+                  <td style={td}>{p.id}</td>
+                  <td style={td}>{fmtDate(p.created_at || p.paid_at)}</td>
+                  <td style={td}>{p.user_name || p.user_username || '—'}</td>
+                  <td style={{ ...td, fontWeight: 600 }}>{p.tokens}</td>
+                  <td style={{ ...td, fontWeight: 600 }}>{fmtMoney(p.amount)}</td>
+                  <td style={td}><span style={statusBadge(p.payment_status)}>{p.payment_status}</span></td>
+                </tr>
+              ))}
+              {!(data?.token_purchases?.length) && (
+                <tr><td colSpan={6} style={emptyState}>Нет покупок за период</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

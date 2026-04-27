@@ -1,13 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { adminApi } from '../../services/adminApi';
+import {
+  pageTitle, card, btnPrimary, btnOutline, btnDanger, badge,
+  searchInput, statCard, emptyState,
+} from './adminStyles';
 
-const tableStyle = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' };
-const thStyle = { padding: '8px 12px', textAlign: 'left', fontSize: 11, color: '#888', borderBottom: '1px solid #eee', fontWeight: 600 };
-const tdStyle = { padding: '8px 12px', fontSize: 13, borderBottom: '1px solid #f5f5f5' };
-const btnPrimary = { background: '#4361ee', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 12 };
-const btnDanger = { background: '#e63946', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12 };
-const btnEdit = { background: '#f4a261', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12, marginRight: 4 };
-const inputStyle = { width: '100%', padding: 6, border: '1px solid #ddd', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' };
+const inputStyle = {
+  width: '100%', padding: '8px 12px', border: '1px solid #e5e7eb',
+  borderRadius: 10, fontSize: 13, boxSizing: 'border-box', outline: 'none',
+  transition: 'border-color 0.2s',
+};
+
+const labelStyle = { fontSize: 11, color: '#999', fontWeight: 600, marginBottom: 4, display: 'block', letterSpacing: 0.3 };
+const hintStyle = { fontSize: 10, color: '#bbb', marginTop: 3 };
 
 export default function AdminLandingsPage() {
   const [landings, setLandings] = useState([]);
@@ -45,87 +50,94 @@ export default function AdminLandingsPage() {
     load();
   };
 
-  if (loading) return <div style={{ padding: 20 }}>Загрузка...</div>;
+  if (loading) return <div style={emptyState}>Загрузка...</div>;
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Лендинги</h2>
+      <h2 style={pageTitle}>Лендинги</h2>
+      <p style={{ fontSize: 12, color: '#bbb', marginTop: 3, marginBottom: 20 }}>
+        Всего: {landings.length}
+      </p>
+
+      {landings.length === 0 && (
+        <div style={{ ...card, ...emptyState }}>Лендинги не найдены</div>
+      )}
 
       {landings.map(l => (
-        <div key={l.id} style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid #eee' }}>
+        <div key={l.id} style={{ ...card, marginBottom: 16 }}>
           {editing === l.id ? (
             <div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
                 <div>
-                  <label style={{ fontSize: 11, color: '#888' }}>Название</label>
+                  <label style={labelStyle}>Название</label>
                   <input style={inputStyle} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#888' }}>Slug (URL)</label>
+                  <label style={labelStyle}>Slug (URL)</label>
                   <input style={inputStyle} value={form.slug} onChange={e => setForm(f => ({ ...f, slug: e.target.value }))} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#888' }}>Яндекс Метрика ID</label>
+                  <label style={labelStyle}>Яндекс Метрика ID</label>
                   <input style={inputStyle} value={form.ym_counter_id} onChange={e => setForm(f => ({ ...f, ym_counter_id: e.target.value }))} placeholder="12345678" />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#888' }}>VK Pixel ID</label>
+                  <label style={labelStyle}>VK Pixel ID</label>
                   <input style={inputStyle} value={form.vk_pixel_id} onChange={e => setForm(f => ({ ...f, vk_pixel_id: e.target.value }))} placeholder="3751584" />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#888' }}>JS цель — регистрация</label>
+                  <label style={labelStyle}>JS цель — регистрация</label>
                   <input style={inputStyle} value={form.ym_goal_register} onChange={e => setForm(f => ({ ...f, ym_goal_register: e.target.value }))} placeholder="register" />
-                  <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>Отправляется при клике на CTA-кнопку</div>
+                  <div style={hintStyle}>Отправляется при клике на CTA-кнопку</div>
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#888' }}>JS цель — оплата</label>
+                  <label style={labelStyle}>JS цель — оплата</label>
                   <input style={inputStyle} value={form.ym_goal_payment} onChange={e => setForm(f => ({ ...f, ym_goal_payment: e.target.value }))} placeholder="payment" />
-                  <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>Отправляется при успешной оплате тарифа</div>
+                  <div style={hintStyle}>Отправляется при успешной оплате тарифа</div>
                 </div>
               </div>
-              <label style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 12 }}>
+              <label style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, color: '#333' }}>
                 <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} /> Активен
               </label>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button style={btnPrimary} onClick={() => save(l.id)}>Сохранить</button>
-                <button style={{ ...btnPrimary, background: '#aaa' }} onClick={() => setEditing(null)}>Отмена</button>
+                <button style={btnOutline} onClick={() => setEditing(null)}>Отмена</button>
               </div>
             </div>
           ) : (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                 <div>
-                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 4px' }}>{l.title}</h3>
-                  <a href={`/l/${l.slug}`} target="_blank" rel="noreferrer" style={{ color: '#4361ee', fontSize: 13 }}>/l/{l.slug}</a>
-                  <span style={{ marginLeft: 12, padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: l.is_active ? '#d4edda' : '#f8d7da', color: l.is_active ? '#155724' : '#721c24' }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px', color: '#1a1a2e' }}>{l.title}</h3>
+                  <a href={`/l/${l.slug}`} target="_blank" rel="noreferrer" style={{ color: '#4361ee', fontSize: 13, textDecoration: 'none' }}>/l/{l.slug}</a>
+                  <span style={{ marginLeft: 12, ...badge(l.is_active ? '#dcfce7' : '#fef2f2', l.is_active ? '#166534' : '#991b1b') }}>
                     {l.is_active ? 'Активен' : 'Выкл'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button style={btnEdit} onClick={() => startEdit(l)}>Ред.</button>
+                  <button style={btnOutline} onClick={() => startEdit(l)}>Ред.</button>
                   <button style={btnDanger} onClick={() => del(l.id)}>Удалить</button>
                 </div>
               </div>
 
               {/* Analytics */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
                 {[
                   { label: 'Просмотры', value: l.views_count, color: '#4361ee' },
                   { label: 'Клики CTA', value: l.clicks_count, color: '#7c3aed' },
                   { label: 'Регистрации', value: l.registrations_count || l.users_from_landing || 0, color: '#059669' },
                   { label: 'Оплаты', value: l.payments_from_landing || 0, color: '#f59e0b' },
                   { label: 'Доход', value: `${(l.revenue_from_landing || 0).toLocaleString('ru-RU')} ₽`, color: '#e63946' },
-                  { label: 'CTR', value: l.views_count ? `${((l.clicks_count / l.views_count) * 100).toFixed(1)}%` : '—', color: '#888' },
+                  { label: 'CTR', value: l.views_count ? `${((l.clicks_count / l.views_count) * 100).toFixed(1)}%` : '—', color: '#6b7280' },
                 ].map((s, i) => (
-                  <div key={i} style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, borderLeft: `3px solid ${s.color}` }}>
-                    <div style={{ fontSize: 18, fontWeight: 700 }}>{s.value}</div>
-                    <div style={{ fontSize: 11, color: '#888' }}>{s.label}</div>
+                  <div key={i} style={statCard(s.color)}>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#1a1a2e' }}>{s.value}</div>
+                    <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>{s.label}</div>
                   </div>
                 ))}
               </div>
 
               {/* Pixel info */}
-              <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 11, color: '#999' }}>
+              <div style={{ display: 'flex', gap: 16, marginTop: 12, fontSize: 11, color: '#bbb', flexWrap: 'wrap' }}>
                 {l.ym_counter_id && <span>YM: {l.ym_counter_id}</span>}
                 {l.vk_pixel_id && <span>VK: {l.vk_pixel_id}</span>}
                 {l.ym_goal_register && <span>Цель рег: {l.ym_goal_register}</span>}

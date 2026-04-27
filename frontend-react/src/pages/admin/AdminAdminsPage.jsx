@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { adminApi } from '../../services/adminApi';
-
-const tableStyle = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' };
-const thStyle = { padding: '10px 14px', textAlign: 'left', fontSize: 12, color: '#888', borderBottom: '1px solid #eee', fontWeight: 600 };
-const tdStyle = { padding: '10px 14px', fontSize: 13, borderBottom: '1px solid #f5f5f5' };
-const btnPrimary = { background: '#4361ee', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', cursor: 'pointer', fontSize: 13 };
-const btnDanger = { background: '#e63946', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12 };
-const btnEdit = { background: '#f4a261', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12, marginRight: 4 };
-const inputStyle = { width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 6, fontSize: 13, boxSizing: 'border-box', marginBottom: 10 };
+import {
+  pageTitle, card, tableWrap, th, td,
+  btnPrimary, btnOutline, btnDanger, badge, emptyState,
+  modalOverlay, modalBox, searchInput, fmtDate,
+} from './adminStyles';
 
 const emptyForm = { username: '', password: '', display_name: '', role: 'admin' };
+
+const roleConfig = {
+  superadmin: { label: 'Суперадмин', bg: '#fef2f2', color: '#991b1b' },
+  admin:      { label: 'Админ',      bg: '#dbeafe', color: '#1e40af' },
+  viewer:     { label: 'Просмотр',   bg: '#f3f4f6', color: '#6b7280' },
+};
 
 export default function AdminAdminsPage() {
   const [admins, setAdmins] = useState([]);
@@ -45,59 +48,122 @@ export default function AdminAdminsPage() {
     setModal(a); setError('');
   };
 
-  const roleLabels = { superadmin: 'Суперадмин', admin: 'Админ', viewer: 'Просмотр' };
+  const inputStyle = {
+    width: '100%', padding: '10px 14px', border: '1px solid #e5e7eb', borderRadius: 10,
+    fontSize: 13, boxSizing: 'border-box', marginBottom: 12, outline: 'none',
+    transition: 'border-color 0.2s',
+  };
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h2 style={{ margin: 0 }}>Администраторы панели</h2>
-        <button onClick={() => { setForm(emptyForm); setModal('create'); setError(''); }} style={btnPrimary}>Добавить</button>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <h2 style={pageTitle}>Администраторы панели</h2>
+        <button
+          onClick={() => { setForm(emptyForm); setModal('create'); setError(''); }}
+          style={btnPrimary}
+        >
+          + Добавить
+        </button>
       </div>
 
-      <table style={tableStyle}>
-        <thead><tr>
-          <th style={thStyle}>ID</th><th style={thStyle}>Логин</th><th style={thStyle}>Имя</th>
-          <th style={thStyle}>Роль</th><th style={thStyle}>Последний вход</th><th style={thStyle}></th>
-        </tr></thead>
-        <tbody>
-          {admins.map(a => (
-            <tr key={a.id}>
-              <td style={tdStyle}>{a.id}</td>
-              <td style={tdStyle}>{a.username}</td>
-              <td style={tdStyle}>{a.display_name || '-'}</td>
-              <td style={tdStyle}><span style={{
-                background: a.role === 'superadmin' ? '#ffe0e0' : a.role === 'admin' ? '#e0e8ff' : '#e8e8e8',
-                padding: '2px 8px', borderRadius: 4, fontSize: 11,
-              }}>{roleLabels[a.role] || a.role}</span></td>
-              <td style={tdStyle}>{a.last_login_at ? new Date(a.last_login_at).toLocaleString('ru') : '-'}</td>
-              <td style={tdStyle}>
-                <button style={btnEdit} onClick={() => openEdit(a)}>Ред.</button>
-                <button style={btnDanger} onClick={() => handleDelete(a.id)}>Удалить</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* Table */}
+      {admins.length === 0 ? (
+        <div style={{ ...card, ...emptyState }}>Нет администраторов</div>
+      ) : (
+        <div style={tableWrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={th}>ID</th>
+                <th style={th}>Логин</th>
+                <th style={th}>Имя</th>
+                <th style={th}>Роль</th>
+                <th style={th}>Последний вход</th>
+                <th style={{ ...th, textAlign: 'right' }}>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              {admins.map(a => {
+                const rc = roleConfig[a.role] || roleConfig.viewer;
+                return (
+                  <tr key={a.id} style={{ transition: 'background 0.15s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#f8f9fb'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <td style={{ ...td, fontWeight: 600, color: '#999', width: 50 }}>{a.id}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{a.username}</td>
+                    <td style={td}>{a.display_name || '—'}</td>
+                    <td style={td}>
+                      <span style={badge(rc.bg, rc.color)}>{rc.label}</span>
+                    </td>
+                    <td style={{ ...td, color: '#999' }}>{fmtDate(a.last_login_at)}</td>
+                    <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button style={{ ...btnOutline, marginRight: 6 }} onClick={() => openEdit(a)}>Ред.</button>
+                      <button style={btnDanger} onClick={() => handleDelete(a.id)}>Удалить</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
+      {/* Modal */}
       {modal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
-          <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 360 }}>
-            <h3 style={{ margin: '0 0 16px' }}>{modal === 'create' ? 'Новый администратор' : 'Редактировать'}</h3>
-            {error && <div style={{ background: '#fee', color: '#c00', padding: 8, borderRadius: 6, marginBottom: 12, fontSize: 12 }}>{error}</div>}
-            {modal === 'create' && (
-              <input placeholder="Логин" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} style={inputStyle} />
+        <div style={modalOverlay} onClick={() => setModal(null)}>
+          <div style={modalBox} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 18px', fontSize: 18, fontWeight: 700, color: '#1a1a2e' }}>
+              {modal === 'create' ? 'Новый администратор' : 'Редактировать'}
+            </h3>
+
+            {error && (
+              <div style={{
+                background: '#fef2f2', color: '#991b1b', padding: '10px 14px',
+                borderRadius: 10, marginBottom: 14, fontSize: 12, fontWeight: 500,
+                border: '1px solid #fecaca',
+              }}>
+                {error}
+              </div>
             )}
-            <input placeholder={modal === 'create' ? 'Пароль' : 'Новый пароль (оставьте пустым)'} type="password"
-              value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} style={inputStyle} />
-            <input placeholder="Отображаемое имя" value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} style={inputStyle} />
-            <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} style={inputStyle}>
+
+            {modal === 'create' && (
+              <input
+                placeholder="Логин"
+                value={form.username}
+                onChange={e => setForm({ ...form, username: e.target.value })}
+                style={inputStyle}
+              />
+            )}
+
+            <input
+              placeholder={modal === 'create' ? 'Пароль' : 'Новый пароль (оставьте пустым)'}
+              type="password"
+              value={form.password}
+              onChange={e => setForm({ ...form, password: e.target.value })}
+              style={inputStyle}
+            />
+
+            <input
+              placeholder="Отображаемое имя"
+              value={form.display_name}
+              onChange={e => setForm({ ...form, display_name: e.target.value })}
+              style={inputStyle}
+            />
+
+            <select
+              value={form.role}
+              onChange={e => setForm({ ...form, role: e.target.value })}
+              style={{ ...inputStyle, appearance: 'auto' }}
+            >
               <option value="superadmin">Суперадмин</option>
               <option value="admin">Админ</option>
               <option value="viewer">Просмотр</option>
             </select>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
               <button onClick={handleSave} style={btnPrimary}>Сохранить</button>
-              <button onClick={() => setModal(null)} style={{ padding: '8px 16px', border: '1px solid #ddd', borderRadius: 6, background: '#fff', cursor: 'pointer' }}>Отмена</button>
+              <button onClick={() => setModal(null)} style={btnOutline}>Отмена</button>
             </div>
           </div>
         </div>

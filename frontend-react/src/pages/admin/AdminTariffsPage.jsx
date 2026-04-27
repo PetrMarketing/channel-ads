@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { adminApi } from '../../services/adminApi';
+import {
+  pageTitle, card, tableWrap, th, td,
+  btnPrimary, btnOutline, btnDanger, emptyState,
+  statusBadge, fmtMoney, searchInput,
+} from './adminStyles';
 
-const tableStyle = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' };
-const thStyle = { padding: '10px 14px', textAlign: 'left', fontSize: 12, color: '#888', borderBottom: '1px solid #eee', fontWeight: 600 };
-const tdStyle = { padding: '10px 14px', fontSize: 13, borderBottom: '1px solid #f5f5f5' };
-const btnPrimary = { background: '#4361ee', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', cursor: 'pointer', fontSize: 13 };
-const btnDanger = { background: '#e63946', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12 };
-const btnEdit = { background: '#f4a261', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12, marginRight: 4 };
-const inputStyle = { width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 6, fontSize: 13, boxSizing: 'border-box', marginBottom: 10 };
+const inputStyle = {
+  width: '100%', padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 10,
+  fontSize: 13, boxSizing: 'border-box', outline: 'none', transition: 'border-color 0.2s',
+};
 
 export default function AdminTariffsPage() {
   const [tariffs, setTariffs] = useState([]);
@@ -68,134 +70,144 @@ export default function AdminTariffsPage() {
     setShowAdd(false);
   };
 
-  if (loading) return <div style={{ padding: 20 }}>Загрузка...</div>;
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#bbb' }}>Загрузка...</div>;
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 700 }}>Тарифы</h2>
-        <button style={btnPrimary} onClick={() => { setShowAdd(true); setEditing(null); setForm({ months: '', label: '', price: '' }); }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <h2 style={pageTitle}>Тарифы</h2>
+        <button
+          style={btnPrimary}
+          onClick={() => { setShowAdd(true); setEditing(null); setForm({ months: '', label: '', price: '' }); }}
+        >
           + Добавить тариф
         </button>
       </div>
 
+      {/* Add form */}
       {showAdd && (
-        <div style={{ background: '#f8f9fa', padding: 16, borderRadius: 8, marginBottom: 20, border: '1px solid #eee' }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14 }}>Новый тариф</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: 10 }}>
+        <div style={{ ...card, marginBottom: 24, border: '1px solid #e5e7eb' }}>
+          <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1a1a2e' }}>Новый тариф</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: 14 }}>
             <div>
-              <label style={{ fontSize: 12, color: '#888' }}>Месяцев</label>
+              <label style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, display: 'block', marginBottom: 6 }}>Месяцев</label>
               <input style={inputStyle} type="number" min="1" value={form.months}
                 onChange={e => setForm(p => ({ ...p, months: e.target.value }))} />
             </div>
             <div>
-              <label style={{ fontSize: 12, color: '#888' }}>Название</label>
+              <label style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, display: 'block', marginBottom: 6 }}>Название</label>
               <input style={inputStyle} value={form.label} placeholder="3 месяца"
                 onChange={e => setForm(p => ({ ...p, label: e.target.value }))} />
             </div>
             <div>
-              <label style={{ fontSize: 12, color: '#888' }}>Цена, руб.</label>
+              <label style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, display: 'block', marginBottom: 6 }}>Цена, руб.</label>
               <input style={inputStyle} type="number" min="0" value={form.price}
                 onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <button style={btnPrimary} onClick={handleAdd}>Создать</button>
-            <button style={{ ...btnPrimary, background: '#aaa' }} onClick={() => setShowAdd(false)}>Отмена</button>
+            <button style={btnOutline} onClick={() => setShowAdd(false)}>Отмена</button>
           </div>
         </div>
       )}
 
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>Срок</th>
-            <th style={thStyle}>Название</th>
-            <th style={thStyle}>Цена (руб.)</th>
-            <th style={thStyle}>Статус</th>
-            <th style={thStyle}>Действия</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tariffs.map(t => (
-            <tr key={t.id}>
-              {editing === t.id ? (
-                <>
-                  <td style={tdStyle}>{t.months} мес.</td>
-                  <td style={tdStyle}>
-                    <input style={{ ...inputStyle, marginBottom: 0 }} value={form.label}
-                      onChange={e => setForm(p => ({ ...p, label: e.target.value }))} />
-                  </td>
-                  <td style={tdStyle}>
-                    <input style={{ ...inputStyle, marginBottom: 0, width: 100 }} type="number" min="0" value={form.price}
-                      onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
-                  </td>
-                  <td style={tdStyle}>
-                    <label style={{ fontSize: 13, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={form.is_active !== false}
-                        onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} /> Активен
-                    </label>
-                  </td>
-                  <td style={tdStyle}>
-                    <button style={btnPrimary} onClick={() => handleSave(t.id)}>Сохранить</button>{' '}
-                    <button style={{ ...btnPrimary, background: '#aaa' }} onClick={() => setEditing(null)}>Отмена</button>
-                  </td>
-                </>
-              ) : (
-                <>
-                  <td style={tdStyle}>{t.months} мес.</td>
-                  <td style={tdStyle}>{t.label}</td>
-                  <td style={{ ...tdStyle, fontWeight: 700 }}>{t.price.toLocaleString('ru-RU')} ₽</td>
-                  <td style={tdStyle}>
-                    <span style={{
-                      padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
-                      background: t.is_active ? '#d4edda' : '#f8d7da',
-                      color: t.is_active ? '#155724' : '#721c24',
-                    }}>
-                      {t.is_active ? 'Активен' : 'Выключен'}
-                    </span>
-                  </td>
-                  <td style={tdStyle}>
-                    <button style={btnEdit} onClick={() => startEdit(t)}>Ред.</button>
-                    <button style={btnDanger} onClick={() => handleDelete(t.id)}>Удалить</button>
-                  </td>
-                </>
-              )}
+      {/* Tariffs table */}
+      <div style={tableWrap}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={th}>Срок</th>
+              <th style={th}>Название</th>
+              <th style={th}>Цена (руб.)</th>
+              <th style={th}>Статус</th>
+              <th style={th}>Действия</th>
             </tr>
-          ))}
-          {!tariffs.length && (
-            <tr><td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: '#aaa' }}>Нет тарифов</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {tariffs.map(t => (
+              <tr key={t.id}>
+                {editing === t.id ? (
+                  <>
+                    <td style={td}>{t.months} мес.</td>
+                    <td style={td}>
+                      <input style={{ ...inputStyle, marginBottom: 0 }} value={form.label}
+                        onChange={e => setForm(p => ({ ...p, label: e.target.value }))} />
+                    </td>
+                    <td style={td}>
+                      <input style={{ ...inputStyle, marginBottom: 0, width: 100 }} type="number" min="0" value={form.price}
+                        onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
+                    </td>
+                    <td style={td}>
+                      <label style={{ fontSize: 13, cursor: 'pointer', color: '#333' }}>
+                        <input type="checkbox" checked={form.is_active !== false}
+                          onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} /> Активен
+                      </label>
+                    </td>
+                    <td style={td}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button style={btnPrimary} onClick={() => handleSave(t.id)}>Сохранить</button>
+                        <button style={btnOutline} onClick={() => setEditing(null)}>Отмена</button>
+                      </div>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td style={td}>{t.months} мес.</td>
+                    <td style={{ ...td, fontWeight: 500 }}>{t.label}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>{fmtMoney(t.price)}</td>
+                    <td style={td}>
+                      <span style={statusBadge(t.is_active ? 'active' : 'closed')}>
+                        {t.is_active ? 'Активен' : 'Выключен'}
+                      </span>
+                    </td>
+                    <td style={td}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button style={btnOutline} onClick={() => startEdit(t)}>Ред.</button>
+                        <button style={btnDanger} onClick={() => handleDelete(t.id)}>Удалить</button>
+                      </div>
+                    </td>
+                  </>
+                )}
+              </tr>
+            ))}
+            {!tariffs.length && (
+              <tr><td colSpan={5} style={emptyState}>Нет тарифов</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {/* AI Token Plans */}
-      <h3 style={{ margin: '30px 0 12px' }}>Тарифы ИИ Токенов</h3>
-      <p style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>Тарифы задаются в коде (billing.py AI_TOKEN_PLANS)</p>
-      <table style={tableStyle}>
-        <thead><tr>
-          <th style={thStyle}>Токенов</th>
-          <th style={thStyle}>Цена</th>
-          <th style={thStyle}>Без скидки</th>
-          <th style={thStyle}>Скидка</th>
-          <th style={thStyle}>За токен</th>
-        </tr></thead>
-        <tbody>
-          {[
-            { tokens: 100, price: 300 },
-            { tokens: 300, price: 800, original: 900, discount: '11%' },
-            { tokens: 1000, price: 2550, original: 3000, discount: '15%' },
-          ].map((p, i) => (
-            <tr key={i}>
-              <td style={tdStyle}><strong>{p.tokens}</strong></td>
-              <td style={tdStyle}>{p.price} ₽</td>
-              <td style={tdStyle}>{p.original ? <span style={{ textDecoration: 'line-through', color: '#aaa' }}>{p.original} ₽</span> : '—'}</td>
-              <td style={tdStyle}>{p.discount ? <span style={{ color: '#e63946', fontWeight: 600 }}>{p.discount}</span> : '—'}</td>
-              <td style={tdStyle}>{(p.price / p.tokens).toFixed(1)} ₽</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <h3 style={{ ...pageTitle, fontSize: 16, margin: '32px 0 6px' }}>Тарифы ИИ Токенов</h3>
+      <p style={{ fontSize: 12, color: '#999', marginBottom: 14 }}>Тарифы задаются в коде (billing.py AI_TOKEN_PLANS)</p>
+      <div style={tableWrap}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>
+            <th style={th}>Токенов</th>
+            <th style={th}>Цена</th>
+            <th style={th}>Без скидки</th>
+            <th style={th}>Скидка</th>
+            <th style={th}>За токен</th>
+          </tr></thead>
+          <tbody>
+            {[
+              { tokens: 100, price: 300 },
+              { tokens: 300, price: 800, original: 900, discount: '11%' },
+              { tokens: 1000, price: 2550, original: 3000, discount: '15%' },
+            ].map((p, i) => (
+              <tr key={i}>
+                <td style={{ ...td, fontWeight: 700 }}>{p.tokens}</td>
+                <td style={td}>{fmtMoney(p.price)}</td>
+                <td style={td}>{p.original ? <span style={{ textDecoration: 'line-through', color: '#bbb' }}>{fmtMoney(p.original)}</span> : '—'}</td>
+                <td style={td}>{p.discount ? <span style={{ color: '#dc2626', fontWeight: 600 }}>{p.discount}</span> : '—'}</td>
+                <td style={td}>{(p.price / p.tokens).toFixed(1)} ₽</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

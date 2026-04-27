@@ -1,19 +1,31 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { adminApi } from '../../services/adminApi';
+import {
+  pageTitle, card, tableWrap, th, td, btnPrimary, btnOutline, btnDanger,
+  badge, statusBadge, statCard, fmtDate, emptyState, modalOverlay, modalBox,
+} from './adminStyles';
 
-const cardStyle = { background: '#fff', borderRadius: 8, padding: 20, marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' };
 const tabBtn = (active) => ({
-  padding: '8px 14px', border: 'none', borderBottom: active ? '2px solid #4361ee' : '2px solid transparent',
-  background: 'none', cursor: 'pointer', fontWeight: active ? 600 : 400, fontSize: 13, color: active ? '#4361ee' : '#666',
+  padding: '8px 16px', border: 'none',
+  borderBottom: active ? '2px solid #4361ee' : '2px solid transparent',
+  background: 'none', cursor: 'pointer', fontWeight: active ? 700 : 400,
+  fontSize: 13, color: active ? '#4361ee' : '#999', transition: 'all 0.2s',
 });
-const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
-const thS = { padding: '8px 10px', textAlign: 'left', fontSize: 12, color: '#888', borderBottom: '1px solid #eee' };
-const tdS = { padding: '8px 10px', borderBottom: '1px solid #f5f5f5' };
-const btnDanger = { background: '#e63946', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12 };
-const btnEdit = { background: '#f4a261', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12, marginRight: 4 };
 
-// editable: which fields can be edited; deleteEndpoint: endpoint suffix for DELETE
+const tableStyle = { width: '100%', borderCollapse: 'collapse' };
+
+const inputStyle = {
+  width: '100%', padding: '9px 12px', border: '1px solid #e5e7eb',
+  borderRadius: 10, fontSize: 13, boxSizing: 'border-box', outline: 'none',
+  transition: 'border-color 0.2s',
+};
+const selectStyle = { ...inputStyle };
+const textareaStyle = { ...inputStyle, minHeight: 100, resize: 'vertical' };
+
+const labelStyle = { fontSize: 11, color: '#999', fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase', display: 'block', marginBottom: 4 };
+const sectionTitle = { fontSize: 14, fontWeight: 700, color: '#1a1a2e', margin: '0 0 10px' };
+
 const TAB_CONFIG = {
   pins: { endpoint: 'pins', key: 'pins', label: 'Закрепы', cols: ['id', 'title', 'status', 'created_at'], editable: ['title', 'message_text', 'status', 'erid'], deleteEndpoint: 'pins' },
   leadMagnets: { endpoint: 'lead-magnets', key: 'leadMagnets', label: 'Лид-магниты', cols: ['id', 'name', 'status', 'created_at'], editable: ['name', 'title', 'message_text'], deleteEndpoint: 'lead-magnets' },
@@ -35,7 +47,7 @@ export default function AdminChannelProfilePage() {
   const [tab, setTab] = useState('pins');
   const [tabData, setTabData] = useState(null);
   const [editLink, setEditLink] = useState(null);
-  const [editItem, setEditItem] = useState(null); // { ...item, _tab: 'pins' }
+  const [editItem, setEditItem] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [previewMode, setPreviewMode] = useState(false);
 
@@ -50,7 +62,7 @@ export default function AdminChannelProfilePage() {
     }).catch(() => setTabData({}));
   }, [tab, channelId]);
 
-  if (!data) return <div style={{ padding: 20 }}>Загрузка...</div>;
+  if (!data) return <div style={{ padding: 40, textAlign: 'center', color: '#bbb' }}>Загрузка...</div>;
   const { channel, staff } = data;
 
   const handleDeleteLink = async (linkId) => {
@@ -64,8 +76,6 @@ export default function AdminChannelProfilePage() {
     setEditLink(null);
     adminApi.get(`/channels/${channelId}/links`).then(d => setTabData(d));
   };
-
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('ru') : '-';
 
   const reloadTab = () => {
     const cfg = TAB_CONFIG[tab];
@@ -104,68 +114,75 @@ export default function AdminChannelProfilePage() {
     const rows = tabData?.[cfg.key] || [];
     const hasActions = cfg.editable || cfg.deleteEndpoint;
     return (
-      <table style={tableStyle}>
-        <thead><tr>{cfg.cols.map(c => <th key={c} style={thS}>{c}</th>)}{hasActions && <th style={thS}></th>}</tr></thead>
-        <tbody>
-          {rows.map(item => (
-            <tr key={item.id}>
-              {cfg.cols.map(c => (
-                <td key={c} style={tdS}>
-                  {c === 'created_at' ? fmtDate(item[c]) :
-                   c === 'text' ? (item[c]?.slice(0, 80) || '-') :
-                   c === 'message_text' ? (item[c]?.replace(/<[^>]+>/g, '').slice(0, 60) || '-') :
-                   (item[c] ?? '-')}
-                </td>
-              ))}
-              {hasActions && (
-                <td style={tdS}>
-                  {cfg.editable && <button style={btnEdit} onClick={() => openEditItem(item)}>Ред.</button>}
-                  {cfg.deleteEndpoint && <button style={btnDanger} onClick={() => handleDeleteItem(item.id)}>Удалить</button>}
-                </td>
-              )}
-            </tr>
-          ))}
-          {!rows.length && <tr><td colSpan={cfg.cols.length + (hasActions ? 1 : 0)} style={{ ...tdS, textAlign: 'center', color: '#aaa' }}>Нет данных</td></tr>}
-        </tbody>
-      </table>
+      <div style={tableWrap}>
+        <table style={tableStyle}>
+          <thead><tr>{cfg.cols.map(c => <th key={c} style={th}>{c}</th>)}{hasActions && <th style={th}></th>}</tr></thead>
+          <tbody>
+            {rows.map(item => (
+              <tr key={item.id} style={{ transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = ''}>
+                {cfg.cols.map(c => (
+                  <td key={c} style={td}>
+                    {c === 'created_at' ? fmtDate(item[c]) :
+                     c === 'status' ? <span style={statusBadge(item[c])}>{item[c] || '-'}</span> :
+                     c === 'text' ? (item[c]?.slice(0, 80) || '-') :
+                     c === 'message_text' ? (item[c]?.replace(/<[^>]+>/g, '').slice(0, 60) || '-') :
+                     (item[c] ?? '-')}
+                  </td>
+                ))}
+                {hasActions && (
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                    {cfg.editable && <button style={{ ...btnOutline, marginRight: 6, fontSize: 11, padding: '4px 12px' }} onClick={() => openEditItem(item)}>Ред.</button>}
+                    {cfg.deleteEndpoint && <button style={{ ...btnDanger, fontSize: 11, padding: '4px 12px' }} onClick={() => handleDeleteItem(item.id)}>Удалить</button>}
+                  </td>
+                )}
+              </tr>
+            ))}
+            {!rows.length && <tr><td colSpan={cfg.cols.length + (hasActions ? 1 : 0)} style={emptyState}>Нет данных</td></tr>}
+          </tbody>
+        </table>
+      </div>
     );
   };
 
   const renderLinks = () => {
     const rows = tabData?.links || [];
     return (
-      <table style={tableStyle}>
-        <thead><tr><th style={thS}>ID</th><th style={thS}>Название</th><th style={thS}>Код</th><th style={thS}>UTM Source</th><th style={thS}>Клики</th><th style={thS}>Пауза</th><th style={thS}></th></tr></thead>
-        <tbody>{rows.map(l => (
-          <tr key={l.id}>
-            <td style={tdS}>{l.id}</td><td style={tdS}>{l.name}</td><td style={tdS}>{l.short_code}</td>
-            <td style={tdS}>{l.utm_source || '-'}</td><td style={tdS}>{l.clicks}</td>
-            <td style={tdS}>{l.is_paused ? 'Да' : 'Нет'}</td>
-            <td style={tdS}>
-              <button style={btnEdit} onClick={() => setEditLink({ ...l })}>Ред.</button>
-              <button style={btnDanger} onClick={() => handleDeleteLink(l.id)}>Удалить</button>
-            </td>
-          </tr>
-        ))}</tbody>
-      </table>
+      <div style={tableWrap}>
+        <table style={tableStyle}>
+          <thead><tr><th style={th}>ID</th><th style={th}>Название</th><th style={th}>Код</th><th style={th}>UTM Source</th><th style={th}>Клики</th><th style={th}>Пауза</th><th style={th}></th></tr></thead>
+          <tbody>{rows.map(l => (
+            <tr key={l.id} style={{ transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = ''}>
+              <td style={td}>{l.id}</td><td style={{ ...td, fontWeight: 600 }}>{l.name}</td><td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{l.short_code}</td>
+              <td style={td}>{l.utm_source || '—'}</td><td style={{ ...td, fontWeight: 600 }}>{l.clicks}</td>
+              <td style={td}><span style={statusBadge(l.is_paused ? 'failed' : 'active')}>{l.is_paused ? 'Да' : 'Нет'}</span></td>
+              <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                <button style={{ ...btnOutline, marginRight: 6, fontSize: 11, padding: '4px 12px' }} onClick={() => setEditLink({ ...l })}>Ред.</button>
+                <button style={{ ...btnDanger, fontSize: 11, padding: '4px 12px' }} onClick={() => handleDeleteLink(l.id)}>Удалить</button>
+              </td>
+            </tr>
+          ))}{!rows.length && <tr><td colSpan={7} style={emptyState}>Нет ссылок</td></tr>}</tbody>
+        </table>
+      </div>
     );
   };
 
   const renderSubscribers = () => {
     const rows = tabData?.subscribers || [];
     return (
-      <table style={tableStyle}>
-        <thead><tr><th style={thS}>ID</th><th style={thS}>Имя</th><th style={thS}>Username</th><th style={thS}>Платформа</th><th style={thS}>Дата</th></tr></thead>
-        <tbody>{rows.map((s, i) => (
-          <tr key={i}>
-            <td style={tdS}>{s.telegram_id || s.max_user_id || '-'}</td>
-            <td style={tdS}>{s.first_name || '-'}</td>
-            <td style={tdS}>{s.username || '-'}</td>
-            <td style={tdS}>{s.platform || (s.telegram_id ? 'telegram' : 'max')}</td>
-            <td style={tdS}>{fmtDate(s.subscribed_at)}</td>
-          </tr>
-        ))}</tbody>
-      </table>
+      <div style={tableWrap}>
+        <table style={tableStyle}>
+          <thead><tr><th style={th}>ID</th><th style={th}>Имя</th><th style={th}>Username</th><th style={th}>Платформа</th><th style={th}>Дата</th></tr></thead>
+          <tbody>{rows.map((s, i) => (
+            <tr key={i} style={{ transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = ''}>
+              <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{s.telegram_id || s.max_user_id || '—'}</td>
+              <td style={{ ...td, fontWeight: 600 }}>{s.first_name || '—'}</td>
+              <td style={td}>{s.username || '—'}</td>
+              <td style={td}><span style={badge(s.telegram_id ? '#dbeafe' : '#ede9fe', s.telegram_id ? '#1e40af' : '#5b21b6')}>{s.platform || (s.telegram_id ? 'telegram' : 'max')}</span></td>
+              <td style={td}>{fmtDate(s.subscribed_at)}</td>
+            </tr>
+          ))}{!rows.length && <tr><td colSpan={5} style={emptyState}>Нет подписчиков</td></tr>}</tbody>
+        </table>
+      </div>
     );
   };
 
@@ -176,115 +193,132 @@ export default function AdminChannelProfilePage() {
     const paymentSettings = tabData?.payment_settings || [];
     const plans = tabData?.plans || [];
     const payments = tabData?.payments || [];
-    const statusBadge = (s) => {
-      const colors = { active: '#d4edda', paid: '#d4edda', pending: '#fff3cd', failed: '#f8d7da' };
-      const textColors = { active: '#155724', paid: '#155724', pending: '#856404', failed: '#721c24' };
-      return { display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: colors[s] || '#eee', color: textColors[s] || '#666' };
-    };
     return (
-      <div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         {/* Payment Settings */}
-        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Эквайринги ({paymentSettings.length})</h4>
-        {paymentSettings.length > 0 ? (
-          <table style={{ ...tableStyle, marginBottom: 16 }}>
-            <thead><tr><th style={thS}>Провайдер</th><th style={thS}>Активен</th><th style={thS}>Ключи</th></tr></thead>
-            <tbody>{paymentSettings.map(ps => {
-              let creds = ps.credentials;
-              if (typeof creds === 'string') try { creds = JSON.parse(creds); } catch { creds = {}; }
-              const keys = Object.keys(creds || {}).filter(k => k !== 'password' && k !== 'secret_key').map(k => `${k}: ${String(creds[k]).slice(0, 20)}...`).join(', ');
-              return (
-                <tr key={ps.id}>
-                  <td style={{ ...tdS, fontWeight: 600 }}>{ps.provider}</td>
-                  <td style={tdS}><span style={statusBadge(ps.is_active ? 'active' : 'failed')}>{ps.is_active ? 'Да' : 'Нет'}</span></td>
-                  <td style={{ ...tdS, fontSize: 11, color: '#999' }}>{keys || '-'}</td>
-                </tr>
-              );
-            })}</tbody>
-          </table>
-        ) : <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Не подключены</div>}
+        <div style={card}>
+          <h4 style={sectionTitle}>Эквайринги ({paymentSettings.length})</h4>
+          {paymentSettings.length > 0 ? (
+            <div style={{ ...tableWrap, boxShadow: 'none', border: '1px solid #f0f0f0' }}>
+              <table style={tableStyle}>
+                <thead><tr><th style={th}>Провайдер</th><th style={th}>Активен</th><th style={th}>Ключи</th></tr></thead>
+                <tbody>{paymentSettings.map(ps => {
+                  let creds = ps.credentials;
+                  if (typeof creds === 'string') try { creds = JSON.parse(creds); } catch { creds = {}; }
+                  const keys = Object.keys(creds || {}).filter(k => k !== 'password' && k !== 'secret_key').map(k => `${k}: ${String(creds[k]).slice(0, 20)}...`).join(', ');
+                  return (
+                    <tr key={ps.id}>
+                      <td style={{ ...td, fontWeight: 600 }}>{ps.provider}</td>
+                      <td style={td}><span style={statusBadge(ps.is_active ? 'active' : 'failed')}>{ps.is_active ? 'Да' : 'Нет'}</span></td>
+                      <td style={{ ...td, fontSize: 11, color: '#999' }}>{keys || '—'}</td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            </div>
+          ) : <div style={emptyState}>Не подключены</div>}
+        </div>
 
         {/* Plans */}
-        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Тарифы ({plans.length})</h4>
-        {plans.length > 0 ? (
-          <table style={{ ...tableStyle, marginBottom: 16 }}>
-            <thead><tr><th style={thS}>ID</th><th style={thS}>Название</th><th style={thS}>Цена</th><th style={thS}>Тип</th><th style={thS}>Дни</th><th style={thS}>Активен</th></tr></thead>
-            <tbody>{plans.map(p => (
-              <tr key={p.id}>
-                <td style={tdS}>{p.id}</td>
-                <td style={tdS}>{p.title || '-'}</td>
-                <td style={{ ...tdS, fontWeight: 600 }}>{p.price} {p.currency || 'RUB'}</td>
-                <td style={tdS}>{p.plan_type === 'one_time' ? 'Разовый' : 'Подписка'}</td>
-                <td style={tdS}>{p.duration_days || '-'}</td>
-                <td style={tdS}><span style={statusBadge(p.is_active ? 'active' : 'failed')}>{p.is_active ? 'Да' : 'Нет'}</span></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        ) : <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Нет тарифов</div>}
+        <div style={card}>
+          <h4 style={sectionTitle}>Тарифы ({plans.length})</h4>
+          {plans.length > 0 ? (
+            <div style={{ ...tableWrap, boxShadow: 'none', border: '1px solid #f0f0f0' }}>
+              <table style={tableStyle}>
+                <thead><tr><th style={th}>ID</th><th style={th}>Название</th><th style={th}>Цена</th><th style={th}>Тип</th><th style={th}>Дни</th><th style={th}>Активен</th></tr></thead>
+                <tbody>{plans.map(p => (
+                  <tr key={p.id}>
+                    <td style={td}>{p.id}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{p.title || '—'}</td>
+                    <td style={{ ...td, fontWeight: 700, color: '#166534' }}>{p.price} {p.currency || 'RUB'}</td>
+                    <td style={td}><span style={badge(p.plan_type === 'one_time' ? '#dbeafe' : '#ede9fe', p.plan_type === 'one_time' ? '#1e40af' : '#5b21b6')}>{p.plan_type === 'one_time' ? 'Разовый' : 'Подписка'}</span></td>
+                    <td style={td}>{p.duration_days || '—'}</td>
+                    <td style={td}><span style={statusBadge(p.is_active ? 'active' : 'failed')}>{p.is_active ? 'Да' : 'Нет'}</span></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <div style={emptyState}>Нет тарифов</div>}
+        </div>
 
         {/* Chats */}
-        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Чаты ({chats.length})</h4>
-        {chats.length > 0 ? (
-          <table style={{ ...tableStyle, marginBottom: 16 }}>
-            <thead><tr><th style={thS}>ID</th><th style={thS}>Название</th><th style={thS}>Chat ID</th><th style={thS}>Статус</th></tr></thead>
-            <tbody>{chats.map(c => (
-              <tr key={c.id}>
-                <td style={tdS}>{c.id}</td>
-                <td style={tdS}>{c.title || '-'}</td>
-                <td style={{ ...tdS, fontSize: 11 }}>{c.chat_id}</td>
-                <td style={tdS}><span style={statusBadge(c.is_active ? 'active' : 'failed')}>{c.is_active ? 'Активен' : 'Неактивен'}</span></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        ) : <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Нет чатов</div>}
+        <div style={card}>
+          <h4 style={sectionTitle}>Чаты ({chats.length})</h4>
+          {chats.length > 0 ? (
+            <div style={{ ...tableWrap, boxShadow: 'none', border: '1px solid #f0f0f0' }}>
+              <table style={tableStyle}>
+                <thead><tr><th style={th}>ID</th><th style={th}>Название</th><th style={th}>Chat ID</th><th style={th}>Статус</th></tr></thead>
+                <tbody>{chats.map(c => (
+                  <tr key={c.id}>
+                    <td style={td}>{c.id}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{c.title || '—'}</td>
+                    <td style={{ ...td, fontFamily: 'monospace', fontSize: 11 }}>{c.chat_id}</td>
+                    <td style={td}><span style={statusBadge(c.is_active ? 'active' : 'failed')}>{c.is_active ? 'Активен' : 'Неактивен'}</span></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <div style={emptyState}>Нет чатов</div>}
+        </div>
 
         {/* Members */}
-        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Участники ({members.length})</h4>
-        {members.length > 0 ? (
-          <table style={{ ...tableStyle, marginBottom: 16 }}>
-            <thead><tr><th style={thS}>Чат</th><th style={thS}>User ID</th><th style={thS}>Имя</th><th style={thS}>Статус</th><th style={thS}>Истекает</th><th style={thS}>Дата</th></tr></thead>
-            <tbody>{members.map((m, i) => (
-              <tr key={i}>
-                <td style={tdS}>{m.chat_title || m.paid_chat_id}</td>
-                <td style={tdS}>{m.telegram_id || m.max_user_id || '-'}</td>
-                <td style={tdS}>{m.first_name || m.username || '-'}</td>
-                <td style={tdS}><span style={statusBadge(m.status)}>{m.status}</span></td>
-                <td style={tdS}>{m.expires_at ? fmtDate(m.expires_at) : 'Бессрочно'}</td>
-                <td style={tdS}>{fmtDate(m.joined_at || m.starts_at)}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        ) : <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Нет участников</div>}
+        <div style={card}>
+          <h4 style={sectionTitle}>Участники ({members.length})</h4>
+          {members.length > 0 ? (
+            <div style={{ ...tableWrap, boxShadow: 'none', border: '1px solid #f0f0f0' }}>
+              <table style={tableStyle}>
+                <thead><tr><th style={th}>Чат</th><th style={th}>User ID</th><th style={th}>Имя</th><th style={th}>Статус</th><th style={th}>Истекает</th><th style={th}>Дата</th></tr></thead>
+                <tbody>{members.map((m, i) => (
+                  <tr key={i}>
+                    <td style={td}>{m.chat_title || m.paid_chat_id}</td>
+                    <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{m.telegram_id || m.max_user_id || '—'}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{m.first_name || m.username || '—'}</td>
+                    <td style={td}><span style={statusBadge(m.status)}>{m.status}</span></td>
+                    <td style={td}>{m.expires_at ? fmtDate(m.expires_at) : 'Бессрочно'}</td>
+                    <td style={td}>{fmtDate(m.joined_at || m.starts_at)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <div style={emptyState}>Нет участников</div>}
+        </div>
 
         {/* Payments */}
-        <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Платежи ({payments.length})</h4>
-        {payments.length > 0 ? (
-          <table style={{ ...tableStyle, marginBottom: 16 }}>
-            <thead><tr><th style={thS}>ID</th><th style={thS}>Дата</th><th style={thS}>Провайдер</th><th style={thS}>Тариф</th><th style={thS}>Сумма</th><th style={thS}>Статус</th><th style={thS}>User</th></tr></thead>
-            <tbody>{payments.map(p => (
-              <tr key={p.id}>
-                <td style={tdS}>{p.id}</td>
-                <td style={tdS}>{fmtDate(p.created_at)}</td>
-                <td style={tdS}>{p.provider}</td>
-                <td style={tdS}>{p.plan_title || '-'}</td>
-                <td style={{ ...tdS, fontWeight: 600 }}>{p.amount} {p.currency || 'RUB'}</td>
-                <td style={tdS}><span style={statusBadge(p.status)}>{p.status}</span></td>
-                <td style={{ ...tdS, fontSize: 11 }}>{p.first_name || p.username || p.telegram_id || p.max_user_id || '-'}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        ) : <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Нет платежей</div>}
+        <div style={card}>
+          <h4 style={sectionTitle}>Платежи ({payments.length})</h4>
+          {payments.length > 0 ? (
+            <div style={{ ...tableWrap, boxShadow: 'none', border: '1px solid #f0f0f0' }}>
+              <table style={tableStyle}>
+                <thead><tr><th style={th}>ID</th><th style={th}>Дата</th><th style={th}>Провайдер</th><th style={th}>Тариф</th><th style={th}>Сумма</th><th style={th}>Статус</th><th style={th}>User</th></tr></thead>
+                <tbody>{payments.map(p => (
+                  <tr key={p.id}>
+                    <td style={td}>{p.id}</td>
+                    <td style={td}>{fmtDate(p.created_at)}</td>
+                    <td style={td}>{p.provider}</td>
+                    <td style={td}>{p.plan_title || '—'}</td>
+                    <td style={{ ...td, fontWeight: 700, color: '#166534' }}>{p.amount} {p.currency || 'RUB'}</td>
+                    <td style={td}><span style={statusBadge(p.status)}>{p.status}</span></td>
+                    <td style={{ ...td, fontSize: 11 }}>{p.first_name || p.username || p.telegram_id || p.max_user_id || '—'}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <div style={emptyState}>Нет платежей</div>}
+        </div>
 
         {/* Posts */}
         {posts.length > 0 && (
-          <>
-            <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Публикации ({posts.length})</h4>
-            <table style={tableStyle}>
-              <thead><tr><th style={thS}>ID</th><th style={thS}>Чат</th><th style={thS}>Текст</th><th style={thS}>Дата</th></tr></thead>
-              <tbody>{posts.map(p => (
-                <tr key={p.id}><td style={tdS}>{p.id}</td><td style={tdS}>{p.chat_title || p.paid_chat_id}</td><td style={tdS}>{(p.message_text || '').slice(0, 60) || '-'}</td><td style={tdS}>{fmtDate(p.created_at)}</td></tr>
-              ))}</tbody>
-            </table>
-          </>
+          <div style={card}>
+            <h4 style={sectionTitle}>Публикации ({posts.length})</h4>
+            <div style={{ ...tableWrap, boxShadow: 'none', border: '1px solid #f0f0f0' }}>
+              <table style={tableStyle}>
+                <thead><tr><th style={th}>ID</th><th style={th}>Чат</th><th style={th}>Текст</th><th style={th}>Дата</th></tr></thead>
+                <tbody>{posts.map(p => (
+                  <tr key={p.id}><td style={td}>{p.id}</td><td style={td}>{p.chat_title || p.paid_chat_id}</td><td style={td}>{(p.message_text || '').slice(0, 60) || '—'}</td><td style={td}>{fmtDate(p.created_at)}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
     );
@@ -295,33 +329,31 @@ export default function AdminChannelProfilePage() {
     const typeColors = { visit: '#3b82f6', subscription: '#10b981', pin: '#f59e0b', broadcast: '#8b5cf6', post: '#6366f1', giveaway: '#ef4444', lead: '#14b8a6' };
     const typeLabels = { visit: 'Визит', subscription: 'Подписка', pin: 'Закреп', broadcast: 'Рассылка', post: 'Публикация', giveaway: 'Розыгрыш', lead: 'Лид-магнит' };
     return (
-      <div>
+      <div style={card}>
         <div style={{ maxHeight: 600, overflowY: 'auto' }}>
           {rows.map((log, i) => (
             <div key={i} style={{
-              padding: '10px 14px', marginBottom: 6, borderRadius: 8, fontSize: 13,
-              background: '#f8f9fa',
-              borderLeft: `3px solid ${typeColors[log.type] || '#aaa'}`,
+              padding: '12px 16px', marginBottom: 8, borderRadius: 10, fontSize: 13,
+              background: '#fafbfc',
+              borderLeft: `3px solid ${typeColors[log.type] || '#ccc'}`,
+              transition: 'background 0.15s',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <span style={{
-                  display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
-                  background: (typeColors[log.type] || '#888') + '20', color: typeColors[log.type] || '#888',
-                }}>{typeLabels[log.type] || log.type}</span>
-                <span style={{ fontSize: 11, color: '#999' }}>{fmtDate(log.created_at)}</span>
+                <span style={badge((typeColors[log.type] || '#888') + '18', typeColors[log.type] || '#888')}>{typeLabels[log.type] || log.type}</span>
+                <span style={{ fontSize: 11, color: '#bbb' }}>{fmtDate(log.created_at)}</span>
               </div>
-              <div style={{ color: '#333' }}>{log.text || '-'}</div>
-              {log.platform && <span style={{ fontSize: 11, color: '#999' }}>{log.platform}</span>}
+              <div style={{ color: '#333', lineHeight: 1.5 }}>{log.text || '—'}</div>
+              {log.platform && <span style={{ fontSize: 11, color: '#bbb', marginTop: 2, display: 'inline-block' }}>{log.platform}</span>}
             </div>
           ))}
-          {!rows.length && <div style={{ color: '#aaa', textAlign: 'center', padding: 40 }}>Нет логов</div>}
+          {!rows.length && <div style={emptyState}>Нет логов</div>}
         </div>
       </div>
     );
   };
 
   const renderTabContent = () => {
-    if (!tabData) return <div style={{ color: '#aaa', padding: 20 }}>Загрузка...</div>;
+    if (!tabData) return <div style={{ ...emptyState, padding: 40 }}>Загрузка...</div>;
     if (tab === 'links') return renderLinks();
     if (tab === 'subscribers') return renderSubscribers();
     if (tab === 'paidChats') return renderPaidChats();
@@ -331,34 +363,58 @@ export default function AdminChannelProfilePage() {
 
   return (
     <div>
-      <button onClick={() => navigate('/admin/channels')} style={{ background: 'none', border: 'none', color: '#4361ee', cursor: 'pointer', marginBottom: 12, fontSize: 13 }}>
-        &larr; К списку
+      <button onClick={() => navigate('/admin/channels')} style={{ background: 'none', border: 'none', color: '#4361ee', cursor: 'pointer', marginBottom: 16, fontSize: 13, fontWeight: 600, padding: 0 }}>
+        &larr; К списку каналов
       </button>
-      <div style={cardStyle}>
-        <h3 style={{ margin: '0 0 12px' }}>{channel.title || channel.username}</h3>
-        <div style={{ fontSize: 13, color: '#666', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <div>ID: {channel.id}</div>
-          <div>Платформа: {channel.platform}</div>
-          <div>Username: {channel.username || '-'}</div>
-          <div>Владелец: <span style={{ color: '#4361ee', cursor: 'pointer' }} onClick={() => navigate(`/admin/users/${channel.owner_id}`)}>{channel.owner_name || channel.owner_username}</span></div>
-          <div>Подписка: <span style={{ color: channel.billing_status === 'active' ? '#2a9d8f' : '#e63946' }}>{channel.billing_status || 'нет'}</span></div>
-          <div>Истекает: {channel.billing_expires ? new Date(channel.billing_expires).toLocaleDateString('ru') : '-'}</div>
+
+      {/* Channel header card */}
+      <div style={{ ...card, marginBottom: 20 }}>
+        <h3 style={{ ...pageTitle, marginBottom: 16 }}>{channel.title || channel.username}</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+          <div style={statCard('#4361ee')}>
+            <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 }}>ID</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a2e' }}>{channel.id}</div>
+          </div>
+          <div style={statCard('#10b981')}>
+            <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 }}>Платформа</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a2e' }}>{channel.platform}</div>
+          </div>
+          <div style={statCard('#f59e0b')}>
+            <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 }}>Username</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a2e' }}>{channel.username || '—'}</div>
+          </div>
+          <div style={statCard('#8b5cf6')}>
+            <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 }}>Владелец</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#4361ee', cursor: 'pointer' }} onClick={() => navigate(`/admin/users/${channel.owner_id}`)}>{channel.owner_name || channel.owner_username}</div>
+          </div>
+          <div style={statCard(channel.billing_status === 'active' ? '#10b981' : '#ef4444')}>
+            <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 }}>Подписка</div>
+            <div><span style={statusBadge(channel.billing_status === 'active' ? 'active' : 'failed')}>{channel.billing_status || 'нет'}</span></div>
+          </div>
+          <div style={statCard('#6366f1')}>
+            <div style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 }}>Истекает</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a2e' }}>{channel.billing_expires ? new Date(channel.billing_expires).toLocaleDateString('ru') : '—'}</div>
+          </div>
         </div>
       </div>
 
+      {/* Staff */}
       {staff.length > 0 && (
-        <div style={cardStyle}>
-          <h4 style={{ margin: '0 0 8px' }}>Сотрудники</h4>
+        <div style={{ ...tableWrap, marginBottom: 20 }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0' }}>
+            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#1a1a2e' }}>Сотрудники</h4>
+          </div>
           <table style={tableStyle}>
-            <thead><tr><th style={thS}>Имя</th><th style={thS}>Username</th><th style={thS}>Роль</th></tr></thead>
+            <thead><tr><th style={th}>Имя</th><th style={th}>Username</th><th style={th}>Роль</th></tr></thead>
             <tbody>{staff.map(s => (
-              <tr key={s.id}><td style={tdS}>{s.first_name || '-'}</td><td style={tdS}>{s.username || '-'}</td><td style={tdS}>{s.role}</td></tr>
+              <tr key={s.id}><td style={{ ...td, fontWeight: 600 }}>{s.first_name || '—'}</td><td style={td}>{s.username || '—'}</td><td style={td}><span style={statusBadge(s.role === 'admin' ? 'active' : 'draft')}>{s.role}</span></td></tr>
             ))}</tbody>
           </table>
         </div>
       )}
 
-      <div style={{ borderBottom: '1px solid #ddd', marginBottom: 16, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+      {/* Tabs */}
+      <div style={{ borderBottom: '1px solid #e5e7eb', marginBottom: 20, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
         {Object.entries(TAB_CONFIG).map(([key, cfg]) => (
           <button key={key} onClick={() => setTab(key)} style={tabBtn(tab === key)}>{cfg.label}</button>
         ))}
@@ -366,23 +422,24 @@ export default function AdminChannelProfilePage() {
 
       {renderTabContent()}
 
+      {/* Edit Link Modal */}
       {editLink && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
-          <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 400 }}>
-            <h3 style={{ margin: '0 0 16px' }}>Редактировать ссылку</h3>
+        <div style={modalOverlay}>
+          <div style={modalBox}>
+            <h3 style={{ ...pageTitle, fontSize: 18, marginBottom: 20 }}>Редактировать ссылку</h3>
             {['name', 'utm_source', 'utm_medium', 'utm_campaign'].map(field => (
-              <div key={field} style={{ marginBottom: 10 }}>
-                <label style={{ fontSize: 12, color: '#666' }}>{field}</label>
+              <div key={field} style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>{field}</label>
                 <input value={editLink[field] || ''} onChange={e => setEditLink({ ...editLink, [field]: e.target.value })}
-                  style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
+                  style={inputStyle} />
               </div>
             ))}
-            <label style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 16 }}>
+            <label style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center', marginBottom: 20, color: '#666', cursor: 'pointer' }}>
               <input type="checkbox" checked={!!editLink.is_paused} onChange={e => setEditLink({ ...editLink, is_paused: e.target.checked })} /> Пауза
             </label>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleSaveLink} style={{ background: '#4361ee', color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px', cursor: 'pointer' }}>Сохранить</button>
-              <button onClick={() => setEditLink(null)} style={{ padding: '8px 16px', border: '1px solid #ddd', borderRadius: 4, background: '#fff', cursor: 'pointer' }}>Отмена</button>
+              <button onClick={handleSaveLink} style={btnPrimary}>Сохранить</button>
+              <button onClick={() => setEditLink(null)} style={btnOutline}>Отмена</button>
             </div>
           </div>
         </div>
@@ -390,24 +447,24 @@ export default function AdminChannelProfilePage() {
 
       {/* Edit Item Modal */}
       {editItem && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
-          <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 500, maxHeight: '80vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ margin: 0 }}>Редактировать #{editItem.id}</h3>
+        <div style={modalOverlay}>
+          <div style={{ ...modalBox, maxWidth: 520, maxHeight: '80vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h3 style={{ ...pageTitle, fontSize: 18, margin: 0 }}>Редактировать #{editItem.id}</h3>
               {editForm.message_text !== undefined && (
-                <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#666' }}>
+                <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#999' }}>
                   <input type="checkbox" checked={previewMode} onChange={e => setPreviewMode(e.target.checked)} />
                   Предпросмотр
                 </label>
               )}
             </div>
             {Object.keys(editForm).map(field => (
-              <div key={field} style={{ marginBottom: 10 }}>
-                <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 2 }}>{field}</label>
+              <div key={field} style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>{field}</label>
                 {field === 'message_text' ? (
                   previewMode ? (
                     <div
-                      style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 6, minHeight: 100, fontSize: 14, lineHeight: 1.6, background: '#fafafa', whiteSpace: 'pre-wrap' }}
+                      style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, minHeight: 100, fontSize: 14, lineHeight: 1.6, background: '#fafbfc', whiteSpace: 'pre-wrap' }}
                       dangerouslySetInnerHTML={{ __html: (editForm[field] || '')
                         .replace(/<br[^>]*\/?>/gi, '\n')
                         .replace(/<\/(?:div|p)>/gi, '\n')
@@ -419,14 +476,14 @@ export default function AdminChannelProfilePage() {
                     <textarea
                       value={editForm[field] || ''}
                       onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}
-                      style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 6, fontSize: 13, boxSizing: 'border-box', minHeight: 100 }}
+                      style={textareaStyle}
                     />
                   )
                 ) : field === 'status' ? (
                   <select
                     value={editForm[field] || ''}
                     onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}
-                    style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 6, fontSize: 13 }}
+                    style={selectStyle}
                   >
                     <option value="draft">Черновик</option>
                     <option value="scheduled">Запланирован</option>
@@ -439,14 +496,14 @@ export default function AdminChannelProfilePage() {
                   <input
                     value={editForm[field] || ''}
                     onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}
-                    style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+                    style={inputStyle}
                   />
                 )}
               </div>
             ))}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button onClick={handleSaveItem} style={{ background: '#4361ee', color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px', cursor: 'pointer' }}>Сохранить</button>
-              <button onClick={() => setEditItem(null)} style={{ padding: '8px 16px', border: '1px solid #ddd', borderRadius: 4, background: '#fff', cursor: 'pointer' }}>Отмена</button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+              <button onClick={handleSaveItem} style={btnPrimary}>Сохранить</button>
+              <button onClick={() => setEditItem(null)} style={btnOutline}>Отмена</button>
             </div>
           </div>
         </div>
