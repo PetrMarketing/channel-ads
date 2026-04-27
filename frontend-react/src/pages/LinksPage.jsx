@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Paywall from '../components/Paywall';
 import { useChannels } from '../contexts/ChannelContext';
@@ -254,30 +254,10 @@ export default function LinksPage() {
                       </button>
                     </div>
                     {expandedStats[link.id] && (
-                      <div style={{ marginTop: 8, padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: '0.8rem' }}>
+                      <div style={{ marginTop: 10, padding: '12px 0', borderTop: '1px solid var(--border)' }}>
                         {!(dailyStats[link.id]?.length) ? (
-                          <span style={{ color: 'var(--text-secondary)' }}>Нет данных</span>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <div style={{ display: 'flex', gap: 8, fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.72rem', padding: '2px 0' }}>
-                              <span style={{ width: 90 }}>Дата</span>
-                              <span style={{ width: 60, textAlign: 'right' }}>Визиты</span>
-                              <span style={{ width: 60, textAlign: 'right' }}>Подписки</span>
-                              <span style={{ width: 60, textAlign: 'right' }}>CR%</span>
-                            </div>
-                            {dailyStats[link.id].map((d, i) => {
-                              const cr = d.visits > 0 ? ((d.subs / d.visits) * 100).toFixed(1) : '—';
-                              return (
-                                <div key={i} style={{ display: 'flex', gap: 8, padding: '2px 0', borderBottom: '1px solid var(--border)' }}>
-                                  <span style={{ width: 90, color: 'var(--text-secondary)' }}>{d.day?.slice(0, 10)}</span>
-                                  <span style={{ width: 60, textAlign: 'right' }}>{d.visits}</span>
-                                  <span style={{ width: 60, textAlign: 'right', fontWeight: 600, color: d.subs > 0 ? 'var(--success, #10B981)' : 'inherit' }}>{d.subs}</span>
-                                  <span style={{ width: 60, textAlign: 'right', color: 'var(--text-secondary)' }}>{cr}{cr !== '—' ? '%' : ''}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                          <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>Нет данных</span>
+                        ) : <DailyChart data={dailyStats[link.id]} />}
                       </div>
                     )}
                   </div>
@@ -592,3 +572,166 @@ export default function LinksPage() {
 }
 
 const btnSmall = { padding: '4px 10px', fontSize: '0.8rem' };
+
+function DailyChart({ data }) {
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [hover, setHover] = useState(null);
+  const chartRef = useRef(null);
+
+  // Текущий отображаемый месяц
+  const now = new Date();
+  const viewDate = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthLabel = viewDate.toLocaleString('ru-RU', { month: 'long', year: 'numeric' });
+
+  // Заполняем все дни месяца
+  const dataMap = {};
+  data.forEach(d => { if (d.day) dataMap[d.day.slice(0, 10)] = d; });
+
+  const days = [];
+  for (let i = 1; i <= daysInMonth; i++) {
+    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+    const d = dataMap[key];
+    days.push({ day: i, visits: d?.visits || 0, subs: d?.subs || 0 });
+  }
+
+  const maxVal = Math.max(...days.map(d => Math.max(d.visits, d.subs)), 1);
+  const totalV = days.reduce((a, d) => a + d.visits, 0);
+  const totalS = days.reduce((a, d) => a + d.subs, 0);
+  const cr = totalV > 0 ? ((totalS / totalV) * 100).toFixed(1) : '0';
+
+  // SVG line chart
+  const w = 500;
+  const h = 100;
+  const pad = { top: 4, bottom: 4, left: 0, right: 0 };
+  const cw = w - pad.left - pad.right;
+  const ch = h - pad.top - pad.bottom;
+
+  const toX = (i) => pad.left + (i / (daysInMonth - 1)) * cw;
+  const toY = (v) => pad.top + ch - (v / maxVal) * ch;
+
+  const makePath = (key) => {
+    return days.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(d[key]).toFixed(1)}`).join(' ');
+  };
+  const makeArea = (key) => {
+    const line = days.map((d, i) => `${toX(i).toFixed(1)},${toY(d[key]).toFixed(1)}`).join(' L');
+    return `M${toX(0).toFixed(1)},${(pad.top + ch).toFixed(1)} L${line} L${toX(daysInMonth - 1).toFixed(1)},${(pad.top + ch).toFixed(1)} Z`;
+  };
+
+  const visitPath = makePath('visits');
+  const subsPath = makePath('subs');
+  const visitArea = makeArea('visits');
+  const subsArea = makeArea('subs');
+
+  // Даты для оси X
+  const xLabels = [1, Math.ceil(daysInMonth / 4), Math.ceil(daysInMonth / 2), Math.ceil(daysInMonth * 3 / 4), daysInMonth];
+
+  return (
+    <div>
+      {/* Переключатель месяца + сводка */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={() => setMonthOffset(p => p + 1)} style={{
+            background: 'none', border: '1px solid var(--border)', borderRadius: 6,
+            width: 26, height: 26, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.8rem', color: 'var(--text-secondary)',
+          }}>&#8249;</button>
+          <span style={{ fontSize: '0.82rem', fontWeight: 600, minWidth: 130, textAlign: 'center', textTransform: 'capitalize' }}>{monthLabel}</span>
+          <button onClick={() => setMonthOffset(p => Math.max(0, p - 1))} disabled={monthOffset === 0} style={{
+            background: 'none', border: '1px solid var(--border)', borderRadius: 6,
+            width: 26, height: 26, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.8rem', color: 'var(--text-secondary)', opacity: monthOffset === 0 ? 0.3 : 1,
+          }}>&#8250;</button>
+        </div>
+        <div style={{ display: 'flex', gap: 14, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+          <span>Визиты: <b style={{ color: '#7B68EE' }}>{totalV}</b></span>
+          <span>Подписки: <b style={{ color: '#10B981' }}>{totalS}</b></span>
+          <span>CR: <b>{cr}%</b></span>
+        </div>
+      </div>
+
+      {/* SVG график */}
+      <div ref={chartRef} style={{ position: 'relative' }}
+        onMouseLeave={() => setHover(null)}>
+        <svg viewBox={`0 0 ${w} ${h + 16}`} style={{ width: '100%', height: 'auto', maxHeight: 130, display: 'block' }}
+          onMouseMove={e => {
+            const rect = chartRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const x = ((e.clientX - rect.left) / rect.width) * w;
+            const idx = Math.round(((x - pad.left) / cw) * (daysInMonth - 1));
+            if (idx >= 0 && idx < daysInMonth && days[idx]) {
+              const pct = (e.clientX - rect.left) / rect.width * 100;
+              setHover({ idx, pct });
+            }
+          }}>
+          <defs>
+            <linearGradient id="gVisit" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#7B68EE" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="#7B68EE" stopOpacity="0" />
+            </linearGradient>
+            <linearGradient id="gSubs" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10B981" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="#10B981" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {[0.25, 0.5, 0.75].map(r => (
+            <line key={r} x1={pad.left} x2={w - pad.right} y1={pad.top + ch * (1 - r)} y2={pad.top + ch * (1 - r)}
+              stroke="var(--border, #e0e0e0)" strokeWidth="0.5" strokeDasharray="4,4" />
+          ))}
+          <path d={visitArea} fill="url(#gVisit)" />
+          <path d={subsArea} fill="url(#gSubs)" />
+          <path d={visitPath} fill="none" stroke="#7B68EE" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={subsPath} fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Hover vertical line */}
+          {hover && (
+            <line x1={toX(hover.idx)} x2={toX(hover.idx)} y1={pad.top} y2={pad.top + ch}
+              stroke="var(--text-secondary, #999)" strokeWidth="0.8" strokeDasharray="3,3" />
+          )}
+          {/* Dots */}
+          {days.map((d, i) => {
+            const isHovered = hover?.idx === i;
+            return [
+              d.visits > 0 && <circle key={`v${i}`} cx={toX(i)} cy={toY(d.visits)} r={isHovered ? 4 : 2.5} fill="#7B68EE" opacity={isHovered ? 1 : 0.8} />,
+              d.subs > 0 && <circle key={`s${i}`} cx={toX(i)} cy={toY(d.subs)} r={isHovered ? 4 : 2.5} fill="#10B981" opacity={isHovered ? 1 : 0.8} />,
+              isHovered && d.visits === 0 && <circle key={`vh${i}`} cx={toX(i)} cy={toY(0)} r={3} fill="#7B68EE" opacity={0.4} />,
+              isHovered && d.subs === 0 && <circle key={`sh${i}`} cx={toX(i)} cy={toY(0)} r={3} fill="#10B981" opacity={0.4} />,
+            ];
+          })}
+          {xLabels.map(d => (
+            <text key={d} x={toX(d - 1)} y={h + 12} textAnchor="middle" fontSize="9" fill="var(--text-secondary, #aaa)">{d}</text>
+          ))}
+        </svg>
+        {/* Tooltip */}
+        {hover && days[hover.idx] && (
+          <div style={{
+            position: 'absolute', top: 0,
+            left: `${hover.pct}%`, transform: hover.pct > 75 ? 'translateX(-100%)' : 'translateX(-50%)',
+            background: 'var(--bg-primary, #fff)', border: '1px solid var(--border, #e0e0e0)',
+            borderRadius: 8, padding: '6px 10px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            fontSize: '0.75rem', pointerEvents: 'none', zIndex: 10, whiteSpace: 'nowrap',
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: 3 }}>
+              {days[hover.idx].day} {monthLabel}
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <span style={{ color: '#7B68EE' }}>Визиты: <b>{days[hover.idx].visits}</b></span>
+              <span style={{ color: '#10B981' }}>Подписки: <b>{days[hover.idx].subs}</b></span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Легенда */}
+      <div style={{ display: 'flex', gap: 14, fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 14, height: 2, borderRadius: 1, background: '#7B68EE', display: 'inline-block' }} /> Визиты
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 14, height: 2, borderRadius: 1, background: '#10B981', display: 'inline-block' }} /> Подписки
+        </span>
+      </div>
+    </div>
+  );
+}

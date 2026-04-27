@@ -492,6 +492,7 @@ async def send_to_user(
 
 async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
     """Send a message to a channel on the correct platform."""
+    raw_html = text  # Сохраняем оригинальный HTML до санитизации
     text = sanitize_html_for_telegram(text)
     file_path = kwargs.get("file_path")
     file_type = kwargs.get("file_type")
@@ -514,7 +515,7 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
         if not max_api:
             raise RuntimeError("MAX bot not configured")
         chat_id = channel.get("max_chat_id") or channel.get("channel_id")
-        max_text = html_to_max_markdown(text)
+        max_text = html_to_max_markdown(raw_html)  # Конвертируем из оригинального HTML
         attachments = None
         _max_type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
         max_attach_type = _max_type_map.get(send_type, "file")

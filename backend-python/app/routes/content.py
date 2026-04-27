@@ -306,7 +306,7 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
 
     msg_id_str = str(msg_id) if msg_id else None
     await execute(
-        "UPDATE content_posts SET status = 'published', published_at = NOW(), telegram_message_id = $1 WHERE id = $2",
+        "UPDATE content_posts SET status = 'published', published_at = NOW(), scheduled_at = NULL, telegram_message_id = $1 WHERE id = $2",
         msg_id_str, post_id,
     )
     return {"success": True, "messageId": msg_id_str, "edited": edited}

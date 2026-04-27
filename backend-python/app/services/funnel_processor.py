@@ -279,7 +279,7 @@ async def process_scheduled_posts():
         SELECT cp.*, c.channel_id as ch_channel_id, c.platform, c.max_chat_id
         FROM content_posts cp
         JOIN channels c ON c.id = cp.channel_id
-        WHERE cp.status = 'scheduled' AND cp.scheduled_at <= NOW() + INTERVAL '3 hours'
+        WHERE cp.status = 'scheduled' AND cp.scheduled_at <= NOW()
     """)
     from .file_storage import ensure_file
     for post in posts:
