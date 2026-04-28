@@ -467,6 +467,73 @@ async def handle_paid_chat_max(max_api, chat_id: str, max_user_id: str, tracking
                 await _send_to_chat(max_api, chat_id, "📱 Введите ваш номер телефона для оплаты:")
 
 
+def _build_channel_url_for_link(link: dict) -> Optional[str]:
+    """Resolve the user-facing channel URL for a tracking_links row joined with channels."""
+    join_link = link.get("join_link")
+    max_chat_id = link.get("max_chat_id")
+    channel_username = link.get("channel_username")
+    if join_link:
+        return join_link
+    if max_chat_id:
+        return max_chat_id if max_chat_id.startswith("http") else f"https://max.ru/chats/{max_chat_id}"
+    if channel_username:
+        return f"https://max.ru/chats/{channel_username}"
+    return None
+
+
+async def _handle_visit_link(max_api, chat_id: str, max_user_id: str, first_name: str, visit_token: str):
+    """Handle bot deep link minted by the public /subscribe/{code} page.
+
+    Stamps max_user_id onto the existing visit so the eventual chat_member event
+    can be attributed back to it. Then sends the channel invite.
+    """
+    visit = await fetch_one(
+        """SELECT v.*, c.username as channel_username, c.max_chat_id, c.join_link,
+                  c.title as channel_title
+             FROM visits v JOIN channels c ON c.id = v.channel_id
+            WHERE v.visit_token = $1""",
+        visit_token,
+    )
+    if not visit:
+        await _send_to_chat(max_api, chat_id, "Ссылка не найдена или устарела.")
+        return
+
+    # Stamp the user's MAX id onto the visit (idempotent — only if missing).
+    try:
+        await execute(
+            "UPDATE visits SET max_user_id = COALESCE(max_user_id, $1) WHERE id = $2",
+            str(max_user_id), visit["id"],
+        )
+        print(f"[track] visit {visit['id']} linked to user {max_user_id}")
+    except Exception as e:
+        print(f"[MAX Bot] visit link stamp failed: {e}")
+
+    # Record an additional click (matches _handle_go_link's bookkeeping).
+    if visit.get("tracking_link_id"):
+        try:
+            await execute(
+                "INSERT INTO clicks (link_id, ip_address, user_agent) VALUES ($1, $2, $3)",
+                visit["tracking_link_id"], "max-bot", f"max-user:{max_user_id}",
+            )
+        except Exception:
+            pass
+
+    channel_url = _build_channel_url_for_link({
+        "join_link": visit.get("join_link"),
+        "max_chat_id": visit.get("max_chat_id"),
+        "channel_username": visit.get("channel_username"),
+    })
+    title = visit.get("channel_title", "Канал")
+    if channel_url:
+        await _send_to_chat(
+            max_api, chat_id,
+            f"👉 **{title}**\n\nПодпишитесь на канал:",
+            buttons=[[{"type": "link", "text": "Перейти в канал", "url": channel_url}]],
+        )
+    else:
+        await _send_to_chat(max_api, chat_id, "Канал не найден.")
+
+
 async def _handle_go_link(max_api, chat_id: str, max_user_id: str, first_name: str, short_code: str):
     """Handle seamless tracking link: record click+visit, redirect user to channel."""
     link = await fetch_one("""
@@ -607,6 +674,9 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
         return
     if payload.startswith("go_"):
         await _handle_go_link(max_api, chat_id, max_user_id, first_name, payload[3:])
+        return
+    if payload.startswith("v_"):
+        await _handle_visit_link(max_api, chat_id, max_user_id, first_name, payload[2:])
         return
 
     result = await _find_or_create_max_user(max_user_id, first_name, dialog_chat_id=chat_id)
@@ -1738,6 +1808,8 @@ async def process_max_update(body: dict):
                         print(f"[MAX Bot] message_callback: handle_paid_chat_max FAILED: {e}")
                 elif payload.startswith("go_"):
                     await _handle_go_link(max_api, chat_id, max_user_id, first_name, payload[3:])
+                elif payload.startswith("v_"):
+                    await _handle_visit_link(max_api, chat_id, max_user_id, first_name, payload[2:])
                 elif payload.startswith("invite_"):
                     await _handle_staff_invite(max_api, chat_id, max_user_id, first_name, payload[7:])
                 else:
@@ -1842,6 +1914,8 @@ async def process_max_update(body: dict):
                     print(f"[MAX Bot] message_callback: handle_paid_chat_max FAILED: {e}")
             elif payload.startswith("go_"):
                 await _handle_go_link(max_api, user_chat_id, max_user_id, first_name, payload[3:])
+            elif payload.startswith("v_"):
+                await _handle_visit_link(max_api, user_chat_id, max_user_id, first_name, payload[2:])
             else:
                 print(f"[MAX Bot] message_callback: unknown payload: {payload}")
 
@@ -2192,11 +2266,20 @@ async def process_max_update(body: dict):
                 """, channel["id"])
 
             try:
-                await execute("""
+                sub_id = await execute_returning_id("""
                     INSERT INTO subscriptions (channel_id, telegram_id, max_user_id, username, first_name, visit_id, platform)
                     VALUES ($1, NULL, $2, $3, $4, $5, 'max')
+                    RETURNING id
                 """, channel["id"], user_id, username, first_name, visit["id"] if visit else None)
                 print(f"[MAX Bot] Subscription: user={username or user_id}, channel={channel['id']}")
+                if sub_id and visit:
+                    print(f"[track] subscription {sub_id} linked to visit {visit['id']}")
+                    # Fire server-side YM/VK goals as fallback (idempotent).
+                    try:
+                        from ..services.conversion_pixels import fire_server_goals_safe
+                        await fire_server_goals_safe(sub_id)
+                    except Exception as fire_err:
+                        print(f"[track] server-fire dispatch failed: {fire_err}")
             except Exception as e:
                 if "duplicate" not in str(e).lower() and "unique" not in str(e).lower():
                     print(f"[MAX Bot] Subscription error: {e}")

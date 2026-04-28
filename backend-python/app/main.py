@@ -125,6 +125,11 @@ if os.path.isdir(frontend_dist):
     async def serve_logo_192():
         return FileResponse(os.path.join(frontend_dist, "logo-192.png"), media_type="image/png")
 
+    @app.get("/promo", include_in_schema=False)
+    async def serve_promo_landing():
+        landing_path = os.path.join(os.path.dirname(__file__), "routes", "maxmarketing_landing.html")
+        return FileResponse(landing_path, media_type="text/html")
+
     # Serve assets
     assets_dir = os.path.join(frontend_dist, "assets")
     if os.path.isdir(assets_dir):
@@ -166,6 +171,8 @@ from .routes import support
 app.include_router(support.router, prefix="/api/support", tags=["support"])
 from .routes import client_notes
 app.include_router(client_notes.router, prefix="/api/clients", tags=["client-notes"])
+from .routes import onboarding
+app.include_router(onboarding.router, prefix="/api/onboarding", tags=["onboarding"])
 
 # ========================
 # API Routes — Public

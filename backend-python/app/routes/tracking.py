@@ -1,10 +1,17 @@
+import secrets
 from fastapi import APIRouter, Request, HTTPException, Query
 from typing import Optional
 
 from ..middleware.auth import verify_telegram_webapp
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
+from ..services.conversion_pixels import fire_server_goals_safe
 
 router = APIRouter()
+
+
+def _new_visit_token() -> str:
+    """Generate a short URL-safe visit token (~11 chars from 8 random bytes)."""
+    return secrets.token_urlsafe(8)
 
 
 @router.post("/miniapp-visit")
@@ -70,9 +77,13 @@ async def record_click(short_code: str, request: Request):
 
 @router.get("/info/{short_code}")
 async def get_link_info(short_code: str):
+    # NOTE: alias channel-level pixel columns so they don't overwrite link-level
+    # overrides (tl.vk_pixel_id) when asyncpg Record is serialized to dict.
     link = await fetch_one("""
         SELECT tl.*, c.tracking_code, c.channel_id, c.title as channel_title, c.platform,
-            c.username as channel_username, c.max_chat_id, c.yandex_metrika_id, c.vk_pixel_id,
+            c.username as channel_username, c.max_chat_id,
+            c.yandex_metrika_id AS channel_ym_id,
+            c.vk_pixel_id AS channel_vk_pixel_id,
             c.join_link, lm.code as lm_code
         FROM tracking_links tl
         JOIN channels c ON c.id = tl.channel_id
@@ -118,17 +129,30 @@ async def create_visit(request: Request):
             username = tg_user.get("username")
             first_name = tg_user.get("first_name")
 
-    visit_id = await execute_returning_id(
-        """INSERT INTO visits (tracking_link_id, channel_id, telegram_id, username, first_name,
-            utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-            ip_address, user_agent, platform, max_user_id, ym_client_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id""",
-        link["id"], link["ch_id"], telegram_id, username, first_name,
-        link.get("utm_source"), link.get("utm_medium"), link.get("utm_campaign"),
-        link.get("utm_content"), link.get("utm_term"),
-        body.get("ip_address"), body.get("user_agent"),
-        platform, max_user_id, body.get("ym_client_id"),
-    )
+    # Issue a per-visit token so the bot can attribute the resulting subscription
+    # back to this visit (used by /subscribe/{code} → bot deep link → chat_member).
+    # Retry on the (extremely unlikely) collision against the unique index.
+    visit_token = _new_visit_token()
+    visit_id = None
+    for _attempt in range(3):
+        try:
+            visit_id = await execute_returning_id(
+                """INSERT INTO visits (tracking_link_id, channel_id, telegram_id, username, first_name,
+                    utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+                    ip_address, user_agent, platform, max_user_id, ym_client_id, visit_token)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id""",
+                link["id"], link["ch_id"], telegram_id, username, first_name,
+                link.get("utm_source"), link.get("utm_medium"), link.get("utm_campaign"),
+                link.get("utm_content"), link.get("utm_term"),
+                body.get("ip_address"), body.get("user_agent"),
+                platform, max_user_id, body.get("ym_client_id"), visit_token,
+            )
+            break
+        except Exception as e:
+            if "visit_token" in str(e).lower() and "unique" in str(e).lower():
+                visit_token = _new_visit_token()
+                continue
+            raise
 
     # Increment clicks
     await execute("UPDATE tracking_links SET clicks = clicks + 1 WHERE id = $1", link["id"])
@@ -137,7 +161,12 @@ async def create_visit(request: Request):
         link["id"], body.get("ip_address"), body.get("user_agent"),
     )
 
-    return {"success": True, "visitId": visit_id, "channelId": link["ch_id"]}
+    return {
+        "success": True,
+        "visitId": visit_id,
+        "channelId": link["ch_id"],
+        "visitToken": visit_token,
+    }
 
 
 @router.post("/subscribe")
@@ -188,6 +217,10 @@ async def create_subscription(request: Request):
             visit["channel_id"], telegram_id, username, first_name, visit_id, platform, max_user_id,
         )
 
+    # Server-side fallback YM/VK goal firing (idempotent).
+    if sub_id and visit_id:
+        await fire_server_goals_safe(sub_id)
+
     return {"success": True, "subscriptionId": sub_id}
 
 
@@ -213,18 +246,62 @@ async def check_subscription(
     return {"success": True, "subscribed": sub is not None}
 
 
+async def _heuristic_claim(visit: dict) -> Optional[dict]:
+    """Atomically claim the oldest unattributed subscription in this channel
+    that was created after the visit. SKIP LOCKED prevents two concurrent
+    pollers from claiming the same subscription."""
+    return await fetch_one(
+        """
+        UPDATE subscriptions
+        SET visit_id = $1
+        WHERE id = (
+            SELECT id FROM subscriptions
+            WHERE channel_id = $2
+              AND visit_id IS NULL
+              AND created_at >= $3
+            ORDER BY created_at ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, channel_id, telegram_id, max_user_id, visit_id, created_at
+        """,
+        visit["id"], visit["channel_id"], visit["created_at"],
+    )
+
+
+@router.post("/visit/{visit_id}/ym-client-id")
+async def update_visit_ym_client_id(visit_id: int, request: Request):
+    """Fire-and-forget endpoint called from SubscribePage once
+    window.ym(...,'getClientID',cb) resolves. Stores the YM ClientID on the
+    visit so the server-side goal fire can attribute properly."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    ym_client_id = (body or {}).get("ym_client_id")
+    if not ym_client_id:
+        return {"success": False}
+    try:
+        await execute(
+            "UPDATE visits SET ym_client_id = $1 WHERE id = $2 AND (ym_client_id IS NULL OR ym_client_id = '')",
+            str(ym_client_id), visit_id,
+        )
+    except Exception as e:
+        print(f"[track] update ym_client_id failed visit={visit_id}: {e}")
+        return {"success": False}
+    return {"success": True}
+
+
 @router.get("/check-subscription-by-visit")
 async def check_subscription_by_visit(visit_id: int = Query(...)):
     visit = await fetch_one("SELECT * FROM visits WHERE id = $1", visit_id)
     if not visit:
         return {"success": True, "subscribed": False}
 
-    # First try: direct match by visit_id (bot sets visit_id on subscription)
     sub = await fetch_one(
         "SELECT * FROM subscriptions WHERE visit_id = $1", visit_id
     )
 
-    # Fallback: match by channel + user IDs from visit
     if not sub and visit.get("telegram_id"):
         sub = await fetch_one(
             "SELECT * FROM subscriptions WHERE channel_id = $1 AND telegram_id = $2",
@@ -236,6 +313,58 @@ async def check_subscription_by_visit(visit_id: int = Query(...)):
             visit["channel_id"], visit["max_user_id"],
         )
 
-    return {"success": True, "subscribed": sub is not None, "subscription": sub}
+    claimed_via_heuristic = False
+    if not sub:
+        sub = await _heuristic_claim(visit)
+        if sub:
+            claimed_via_heuristic = True
+            print(f"[track] heuristic claim: visit {visit_id} <- subscription {sub['id']}")
+
+    if claimed_via_heuristic and sub:
+        # Now that we've linked visit_id, fire server-side goals as a backup.
+        # If client also fires, server's goal_fired_at marker prevents duplication.
+        await fire_server_goals_safe(sub["id"])
+        # Re-read to expose updated goal_fired_at on the response.
+        sub = await fetch_one("SELECT * FROM subscriptions WHERE id = $1", sub["id"])
+
+    server_fired = bool(sub and sub.get("goal_fired_at") is not None)
+    return {
+        "success": True,
+        "subscribed": sub is not None,
+        "subscription": sub,
+        "server_fired": server_fired,
+    }
+
+
+@router.get("/check-subscription-by-token")
+async def check_subscription_by_token(token: str = Query(...)):
+    """Token-keyed variant — same logic as check-subscription-by-visit but
+    looks up the visit by its short visit_token. Useful if the SPA reloads
+    and loses the visit_id but still has the token in the URL/state."""
+    visit = await fetch_one("SELECT * FROM visits WHERE visit_token = $1", token)
+    if not visit:
+        return {"success": True, "subscribed": False}
+
+    sub = await fetch_one(
+        "SELECT * FROM subscriptions WHERE visit_id = $1", visit["id"]
+    )
+    if not sub and visit.get("telegram_id"):
+        sub = await fetch_one(
+            "SELECT * FROM subscriptions WHERE channel_id = $1 AND telegram_id = $2",
+            visit["channel_id"], visit["telegram_id"],
+        )
+    if not sub and visit.get("max_user_id"):
+        sub = await fetch_one(
+            "SELECT * FROM subscriptions WHERE channel_id = $1 AND max_user_id = $2",
+            visit["channel_id"], visit["max_user_id"],
+        )
+
+    server_fired = bool(sub and sub.get("goal_fired_at") is not None)
+    return {
+        "success": True,
+        "subscribed": sub is not None,
+        "subscription": sub,
+        "server_fired": server_fired,
+    }
 
 

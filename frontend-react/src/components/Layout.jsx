@@ -5,6 +5,7 @@ import Sidebar from './Sidebar';
 import SupportChat from './SupportChat';
 import { ChannelProvider } from '../contexts/ChannelContext';
 import { ToastProvider } from './Toast';
+import { OnboardingProvider } from './OnboardingTour';
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -20,6 +21,7 @@ export default function Layout() {
   return (
     <ChannelProvider>
       <ToastProvider>
+        <OnboardingProvider>
         <div className="app-container">
           <Header onToggleSidebar={toggleSidebar} />
           <div className="app-layout">
@@ -35,6 +37,7 @@ export default function Layout() {
           </div>
         </div>
         <SupportChat />
+        </OnboardingProvider>
       </ToastProvider>
     </ChannelProvider>
   );

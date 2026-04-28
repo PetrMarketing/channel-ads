@@ -127,42 +127,42 @@ const icons = {
 };
 
 const menuItems = [
-  { path: '/', label: 'Обзор', icon: icons.dashboard, standalone: true },
+  { path: '/', label: 'Обзор', icon: icons.dashboard, standalone: true, tour: 'dashboard' },
   {
     category: 'marketing', label: 'Маркетинг', icon: icons.marketing,
     items: [
-      { path: '/ai-design', label: 'ИИ Оформление', icon: icons.ai, badge: 'Скоро' },
-      { path: '/links', label: 'Ссылки', icon: icons.links },
-      { path: '/pins', label: 'Закрепы', icon: icons.pins },
-      { path: '/broadcasts', label: 'Рассылки', icon: icons.broadcasts },
-      { path: '/funnels', label: 'Воронки', icon: icons.funnels },
-      { path: '/analytics', label: 'Аналитика', icon: icons.analytics },
-      { path: '/ord', label: 'Отчёты о рекламе', icon: icons.analytics },
+      { path: '/ai-design', label: 'ИИ Оформление', icon: icons.ai, badge: 'Скоро', tour: 'ai-design' },
+      { path: '/links', label: 'Ссылки', icon: icons.links, tour: 'links' },
+      { path: '/pins', label: 'Закрепы', icon: icons.pins, tour: 'pins' },
+      { path: '/broadcasts', label: 'Рассылки', icon: icons.broadcasts, tour: 'broadcasts' },
+      { path: '/funnels', label: 'Воронки', icon: icons.funnels, tour: 'funnels' },
+      { path: '/analytics', label: 'Аналитика', icon: icons.analytics, tour: 'analytics' },
+      { path: '/ord', label: 'Отчёты о рекламе', icon: icons.analytics, tour: 'ord' },
     ],
   },
   {
     category: 'content', label: 'Контент', icon: icons.content,
     items: [
-      { path: '/content', label: 'Публикации', icon: icons.publications },
-      { path: '/giveaways', label: 'Розыгрыши', icon: icons.giveaways },
-      { path: '/comments', label: 'Комментарии', icon: icons.comments },
+      { path: '/content', label: 'Публикации', icon: icons.publications, tour: 'content' },
+      { path: '/giveaways', label: 'Розыгрыши', icon: icons.giveaways, tour: 'giveaways' },
+      { path: '/comments', label: 'Комментарии', icon: icons.comments, tour: 'comments' },
     ],
   },
   {
     category: 'monetization', label: 'Монетизация', icon: icons.paidChats,
     items: [
-      { path: '/paid-chats', label: 'Платные чаты', icon: icons.paidChats },
-      { path: '/services', label: 'Услуги и запись', icon: icons.services },
-      { path: '/shop', label: 'Магазин', icon: icons.shop },
+      { path: '/paid-chats', label: 'Платные чаты', icon: icons.paidChats, tour: 'paid-chats' },
+      { path: '/services', label: 'Услуги и запись', icon: icons.services, tour: 'services' },
+      { path: '/shop', label: 'Магазин', icon: icons.shop, tour: 'shop' },
     ],
   },
-  { path: '/staff', label: 'Сотрудники', icon: icons.staff, standalone: true },
+  { path: '/staff', label: 'Сотрудники', icon: icons.staff, standalone: true, tour: 'staff' },
   {
     category: 'billing', label: 'Подписка', icon: icons.billing,
     items: [
-      { path: '/billing', label: 'Тарифы', icon: icons.billing },
-      { path: '/ai-tokens', label: 'ИИ Токены', icon: icons.ai },
-      { path: '/referrals', label: 'Реферальная система', icon: icons.links },
+      { path: '/billing', label: 'Тарифы', icon: icons.billing, tour: 'billing' },
+      { path: '/ai-tokens', label: 'ИИ Токены', icon: icons.ai, tour: 'ai-tokens' },
+      { path: '/referrals', label: 'Реферальная система', icon: icons.links, tour: 'referrals' },
     ],
   },
 ];
@@ -182,7 +182,6 @@ export default function Sidebar({ isOpen, onClose }) {
   };
 
   const isDisabled = !currentChannel;
-  const isSubActive = currentChannel?.billing_active;
 
   return (
     <nav className={`sidebar ${isOpen ? 'open' : ''}`}>
@@ -198,6 +197,7 @@ export default function Sidebar({ isOpen, onClose }) {
                   `sidebar-item ${isActive ? 'active' : ''}`
                 }
                 onClick={onClose}
+                data-tour={item.tour}
               >
                 <span className="sidebar-icon gradient-icon">{item.icon}</span> {item.label}
                 {item.badge && <span style={{ marginLeft: 'auto', fontSize: '0.65rem', padding: '1px 6px', borderRadius: 8, background: 'linear-gradient(135deg, #7B68EE, #4F46E5)', color: '#fff', fontWeight: 700 }}>{item.badge}</span>}
@@ -216,6 +216,7 @@ export default function Sidebar({ isOpen, onClose }) {
               <button
                 className="sidebar-category-toggle"
                 onClick={() => toggleCategory(item.category)}
+                data-tour={`cat-${item.category}`}
               >
                 <span className="sidebar-icon gradient-icon">{item.icon}</span> {item.label}
                 <span className="sidebar-chevron">›</span>
@@ -230,6 +231,7 @@ export default function Sidebar({ isOpen, onClose }) {
                         `sidebar-item sub-item ${isActive ? 'active' : ''}`
                       }
                       onClick={onClose}
+                      data-tour={sub.tour}
                     >
                       {sub.icon && <span className="sidebar-icon gradient-icon sub-icon">{sub.icon}</span>}
                       {sub.label}

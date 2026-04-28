@@ -119,9 +119,16 @@ export default function LeadMagnetLandingPage() {
             </div>
           ) : (
             <div>
-              {/* CTA — go to bot (bot checks subscription and delivers lead magnet) */}
+              {/* CTA — go to bot (bot checks subscription and delivers lead magnet).
+                  Fire pixels on click too — user may leave the page before polling catches subscription. */}
               {botUrl ? (
                   <a href={botUrl} target="_blank" rel="noreferrer"
+                    onClick={() => {
+                      if (!goalFired.current) {
+                        goalFired.current = true;
+                        try { fireGoals(); } catch {}
+                      }
+                    }}
                     style={{ display: 'block', padding: '16px 24px', background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', color: '#fff', borderRadius: 12, textDecoration: 'none', fontWeight: 700, fontSize: '1.05rem', textAlign: 'center', transition: 'transform 0.2s' }}>
                     {info?.lm_button_text || 'Получить бесплатно'}
                   </a>

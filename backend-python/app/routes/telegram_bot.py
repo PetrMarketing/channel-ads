@@ -420,6 +420,9 @@ async def handle_start(chat_id: int, tg_user: dict, payload: str = ""):
         tracking_code = payload.replace("shop_", "")
         await handle_shop(chat_id, tg_user, tracking_code)
         return
+    if payload.startswith("v_"):
+        await handle_visit_link(chat_id, tg_user, payload[2:])
+        return
 
     result = await find_or_create_tg_user(tg_user)
     token = result["token"]
@@ -506,6 +509,61 @@ async def handle_shop(chat_id: int, tg_user: dict, tracking_code: str):
     shop_url = f"{app_url}/shop.html?code=shop_{tracking_code}"
     await _send_message(chat_id, "🛍 Откройте каталог для просмотра и заказа:",
                         reply_markup={"inline_keyboard": [[{"text": "🛍 Открыть каталог", "url": shop_url}]]})
+
+
+async def handle_visit_link(chat_id: int, tg_user: dict, visit_token: str):
+    """Handle deep link minted by the public /subscribe/{code} page.
+
+    Stamps telegram_id onto the existing visit so the chat_member event for
+    this user joining the channel can be linked back to the visit (which
+    in turn lets the SubscribePage poll succeed and YM/VK pixel goals fire).
+    """
+    visit = await fetch_one(
+        """SELECT v.*, c.title as channel_title, c.username as channel_username,
+                  c.join_link, c.channel_id as tg_channel_id
+             FROM visits v JOIN channels c ON c.id = v.channel_id
+            WHERE v.visit_token = $1""",
+        visit_token,
+    )
+    if not visit:
+        await _send_message(chat_id, "Ссылка не найдена или устарела.")
+        return
+
+    tg_id = tg_user.get("id")
+    username = tg_user.get("username")
+    first_name = tg_user.get("first_name", "")
+
+    try:
+        await execute(
+            """UPDATE visits
+                  SET telegram_id = COALESCE(telegram_id, $1),
+                      username    = COALESCE(username, $2),
+                      first_name  = COALESCE(first_name, $3)
+                WHERE id = $4""",
+            tg_id, username, first_name, visit["id"],
+        )
+        print(f"[track] visit {visit['id']} linked to user {tg_id}")
+    except Exception as e:
+        print(f"[TG Bot] visit link stamp failed: {e}")
+
+    # Build subscribe URL — prefer stored join_link, then @username, then private c/...
+    sub_url = visit.get("join_link")
+    if not sub_url and visit.get("channel_username"):
+        sub_url = f"https://t.me/{visit['channel_username']}"
+    if not sub_url and visit.get("tg_channel_id"):
+        cid = str(visit["tg_channel_id"])
+        if cid.startswith("-100"):
+            sub_url = f"https://t.me/c/{cid[4:]}"
+
+    title = visit.get("channel_title") or "Канал"
+    if sub_url:
+        await _send_message(
+            chat_id,
+            f"👉 <b>{title}</b>\n\nПодпишитесь на канал:",
+            reply_markup={"inline_keyboard": [[{"text": "Перейти в канал", "url": sub_url}]]},
+        )
+    else:
+        await _send_message(chat_id, f"Канал «{title}» недоступен. Свяжитесь с автором ссылки.")
 
 
 # ---- Bot commands ----
@@ -1303,11 +1361,20 @@ async def handle_chat_member(update: dict):
         """, channel["id"])
 
     try:
-        await execute("""
+        sub_id = await execute_returning_id("""
             INSERT INTO subscriptions (channel_id, telegram_id, username, first_name, visit_id, platform)
             VALUES ($1, $2, $3, $4, $5, 'telegram')
+            RETURNING id
         """, channel["id"], tg_id, username, first_name, visit["id"] if visit else None)
         print(f"[TG Bot] Subscription: user={username or tg_id}, channel={channel['id']}")
+        if sub_id and visit:
+            print(f"[track] subscription {sub_id} linked to visit {visit['id']}")
+            # Fire server-side YM/VK goals as fallback (idempotent).
+            try:
+                from ..services.conversion_pixels import fire_server_goals_safe
+                await fire_server_goals_safe(sub_id)
+            except Exception as fire_err:
+                print(f"[track] server-fire dispatch failed: {fire_err}")
     except Exception as e:
         if "duplicate" not in str(e).lower() and "unique" not in str(e).lower():
             print(f"[TG Bot] Subscription error: {e}")

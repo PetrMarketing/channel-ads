@@ -385,6 +385,55 @@ async def generate_landing(tc: str, landing_id: int, user: Dict[str, Any] = Depe
     return {"success": True, "html": html, "regen_count": new_regen}
 
 
+@router.post("/{tc}/landing/{landing_id}/edit")
+async def edit_landing(tc: str, landing_id: int, request: Request, user: Dict[str, Any] = Depends(get_current_user)):
+    """Внести правки в существующий HTML-лендинг через ИИ.
+    Тело: { edit_request: str } — текстовое описание изменений."""
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    landing = await _get_landing(landing_id, user["id"], channel["id"])
+    if not landing:
+        raise HTTPException(status_code=404, detail="Лендинг не найден")
+
+    existing_html = landing.get("html_content") or ""
+    if not existing_html:
+        raise HTTPException(status_code=400, detail="Лендинг ещё не сгенерирован — сначала создайте его")
+
+    regen_count = landing.get("regen_count") or 0
+    if regen_count >= MAX_REGEN:
+        raise HTTPException(status_code=400, detail=f"Достигнут лимит правок ({MAX_REGEN})")
+
+    body = await request.json()
+    edit_request = (body.get("edit_request") or "").strip()
+    if not edit_request:
+        raise HTTPException(status_code=400, detail="Опишите, что нужно изменить")
+
+    prompt = (
+        f"в этом коде:\n\n```html\n{existing_html}\n```\n\n"
+        f"нужно заменить: {edit_request}\n\n"
+        f"Верни ТОЛЬКО полный обновлённый HTML-код без пояснений, без markdown-обёрток. "
+        f"Сохрани всю структуру, стили и функциональность, измени только то, что попросили."
+    )
+
+    html = await openrouter_chat(prompt, model="anthropic/claude-sonnet-4")
+
+    if html.startswith("```html"):
+        html = html[7:]
+    if html.startswith("```"):
+        html = html[3:]
+    if html.endswith("```"):
+        html = html[:-3]
+    html = html.strip()
+
+    new_regen = regen_count + 1
+    await execute(
+        "UPDATE ai_landings SET html_content=$1, status='generated', regen_count=$2, updated_at=NOW() WHERE id=$3",
+        html, new_regen, landing_id
+    )
+    return {"success": True, "html": html, "regen_count": new_regen}
+
+
 # ---- Публикация лендинга ----
 
 @router.post("/{tc}/landing/{landing_id}/publish")

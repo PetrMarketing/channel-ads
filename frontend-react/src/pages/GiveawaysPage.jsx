@@ -9,9 +9,23 @@ import AttachmentPicker from '../components/AttachmentPicker';
 import RichTextEditor from '../components/RichTextEditor';
 import MessagePreview from '../components/MessagePreview';
 import EridModal from '../components/EridModal';
+import { usePageOnboarding } from '../components/OnboardingTour';
 
-const STATUS_LABELS = { draft: 'Черновик', active: 'Активен', finished: 'Завершён' };
-const STATUS_COLORS = { draft: '#888', active: 'var(--success)', finished: '#3b82f6' };
+const ACCENT = '#4361ee';
+const ACCENT2 = '#7b68ee';
+const SUCCESS = '#10b981';
+const DANGER = '#e63946';
+const WARNING = '#f59e0b';
+const DARK = '#1a1a2e';
+const MUTED = '#6b7280';
+const BORDER = '#f0f0f0';
+const SOFT_BG = '#f8f9fc';
+
+const STATUS_META = {
+  draft:    { label: 'Черновик', grad: [MUTED, '#9ca3af'],  soft: 'rgba(107,114,128,0.10)', text: MUTED },
+  active:   { label: 'Активен',  grad: [WARNING, '#f97316'], soft: 'rgba(245,158,11,0.10)',  text: WARNING },
+  finished: { label: 'Завершён', grad: [SUCCESS, '#34d399'], soft: 'rgba(16,185,129,0.10)',  text: SUCCESS },
+};
 
 const DEFAULT_FORM = {
   title: '',
@@ -24,12 +38,257 @@ const DEFAULT_FORM = {
   winner_count: 1,
 };
 
+const cardBase = {
+  background: '#fff',
+  border: `1px solid ${BORDER}`,
+  borderRadius: 14,
+  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+  transition: 'transform .25s ease, box-shadow .25s ease, border-color .25s ease',
+};
+
+const primaryBtn = {
+  display: 'inline-flex', alignItems: 'center', gap: 8,
+  padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
+  background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
+  color: '#fff', fontSize: '0.88rem', fontWeight: 600,
+  boxShadow: `0 4px 14px ${ACCENT}40`,
+  transition: 'transform .15s ease, box-shadow .15s ease',
+};
+
+const ghostBtn = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+  padding: '8px 14px', borderRadius: 10, cursor: 'pointer',
+  background: '#fff', border: `1px solid ${BORDER}`,
+  color: DARK, fontSize: '0.84rem', fontWeight: 500,
+  transition: 'border-color .15s ease, background .15s ease, color .15s ease, transform .15s ease',
+};
+
+const iconGhostBtn = {
+  ...ghostBtn,
+  width: 34, height: 34, padding: 0, fontSize: '0.95rem',
+};
+
+const iconAccentBtn = {
+  ...iconGhostBtn,
+  background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
+  borderColor: 'transparent',
+  color: '#fff',
+  boxShadow: `0 3px 10px ${ACCENT}3a`,
+};
+
+const iconWinnerBtn = {
+  ...iconGhostBtn,
+  background: `linear-gradient(135deg, ${WARNING} 0%, #f97316 100%)`,
+  borderColor: 'transparent',
+  color: '#fff',
+  boxShadow: `0 3px 10px ${WARNING}45`,
+};
+
+const dangerGhost = {
+  ...iconGhostBtn,
+  color: DANGER,
+  borderColor: 'rgba(230,57,70,0.25)',
+  background: 'rgba(230,57,70,0.04)',
+};
+
+const pill = (bg, color) => ({
+  display: 'inline-flex', alignItems: 'center', gap: 5,
+  padding: '3px 10px', borderRadius: 20,
+  fontSize: '0.7rem', fontWeight: 600,
+  background: bg, color,
+  whiteSpace: 'nowrap',
+});
+
+const inputStyle = {
+  width: '100%', padding: '10px 12px', borderRadius: 10,
+  border: `1px solid ${BORDER}`, background: '#fff',
+  fontSize: '0.88rem', color: DARK,
+  outline: 'none', transition: 'border-color .15s ease, box-shadow .15s ease',
+  boxSizing: 'border-box',
+};
+
+const labelStyle = {
+  display: 'block', fontSize: '0.78rem', fontWeight: 600,
+  color: DARK, marginBottom: 6,
+};
+
+const hintStyle = { fontSize: '0.74rem', color: MUTED, marginTop: 4, lineHeight: 1.45 };
+
+const sectionTitleStyle = {
+  margin: 0, fontSize: '1.1rem', fontWeight: 700,
+  color: DARK, letterSpacing: '-0.01em',
+};
+const sectionSubStyle = {
+  margin: '3px 0 0', fontSize: '0.78rem', color: MUTED,
+};
+
+const animStyle = (i) => ({ animation: `dashFadeUp 0.4s ease ${0.05 + i * 0.04}s both` });
+
+const pageHeaderWrap = {
+  position: 'relative', overflow: 'hidden',
+  background: '#fff', borderRadius: 16, border: `1px solid ${BORDER}`,
+  padding: '26px 28px 24px', marginBottom: 24,
+  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+};
+const pageHeaderBlur1 = {
+  position: 'absolute', top: -50, right: -30, width: 180, height: 180,
+  borderRadius: '50%', background: `radial-gradient(circle, ${WARNING}24 0%, transparent 70%)`,
+  pointerEvents: 'none', animation: 'heroBlobFloat 6s ease-in-out infinite',
+};
+const pageHeaderBlur2 = {
+  position: 'absolute', bottom: -70, left: -50, width: 200, height: 200,
+  borderRadius: '50%', background: `radial-gradient(circle, ${ACCENT}1c 0%, transparent 70%)`,
+  pointerEvents: 'none', animation: 'heroBlobFloat 8s ease-in-out infinite reverse',
+};
+const pageHeaderRow = {
+  position: 'relative', display: 'flex', justifyContent: 'space-between',
+  alignItems: 'center', gap: 16, flexWrap: 'wrap',
+};
+const eyebrowStyle = {
+  display: 'inline-flex', alignItems: 'center', gap: 8,
+  fontSize: '0.72rem', fontWeight: 600, color: MUTED,
+  letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10,
+};
+const pageTitleStyle = {
+  margin: 0, fontSize: 'clamp(1.6rem, 2.4vw, 2rem)', fontWeight: 800,
+  color: DARK, letterSpacing: '-0.04em', lineHeight: 1.05,
+};
+const pageSubStyle = {
+  margin: '8px 0 0', fontSize: '0.92rem', color: MUTED,
+  lineHeight: 1.5, maxWidth: 560,
+};
+
+const sectionHeaderRow = {
+  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
+  marginBottom: 14, flexWrap: 'wrap', gap: 10,
+};
+
 function scrollToRef(ref) {
   if (ref?.current) {
     ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     ref.current.classList.add('field-shake');
     setTimeout(() => ref.current.classList.remove('field-shake'), 500);
   }
+}
+
+function TrophyIcon({ size = 24, color = '#fff', strokeWidth = 1.9 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+      <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+      <path d="M4 22h16" />
+      <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+      <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+      <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+    </svg>
+  );
+}
+
+function CheckIcon({ size = 22, color = '#fff', strokeWidth = 2.4 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+function GiftIcon({ size = 26, color = '#fff', strokeWidth = 1.9 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="8" width="18" height="4" rx="1" />
+      <path d="M12 8v13" />
+      <path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" />
+      <path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5" />
+    </svg>
+  );
+}
+
+function PeopleIcon({ size = 14, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="8.5" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M17 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+function PlusIcon({ size = 14, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function GradientAvatar({ from, to, children, size = 52 }) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: 14, flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: `linear-gradient(135deg, ${from} 0%, ${to} 100%)`,
+      boxShadow: `0 4px 12px ${from}33`,
+      position: 'relative', overflow: 'hidden',
+    }}>
+      <div style={{
+        position: 'absolute', inset: 0,
+        backgroundImage: 'radial-gradient(circle at 28% 28%, rgba(255,255,255,0.25), transparent 60%)',
+        pointerEvents: 'none',
+      }} />
+      <span style={{ position: 'relative', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.22))', display: 'inline-flex' }}>{children}</span>
+    </div>
+  );
+}
+
+function EmptyGiveaways({ onCreate }) {
+  return (
+    <div
+      style={{
+        ...cardBase,
+        padding: '56px 32px',
+        textAlign: 'center',
+        position: 'relative', overflow: 'hidden',
+        animation: 'dashFadeUp 0.4s ease 0.1s both',
+      }}
+    >
+      <div aria-hidden style={{ position: 'relative', width: 120, height: 120, margin: '0 auto 26px' }}>
+        <div style={{
+          position: 'absolute', inset: -16, borderRadius: '50%',
+          background: `radial-gradient(circle, ${WARNING}30 0%, transparent 70%)`,
+          animation: 'dashPulse 3s ease-in-out infinite',
+        }} />
+        <div style={{
+          position: 'absolute', inset: 0, borderRadius: '50%',
+          background: `linear-gradient(135deg, ${WARNING} 0%, #f97316 100%)`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: `0 14px 36px ${WARNING}55`,
+          animation: 'heroBlobFloat 5s ease-in-out infinite',
+        }}>
+          <TrophyIcon size={54} strokeWidth={1.8} />
+        </div>
+        <div style={{
+          position: 'absolute', right: -4, bottom: -4,
+          width: 34, height: 34, borderRadius: '50%',
+          background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontSize: '1.25rem', fontWeight: 800,
+          boxShadow: `0 4px 12px ${ACCENT}55`,
+          border: '3px solid #fff',
+        }}>+</div>
+      </div>
+
+      <h3 style={{ fontSize: '1.4rem', fontWeight: 800, letterSpacing: '-0.03em', color: DARK, margin: '0 0 8px' }}>
+        Создайте первый розыгрыш
+      </h3>
+      <p style={{ fontSize: '0.92rem', color: MUTED, margin: '0 auto 26px', maxWidth: 440, lineHeight: 1.55 }}>
+        Опубликуйте конкурс среди подписчиков с автоматическим выбором победителей. Бот подведёт итоги в указанное время.
+      </p>
+      <button className="gw-primary" data-tour-page="create" style={primaryBtn} onClick={onCreate}>
+        <PlusIcon /> Создать розыгрыш
+      </button>
+    </div>
+  );
 }
 
 export default function GiveawaysPage() {
@@ -50,6 +309,11 @@ export default function GiveawaysPage() {
   const messageRef = useRef(null);
 
   const tc = currentChannel?.tracking_code;
+
+  const { overlay: pageTour } = usePageOnboarding('giveaways', [
+    { selector: '[data-tour-page="create"]', title: 'Конкурс среди подписчиков', text: 'Укажите призы, дату завершения, условия. Бот опубликует пост в канале с кнопкой «Участвовать».', placement: 'bottom' },
+    { selector: '[data-tour-page="draw"]', title: 'Автовыбор победителей', text: 'По истечении срока бот случайно выберет N победителей и опубликует результаты.', placement: 'bottom' },
+  ]);
 
   const loadGiveaways = useCallback(async () => {
     if (!tc) return;
@@ -207,7 +471,6 @@ export default function GiveawaysPage() {
     } catch { showToast('Ошибка определения победителя', 'error'); }
   };
 
-  // Prize management
   const addPrize = () => setForm(p => ({ ...p, prizes: [...p.prizes, ''] }));
   const removePrize = (idx) => setForm(p => ({ ...p, prizes: p.prizes.filter((_, i) => i !== idx) }));
   const updatePrize = (idx, val) => setForm(p => ({ ...p, prizes: p.prizes.map((pr, i) => i === idx ? val : pr) }));
@@ -228,96 +491,237 @@ export default function GiveawaysPage() {
 
   return (
     <Paywall>
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h2>Розыгрыши</h2>
-          <button className="btn btn-primary" onClick={openCreate}>+ Создать розыгрыш</button>
-        </div>
+      {pageTour}
+      <style>{`
+        @keyframes dashFade { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes dashFadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes dashPulse { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 0.95; transform: scale(1.06); } }
+        @keyframes heroBlobFloat { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(14px, -10px); } }
+        .gw-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important;
+          border-color: ${ACCENT}25 !important;
+        }
+        .gw-ghost:hover {
+          background: ${SOFT_BG} !important;
+          border-color: ${ACCENT}55 !important;
+          color: ${ACCENT} !important;
+          transform: translateY(-1px);
+        }
+        .gw-ghost-accent:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 5px 14px ${ACCENT}55 !important;
+        }
+        .gw-ghost-winner:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 5px 14px ${WARNING}66 !important;
+        }
+        .gw-danger:hover {
+          background: rgba(230,57,70,0.10) !important;
+          border-color: ${DANGER} !important;
+          color: ${DANGER} !important;
+          transform: translateY(-1px);
+        }
+        .gw-primary:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 20px ${ACCENT}55 !important;
+        }
+        .gw-input:focus,
+        .gw-input:focus-within {
+          border-color: ${ACCENT} !important;
+          box-shadow: 0 0 0 3px ${ACCENT}15;
+        }
+        .gw-cond {
+          display: flex; align-items: flex-start; gap: 12;
+          padding: 12px 14px; border-radius: 12px;
+          cursor: pointer;
+          transition: border-color .15s ease, background .15s ease;
+        }
+      `}</style>
+
+      <div style={{ animation: 'dashFade 0.4s ease' }}>
+        <section style={pageHeaderWrap}>
+          <div style={pageHeaderBlur1} />
+          <div style={pageHeaderBlur2} />
+          <div style={pageHeaderRow}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={eyebrowStyle}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: WARNING, boxShadow: `0 0 8px ${WARNING}` }} />
+                Конкурсы
+              </div>
+              <h1 style={pageTitleStyle}>Розыгрыши</h1>
+              <p style={pageSubStyle}>
+                Конкурсы среди подписчиков с автоматическим выбором победителей
+              </p>
+            </div>
+            <button className="gw-primary" data-tour-page="create" style={primaryBtn} onClick={openCreate}>
+              <PlusIcon /> Создать розыгрыш
+            </button>
+          </div>
+        </section>
 
         {loading ? <Loading /> : giveaways.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-            <div style={{ fontSize: '2rem', marginBottom: '12px' }}>🎁</div>
-            Нет розыгрышей. Создайте первый розыгрыш.
-          </div>
+          <EmptyGiveaways onCreate={openCreate} />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {giveaways.map(g => (
-              <div key={g.id} style={{
-                background: 'var(--bg-glass)', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius)', padding: '18px',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                      <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>{g.title}</h3>
-                      <span style={{
-                        fontSize: '0.72rem', padding: '2px 8px', borderRadius: '4px',
-                        background: STATUS_COLORS[g.status] || '#888', color: '#fff',
-                      }}>
-                        {STATUS_LABELS[g.status] || g.status || 'Черновик'}
-                      </span>
-                      {g.erid && (
-                        <span style={{
-                          fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px',
-                          background: '#6366f1', color: '#fff', fontWeight: 500,
-                        }}>
-                          ERID: {g.erid}
-                        </span>
-                      )}
-                    </div>
-                    {getPrizesDisplay(g) && (
-                      <p style={{ fontSize: '0.88rem', marginBottom: '8px' }}>Призы: <b>{getPrizesDisplay(g)}</b></p>
-                    )}
-                    <div style={{ display: 'flex', gap: '16px', fontSize: '0.82rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-                      <span>Участников: {g.participant_count ?? 0}</span>
-                      {g.winner_count > 1 && <span>Победителей: {g.winner_count}</span>}
-                      {g.deep_link_code && <span>Код: {g.deep_link_code}</span>}
-                      {g.ends_at && <span>Итоги: {new Date(g.ends_at).toLocaleString('ru')}</span>}
-                    </div>
-                    {g.winner_first_name && (
-                      <div style={{ fontSize: '0.88rem', marginTop: '8px', color: 'var(--success)', fontWeight: 600 }}>
-                        Победитель: {g.winner_first_name} {g.winner_username ? `(@${g.winner_username})` : ''}
-                      </div>
-                    )}
-                  </div>
-                  {g.image_path && (
-                    <div style={{ width: '120px', height: '80px', flexShrink: 0 }}>
-                      <img
-                        src={`${API_BASE.replace('/api', '')}${g.image_path}`}
-                        alt=""
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '6px' }}
-                      />
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {(!g.status || g.status === 'draft') && (
-                      <>
-                        <button className="btn btn-outline" style={btnSmall} onClick={() => openEdit(g)}>Ред.</button>
-                        <button className="btn btn-primary" style={btnSmall} onClick={() => handlePublish(g)} disabled={publishing === g.id}>{publishing === g.id ? 'Публикация...' : 'Опубликовать'}</button>
-                      </>
-                    )}
-                    {g.status === 'active' && (
-                      <button className="btn btn-primary" style={btnSmall} onClick={() => handleDraw(g)}>Определить победителя</button>
-                    )}
-                    <button className="btn btn-danger" style={btnSmall} onClick={() => handleDelete(g.id)}>Удалить</button>
-                  </div>
-                </div>
+          <section>
+            <div style={sectionHeaderRow}>
+              <div>
+                <h2 style={sectionTitleStyle}>Розыгрыши</h2>
+                <p style={sectionSubStyle}>Всего: {giveaways.length}</p>
               </div>
-            ))}
-          </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {giveaways.map((g, i) => {
+                const meta = STATUS_META[g.status] || STATUS_META.draft;
+                const prizesText = getPrizesDisplay(g);
+                const isDraft = !g.status || g.status === 'draft';
+                const isActive = g.status === 'active';
+                const isFinished = g.status === 'finished';
+                return (
+                  <div key={g.id} className="gw-card" style={{ ...cardBase, padding: 18, ...animStyle(i) }}>
+                    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                      <GradientAvatar from={meta.grad[0]} to={meta.grad[1]}>
+                        {isFinished ? <CheckIcon size={26} /> : isActive ? <TrophyIcon size={26} /> : <GiftIcon size={26} />}
+                      </GradientAvatar>
+
+                      <div style={{ flex: 1, minWidth: 220 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.98rem', color: DARK, letterSpacing: '-0.01em' }}>
+                            {g.title}
+                          </span>
+                          <span style={pill(meta.soft, meta.text)}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: meta.text }} />
+                            {meta.label}
+                          </span>
+                          {g.erid && (
+                            <span style={pill('rgba(67,97,238,0.10)', ACCENT)}>ERID · {g.erid}</span>
+                          )}
+                        </div>
+
+                        <div style={{
+                          display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap',
+                        }}>
+                          {prizesText && (
+                            <span style={{
+                              ...pill('rgba(245,158,11,0.10)', WARNING),
+                              fontSize: '0.78rem',
+                              fontWeight: 600,
+                              padding: '5px 12px',
+                            }}>
+                              <TrophyIcon size={12} color={WARNING} strokeWidth={2.2} />
+                              {prizesText}
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{
+                          display: 'flex', gap: 14, alignItems: 'center',
+                          fontSize: '0.78rem', color: MUTED, flexWrap: 'wrap',
+                        }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <PeopleIcon size={13} color={ACCENT2} />
+                            Участников <b style={{ color: DARK, fontWeight: 700, marginLeft: 2 }}>{(g.participant_count ?? 0).toLocaleString('ru-RU')}</b>
+                          </span>
+                          {g.winner_count > 1 && (
+                            <span style={pill(SOFT_BG, MUTED)}>Победителей · {g.winner_count}</span>
+                          )}
+                          {g.deep_link_code && (
+                            <span style={pill(SOFT_BG, MUTED)}>Код · {g.deep_link_code}</span>
+                          )}
+                          {g.ends_at && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: MUTED, opacity: 0.5 }} />
+                              Итоги · {new Date(g.ends_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+
+                        {g.winner_first_name && (
+                          <div style={{
+                            marginTop: 12,
+                            padding: '10px 14px',
+                            borderRadius: 10,
+                            background: 'rgba(16,185,129,0.08)',
+                            border: `1px solid ${SUCCESS}30`,
+                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                          }}>
+                            <TrophyIcon size={16} color={SUCCESS} strokeWidth={2.2} />
+                            <span style={{ fontSize: '0.85rem', color: DARK, fontWeight: 600 }}>
+                              Победитель: <b>{g.winner_first_name}</b>
+                              {g.winner_username ? <span style={{ color: SUCCESS, marginLeft: 6 }}>@{g.winner_username}</span> : null}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {g.image_path && (
+                        <div style={{
+                          width: 120, height: 80, flexShrink: 0,
+                          borderRadius: 10, overflow: 'hidden',
+                          border: `1px solid ${BORDER}`,
+                        }}>
+                          <img
+                            src={`${API_BASE.replace('/api', '')}${g.image_path}`}
+                            alt=""
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          />
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                        {isDraft && (
+                          <>
+                            <button className="gw-ghost" style={iconGhostBtn} onClick={() => openEdit(g)} title="Редактировать">✎</button>
+                            <button
+                              className="gw-ghost-accent"
+                              style={{ ...iconAccentBtn, opacity: publishing === g.id ? 0.7 : 1 }}
+                              onClick={() => handlePublish(g)}
+                              disabled={publishing === g.id}
+                              title="Опубликовать"
+                            >
+                              {publishing === g.id ? '…' : '▶'}
+                            </button>
+                          </>
+                        )}
+                        {isActive && (
+                          <button
+                            className="gw-ghost-winner"
+                            data-tour-page="draw"
+                            style={iconWinnerBtn}
+                            onClick={() => handleDraw(g)}
+                            title="Определить победителя"
+                          >
+                            <TrophyIcon size={16} strokeWidth={2.1} />
+                          </button>
+                        )}
+                        <button className="gw-danger" style={dangerGhost} onClick={() => handleDelete(g.id)} title="Удалить">🗑</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         )}
 
         <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingItem ? 'Редактировать розыгрыш' : 'Создать розыгрыш'}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div ref={titleRef}>
-              <label className="form-label">Название розыгрыша *</label>
-              <input className={`form-input${errors.title ? ' field-error' : ''}`} placeholder="Например: Новогодний розыгрыш iPhone 16" value={form.title}
-                onChange={e => { setForm(p => ({ ...p, title: e.target.value })); if (e.target.value.trim()) setErrors(er => ({ ...er, title: '' })); }} />
+              <label style={labelStyle}>Название розыгрыша *</label>
+              <input
+                className={`gw-input${errors.title ? ' field-error' : ''}`}
+                style={inputStyle}
+                placeholder="Например: Новогодний розыгрыш iPhone 16"
+                value={form.title}
+                onChange={e => { setForm(p => ({ ...p, title: e.target.value })); if (e.target.value.trim()) setErrors(er => ({ ...er, title: '' })); }}
+              />
               {errors.title && <div className="field-error-text">{errors.title}</div>}
-              <div className="form-hint">Внутреннее название. Подписчики увидят текст поста ниже.</div>
+              <div style={hintStyle}>Внутреннее название. Подписчики увидят текст поста ниже.</div>
             </div>
+
             <div ref={messageRef}>
-              <label className="form-label">Текст поста *</label>
+              <label style={labelStyle}>Текст поста *</label>
               <div className={errors.message_text ? 'field-error-wrapper' : ''}>
                 <RichTextEditor
                   value={form.message_text}
@@ -328,79 +732,119 @@ export default function GiveawaysPage() {
                 />
               </div>
               {errors.message_text && <div className="field-error-text">{errors.message_text}</div>}
-              <div className="form-hint">Этот текст будет опубликован в канале при запуске розыгрыша.</div>
+              <div style={hintStyle}>Этот текст будет опубликован в канале при запуске розыгрыша.</div>
             </div>
+
             <div>
-              <label className="form-label">Картинка</label>
+              <label style={labelStyle}>Картинка</label>
               <AttachmentPicker
                 file={gwImage}
                 onFileChange={setGwImage}
                 existingFileInfo={editingItem?.image_type || ''}
               />
               {imagePreviewUrl && (
-                <div style={{ marginTop: '10px', maxWidth: '320px' }}>
-                  <img src={imagePreviewUrl} alt="Предпросмотр" style={{ width: '100%', borderRadius: '6px', display: 'block' }} />
+                <div style={{ marginTop: 10, maxWidth: 320, borderRadius: 10, overflow: 'hidden', border: `1px solid ${BORDER}` }}>
+                  <img src={imagePreviewUrl} alt="Предпросмотр" style={{ width: '100%', display: 'block' }} />
                 </div>
               )}
-              <div className="form-hint">Рекомендуемый размер: 1280x720 px (16:9). JPG или PNG.</div>
+              <div style={hintStyle}>Рекомендуемый размер: 1280x720 px (16:9). JPG или PNG.</div>
             </div>
+
             <div>
-              <label className="form-label">Призы</label>
-              {form.prizes.map((prize, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
-                  <input className="form-input" placeholder={idx === 0 ? 'Например: iPhone 15 Pro' : 'Ещё один приз'} value={prize} style={{ flex: 1 }}
-                    onChange={e => updatePrize(idx, e.target.value)} />
-                  {form.prizes.length > 1 && (
-                    <button type="button" className="btn btn-outline" style={{ padding: '4px 10px' }} onClick={() => removePrize(idx)}>&#10005;</button>
-                  )}
-                </div>
-              ))}
-              <button type="button" className="btn btn-outline" style={{ fontSize: '0.85rem' }} onClick={addPrize}>+ Добавить приз</button>
-              <div className="form-hint">Укажите призы — они отобразятся участникам розыгрыша.</div>
-            </div>
-            <div>
-              <label className="form-label">Условия участия</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'normal', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={form.conditions.subscribe}
-                    onChange={e => setForm(p => ({ ...p, conditions: { ...p.conditions, subscribe: e.target.checked } }))} />
-                  Подписка на канал
-                </label>
+              <label style={labelStyle}>Призы</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {form.prizes.map((prize, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: 8 }}>
+                    <input className="gw-input" style={{ ...inputStyle, flex: 1 }}
+                      placeholder={idx === 0 ? 'Например: iPhone 15 Pro' : 'Ещё один приз'}
+                      value={prize}
+                      onChange={e => updatePrize(idx, e.target.value)} />
+                    {form.prizes.length > 1 && (
+                      <button type="button" className="gw-danger" style={dangerGhost} onClick={() => removePrize(idx)} title="Удалить приз">✕</button>
+                    )}
+                  </div>
+                ))}
               </div>
-              <div className="form-hint">Условия, которые должен выполнить участник для участия в розыгрыше.</div>
+              <button type="button" className="gw-ghost" style={{ ...ghostBtn, marginTop: 8 }} onClick={addPrize}>
+                <PlusIcon /> Добавить приз
+              </button>
+              <div style={hintStyle}>Укажите призы — они отобразятся участникам розыгрыша.</div>
             </div>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <div style={{ flex: 1 }}>
-                <label className="form-label">Кол-во победителей</label>
-                <input type="number" className="form-input" value={form.winner_count} min="1" max="100"
+
+            <div>
+              <label style={labelStyle}>Условия участия</label>
+              <label className="gw-cond" style={{
+                display: 'flex', alignItems: 'flex-start', gap: 12,
+                padding: '12px 14px', borderRadius: 12,
+                border: `1px solid ${form.conditions.subscribe ? `${ACCENT}55` : BORDER}`,
+                background: form.conditions.subscribe ? `${ACCENT}08` : '#fff',
+                cursor: 'pointer',
+              }}>
+                <input
+                  type="checkbox"
+                  checked={form.conditions.subscribe}
+                  onChange={e => setForm(p => ({ ...p, conditions: { ...p.conditions, subscribe: e.target.checked } }))}
+                  style={{ display: 'none' }}
+                />
+                <span style={{
+                  flexShrink: 0,
+                  width: 20, height: 20, borderRadius: 6,
+                  border: `1.5px solid ${form.conditions.subscribe ? ACCENT : BORDER}`,
+                  background: form.conditions.subscribe ? `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)` : '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginTop: 1,
+                  boxShadow: form.conditions.subscribe ? `0 2px 6px ${ACCENT}40` : 'none',
+                }}>
+                  {form.conditions.subscribe && <CheckIcon size={12} color="#fff" strokeWidth={3.5} />}
+                </span>
+                <span>
+                  <span style={{ display: 'block', fontSize: '0.88rem', fontWeight: 600, color: DARK }}>
+                    Подписка на канал
+                  </span>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: MUTED, marginTop: 3 }}>
+                    Участвовать смогут только подписчики канала
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <label style={labelStyle}>Кол-во победителей</label>
+                <input type="number" className="gw-input" style={inputStyle} value={form.winner_count} min="1" max="100"
                   onChange={e => setForm(p => ({ ...p, winner_count: parseInt(e.target.value) || 1 }))} />
-                <div className="form-hint">Сколько победителей будет выбрано случайным образом.</div>
+                <div style={hintStyle}>Сколько победителей будет выбрано случайным образом.</div>
               </div>
-              <div style={{ flex: 1 }}>
-                <label className="form-label">Дата подведения итогов</label>
-                <input type="datetime-local" className="form-input" value={form.ends_at}
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <label style={labelStyle}>Дата подведения итогов</label>
+                <input type="datetime-local" className="gw-input" style={inputStyle} value={form.ends_at}
                   onChange={e => setForm(p => ({ ...p, ends_at: e.target.value }))} />
-                <div className="form-hint">Необязательно. Итоги можно подвести вручную.</div>
+                <div style={hintStyle}>Необязательно. Итоги можно подвести вручную.</div>
               </div>
             </div>
+
             <div>
-              <label className="form-label">ERID (рекламный идентификатор)</label>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input className="form-input" placeholder="Введите ERID или получите автоматически" value={form.erid}
-                  onChange={e => setForm(p => ({ ...p, erid: e.target.value }))} style={{ flex: 1 }} />
-                <button type="button" className="btn btn-outline" style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}
+              <label style={labelStyle}>ERID (рекламный идентификатор)</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input className="gw-input" style={{ ...inputStyle, flex: 1 }} placeholder="Введите ERID или получите автоматически"
+                  value={form.erid}
+                  onChange={e => setForm(p => ({ ...p, erid: e.target.value }))} />
+                <button type="button" className="gw-ghost" style={{ ...ghostBtn, whiteSpace: 'nowrap' }}
                   onClick={() => setShowEridModal(true)}>
                   Получить ERID
                 </button>
               </div>
-              {form.erid && <div className="form-hint" style={{ color: 'var(--success)' }}>ERID: {form.erid}</div>}
+              {form.erid && <div style={{ ...hintStyle, color: SUCCESS, fontWeight: 600 }}>ERID: {form.erid}</div>}
             </div>
+
             <div>
-              <label className="form-label">Юр. информация</label>
-              <textarea className="form-input" rows={2} placeholder="ИНН, наименование рекламодателя..." value={form.legal_info}
+              <label style={labelStyle}>Юр. информация</label>
+              <textarea className="gw-input" style={{ ...inputStyle, fontFamily: 'inherit', resize: 'vertical', minHeight: 60 }}
+                rows={2} placeholder="ИНН, наименование рекламодателя..." value={form.legal_info}
                 onChange={e => setForm(p => ({ ...p, legal_info: e.target.value }))} />
-              <div className="form-hint">Юридические данные рекламодателя (ИНН, название). Требуется по закону при рекламе.</div>
+              <div style={hintStyle}>Юридические данные рекламодателя (ИНН, название). Требуется по закону при рекламе.</div>
             </div>
+
             <MessagePreview
               messageText={form.message_text}
               file={gwImage}
@@ -409,14 +853,16 @@ export default function GiveawaysPage() {
               entityType="giveaway"
               entityId={editingItem?.id}
             />
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn btn-outline" onClick={() => setShowModal(false)}>Отмена</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button className="gw-ghost" style={ghostBtn} onClick={() => setShowModal(false)}>Отмена</button>
+              <button className="gw-primary" style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }} onClick={handleSave} disabled={saving}>
                 {saving ? 'Сохранение...' : editingItem ? 'Сохранить' : 'Создать'}
               </button>
             </div>
           </div>
         </Modal>
+
         <EridModal
           isOpen={showEridModal}
           onClose={() => setShowEridModal(false)}
@@ -429,5 +875,3 @@ export default function GiveawaysPage() {
     </Paywall>
   );
 }
-
-const btnSmall = { padding: '4px 10px', fontSize: '0.8rem' };

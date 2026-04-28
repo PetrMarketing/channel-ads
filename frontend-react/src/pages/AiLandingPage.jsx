@@ -7,6 +7,7 @@ import { api } from '../services/api';
 import { useChannels } from '../contexts/ChannelContext';
 import { useToast } from '../components/Toast';
 import Paywall from '../components/Paywall';
+import { usePageOnboarding } from '../components/OnboardingTour';
 
 const SESSION_COST = 500;
 const MAX_REGEN = 2;
@@ -16,6 +17,10 @@ export default function AiLandingPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const tc = currentChannel?.tracking_code;
+
+  const { overlay: pageTour } = usePageOnboarding('ai-landing', [
+    { selector: '[data-tour-page="landing-create"]', title: 'Генерация лендинга', text: '500 ИИ-токенов = HTML-лендинг с фото, ТЗ и метрикой.', placement: 'bottom' },
+  ]);
 
   const [step, setStep] = useState('start');
   const [landingId, setLandingId] = useState(null);
@@ -45,6 +50,10 @@ export default function AiLandingPage() {
   // Метрика
   const [metrikaForm, setMetrikaForm] = useState({ ym_counter_id: '', ym_goal_name: 'subscribe_channel', vk_pixel_id: '', vk_goal_name: 'subscribe_channel' });
   const [savingMetrika, setSavingMetrika] = useState(false);
+
+  // Правка лендинга
+  const [editRequest, setEditRequest] = useState('');
+  const [editing, setEditing] = useState(false);
 
   const sUrl = `${sessionTc}/landing/${landingId}`;
 
@@ -204,6 +213,7 @@ export default function AiLandingPage() {
     setPhotos([]); setPhotoDesc(''); setSpec(''); setHtmlContent(''); setSlug('');
     setRegenCount(0);
     setMetrikaForm({ ym_counter_id: '', ym_goal_name: 'subscribe_channel', vk_pixel_id: '', vk_goal_name: 'subscribe_channel' });
+    setEditRequest(''); setEditing(false);
   };
 
   const renderContent = () => {
@@ -224,7 +234,7 @@ export default function AiLandingPage() {
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: 24 }}>
               Стоимость: <b style={{ color: '#7B68EE' }}>{SESSION_COST} токенов</b>
             </p>
-            <button className="btn btn-primary" onClick={handleCreate} disabled={loading}
+            <button data-tour-page="landing-create" className="btn btn-primary" onClick={handleCreate} disabled={loading}
               style={{ padding: '12px 32px', fontSize: '1rem' }}>
               {loading ? 'Создание...' : 'Создать лендинг'}
             </button>
@@ -236,8 +246,8 @@ export default function AiLandingPage() {
                 {pastLandings.map(l => (
                   <div key={l.id} onClick={() => handleOpen(l)} style={{
                     display: 'flex', gap: 12, alignItems: 'center', padding: '12px 16px',
-                    borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-glass)',
-                    cursor: 'pointer', transition: 'border-color 0.2s',
+                    border: '1px solid var(--border)', background: 'var(--bg-glass)',
+                    cursor: 'pointer',
                   }}
                     onMouseEnter={e => e.currentTarget.style.borderColor = '#7B68EE'}
                     onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
@@ -298,7 +308,7 @@ export default function AiLandingPage() {
           </div>
 
           {/* Фото */}
-          <div style={{ marginBottom: 20, padding: '16px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-glass)' }}>
+          <div style={{ marginBottom: 20, padding: '16px', border: '1px solid var(--border)', background: 'var(--bg-glass)' }}>
             <label className="form-label">Фотографии (необязательно, до 5 шт.)</label>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 10 }}>
               Загрузите фото и опишите каждое — ИИ вставит их в нужные места
@@ -336,7 +346,7 @@ export default function AiLandingPage() {
           </div>
 
           {/* ТЗ */}
-          <div style={{ marginBottom: 20, padding: '16px', borderRadius: 12, border: '1px solid var(--border)',
+          <div style={{ marginBottom: 20, padding: '16px', border: '1px solid var(--border)',
             background: 'var(--bg-glass)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <h3 style={{ fontSize: '0.95rem', fontWeight: 600, margin: 0 }}>Техническое задание *</h3>
@@ -381,20 +391,20 @@ export default function AiLandingPage() {
     // Превью
     if (step === 'preview') {
       const canRegen = regenCount < MAX_REGEN;
-      const handleRegenerate = async () => {
+      const handleApplyEdit = async () => {
         if (!canRegen) { showToast(`Лимит правок исчерпан (${MAX_REGEN})`, 'error'); return; }
-        setLoading(true);
+        if (!editRequest.trim()) { showToast('Опишите, что нужно изменить', 'error'); return; }
+        setEditing(true);
         try {
-          setStep('generating');
-          const data = await api.post(`/ai-landing/${sUrl}/generate`);
+          const data = await api.post(`/ai-landing/${sUrl}/edit`, { edit_request: editRequest.trim() });
           if (data.success) {
             setHtmlContent(data.html || '');
             setRegenCount(data.regen_count ?? 0);
-            setStep('preview');
-            showToast('Лендинг перегенерирован', 'success');
+            setEditRequest('');
+            showToast('Правки внесены', 'success');
           }
-        } catch (e) { showToast(e.message, 'error'); setStep('preview'); }
-        finally { setLoading(false); }
+        } catch (e) { showToast(e.message || 'Ошибка', 'error'); }
+        finally { setEditing(false); }
       };
       const handleSaveMetrikaClick = async () => {
         setSavingMetrika(true);
@@ -408,24 +418,48 @@ export default function AiLandingPage() {
         <div style={{ maxWidth: 900, margin: '0 auto', padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h2 style={{ fontSize: '1.3rem', fontWeight: 700, margin: 0 }}>Превью лендинга</h2>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {canRegen && (
-                <button className="btn" onClick={handleRegenerate} disabled={loading}
-                  style={{ padding: '6px 14px', fontSize: '0.82rem' }}>
-                  Перегенерировать ({MAX_REGEN - regenCount} осталось)
-                </button>
-              )}
-              <button className="btn" onClick={handleReset} style={{ padding: '6px 14px', fontSize: '0.82rem' }}>Назад</button>
-            </div>
+            <button className="btn" onClick={handleReset} style={{ padding: '6px 14px', fontSize: '0.82rem' }}>Назад</button>
           </div>
 
-          <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', marginBottom: 16 }}>
+          <div style={{ overflow: 'hidden', border: '1px solid var(--border)', marginBottom: 16 }}>
             <iframe srcDoc={htmlContent} title="Landing Preview"
               style={{ width: '100%', height: 600, border: 'none' }} sandbox="allow-scripts" />
           </div>
 
+          {/* Правки */}
+          <div style={{ marginBottom: 16, padding: 16, border: '1px solid var(--border)', background: 'var(--bg-glass)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 600, margin: 0 }}>Правки</h3>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                Осталось: <b>{Math.max(0, MAX_REGEN - regenCount)}</b> из {MAX_REGEN}
+              </span>
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 10 }}>
+              Опишите, что нужно изменить — ИИ внесёт правки в существующий код, не пересоздавая его с нуля
+            </p>
+            <textarea
+              className="form-input"
+              rows={3}
+              placeholder="Например: измени цвет кнопок на зелёный, добавь блок с отзывами после преимуществ, замени заголовок hero на «Новый заголовок»"
+              value={editRequest}
+              onChange={e => setEditRequest(e.target.value)}
+              disabled={!canRegen || editing}
+              style={{ width: '100%', fontSize: '0.88rem', resize: 'vertical', minHeight: 70, fontFamily: 'inherit' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+              <button
+                className="btn btn-primary"
+                onClick={handleApplyEdit}
+                disabled={!canRegen || editing || !editRequest.trim()}
+                style={{ padding: '8px 18px', fontSize: '0.85rem' }}
+              >
+                {editing ? 'Применение правок...' : !canRegen ? 'Лимит исчерпан' : 'Внести правки'}
+              </button>
+            </div>
+          </div>
+
           {/* Аналитика */}
-          <div style={{ marginBottom: 16, padding: '16px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-glass)' }}>
+          <div style={{ marginBottom: 16, padding: '16px', border: '1px solid var(--border)', background: 'var(--bg-glass)' }}>
             <h3 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: 12 }}>Аналитика и пиксели</h3>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 12 }}>
               Счётчики автоматически встраиваются в HTML при открытии лендинга
@@ -488,7 +522,7 @@ export default function AiLandingPage() {
           <p style={{ color: 'var(--text-secondary)', marginBottom: 20 }}>
             Ваш лендинг доступен по ссылке:
           </p>
-          <div style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid var(--border)',
+          <div style={{ padding: '14px 18px', border: '1px solid var(--border)',
             background: 'var(--bg-glass)', marginBottom: 16, wordBreak: 'break-all' }}>
             <a href={landingUrl} target="_blank" rel="noopener noreferrer"
               style={{ color: '#7B68EE', textDecoration: 'none', fontSize: '0.95rem' }}>
@@ -511,5 +545,5 @@ export default function AiLandingPage() {
     return null;
   };
 
-  return <Paywall>{renderContent()}</Paywall>;
+  return <Paywall>{pageTour}{renderContent()}</Paywall>;
 }

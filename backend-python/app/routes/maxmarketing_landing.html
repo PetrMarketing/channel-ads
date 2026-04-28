@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>MAXМаркетинг — Маркетинг для каналов MAX</title>
+<meta name="description" content="SaaS платформа для управления каналами в MAX. Привлекайте, удерживайте, монетизируйте подписчиков. ИИ Лендинги, воронки, рассылки, магазин.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#0a0a0a; --fg:#fafafa; --bg-inv:#fafafa; --fg-inv:#0a0a0a;
+    --accent:#FF3D00; --muted:#666; --border:#222; --border-inv:#e0e0e0;
+    --grid: rgba(255,255,255,0.03);
+    --display:'Archivo Black',sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+    --body:'Inter Tight',-apple-system,sans-serif;
+  }
+  html{scroll-behavior:smooth}
+  body{font-family:var(--body);background:var(--bg);color:var(--fg);line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden;font-feature-settings:'ss01','cv11'}
+  ::selection{background:var(--accent);color:var(--fg-inv)}
+  a{color:inherit;text-decoration:none}
+
+  /* ─── Layout ─── */
+  .container{max-width:1320px;margin:0 auto;padding:0 32px}
+  @media(max-width:640px){.container{padding:0 20px}}
+
+  /* ─── Header ─── */
+  header{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,10,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:18px 32px;max-width:1320px;margin:0 auto}
+  .logo{font-family:var(--display);font-size:1.1rem;letter-spacing:-0.02em;display:flex;align-items:center;gap:8px}
+  .logo-dot{width:10px;height:10px;background:var(--accent);border-radius:50%;display:inline-block}
+  .nav-links{display:flex;gap:32px;font-family:var(--mono);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.08em}
+  .nav-links a{opacity:0.6;transition:opacity 0.2s}
+  .nav-links a:hover{opacity:1}
+  @media(max-width:880px){.nav-links{display:none}}
+  .btn{display:inline-flex;align-items:center;gap:10px;padding:12px 22px;font-family:var(--mono);font-size:0.78rem;font-weight:500;text-transform:uppercase;letter-spacing:0.08em;background:var(--fg);color:var(--bg);border:none;cursor:pointer;transition:all 0.2s;position:relative;overflow:hidden}
+  .btn::after{content:'→';display:inline-block;transition:transform 0.2s}
+  .btn:hover::after{transform:translateX(4px)}
+  .btn-accent{background:var(--accent);color:#fff}
+  .btn-ghost{background:transparent;color:var(--fg);border:1px solid var(--border)}
+  .btn-ghost:hover{background:var(--fg);color:var(--bg)}
+  @media(max-width:880px){.nav .btn{padding:10px 16px;font-size:0.7rem}}
+
+  /* ─── Section Anatomy ─── */
+  section{position:relative;padding:120px 0;border-bottom:1px solid var(--border)}
+  @media(max-width:768px){section{padding:80px 0}}
+  .sec-num{font-family:var(--mono);font-size:0.72rem;letter-spacing:0.15em;color:var(--accent);margin-bottom:24px;display:flex;align-items:center;gap:12px}
+  .sec-num::before{content:'';width:32px;height:1px;background:var(--accent)}
+  .sec-title{font-family:var(--display);font-size:clamp(2.5rem,6vw,4.8rem);line-height:0.92;letter-spacing:-0.03em;margin-bottom:16px;text-transform:uppercase}
+  .sec-sub{font-family:var(--mono);font-size:0.85rem;color:var(--muted);max-width:520px;line-height:1.5}
+
+  /* ─── Hero ─── */
+  .hero{padding:140px 0 100px;min-height:100vh;display:flex;align-items:center;position:relative;overflow:hidden}
+  .hero-grid{position:absolute;inset:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:80px 80px;mask-image:radial-gradient(circle at 50% 50%,#000 0%,transparent 80%);pointer-events:none}
+  .hero-meta{font-family:var(--mono);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.18em;color:var(--accent);margin-bottom:40px;display:flex;gap:24px;flex-wrap:wrap}
+  .hero-meta span{display:flex;align-items:center;gap:8px}
+  .hero-meta span::before{content:'●';color:var(--accent);font-size:0.5rem}
+  .hero h1{font-family:var(--display);font-size:clamp(3rem,9vw,8.5rem);line-height:0.85;letter-spacing:-0.04em;text-transform:uppercase;margin-bottom:32px;position:relative}
+  .hero h1 .accent{color:var(--accent)}
+  .hero h1 .slash{color:var(--muted);font-weight:300}
+  .hero p{font-family:var(--body);font-size:clamp(1.05rem,1.6vw,1.4rem);max-width:620px;margin-bottom:48px;color:#aaa;line-height:1.5}
+  .hero-cta{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+  .hero-tag{font-family:var(--mono);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted)}
+  .hero-tag b{color:var(--accent)}
+
+  /* hero scroll cue */
+  .scroll-cue{position:absolute;bottom:32px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:8px}
+  .scroll-cue::after{content:'';width:1px;height:32px;background:linear-gradient(to bottom,var(--accent),transparent);animation:scrollCue 2s ease-in-out infinite}
+  @keyframes scrollCue{0%,100%{transform:scaleY(0.3);opacity:0.3}50%{transform:scaleY(1);opacity:1}}
+
+  /* ─── Metrics ─── */
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg)}
+  @media(max-width:768px){.metrics{grid-template-columns:repeat(2,1fr)}}
+  .metric{padding:48px 32px;border-right:1px solid var(--border);position:relative;overflow:hidden;transition:background 0.3s}
+  .metric:last-child{border-right:none}
+  .metric:hover{background:#111}
+  .metric:hover .metric-num{color:var(--accent)}
+  @media(max-width:768px){
+    .metric:nth-child(2){border-right:none}
+    .metric:nth-child(-n+2){border-bottom:1px solid var(--border)}
+  }
+  .metric-num{font-family:var(--display);font-size:clamp(2.8rem,6vw,4.5rem);line-height:1;letter-spacing:-0.04em;margin-bottom:12px;transition:color 0.3s}
+  .metric-label{font-family:var(--mono);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted)}
+
+  /* ─── Demo screenshot ─── */
+  .demo-wrap{position:relative;margin-top:80px;border:1px solid var(--border);background:#111;border-radius:0;overflow:hidden}
+  .demo-bar{padding:14px 20px;display:flex;align-items:center;gap:8px;background:#0e0e0e;border-bottom:1px solid var(--border)}
+  .demo-dot{width:11px;height:11px;border-radius:50%;background:#333}
+  .demo-bar-url{margin-left:16px;font-family:var(--mono);font-size:0.74rem;color:var(--muted)}
+  .demo-grid{display:grid;grid-template-columns:200px 1fr;min-height:380px}
+  @media(max-width:640px){.demo-grid{grid-template-columns:1fr;min-height:auto}}
+  .demo-side{padding:24px 18px;border-right:1px solid var(--border);font-family:var(--mono);font-size:0.72rem}
+  .demo-side div{padding:8px 12px;color:var(--muted);transition:color 0.2s}
+  .demo-side .active{background:var(--accent);color:#fff}
+  .demo-main{padding:32px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-content:start}
+  @media(max-width:640px){.demo-main{grid-template-columns:repeat(2,1fr);padding:20px}}
+  .demo-card{padding:18px;border:1px solid var(--border);background:#0c0c0c;font-family:var(--mono);font-size:0.7rem}
+  .demo-card .num{font-family:var(--display);font-size:1.6rem;color:var(--fg);margin-bottom:6px;letter-spacing:-0.02em}
+  .demo-card.acc .num{color:var(--accent)}
+  .demo-card .lbl{color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-size:0.6rem}
+
+  /* ─── Features (9 stamps) ─── */
+  .features-head{display:grid;grid-template-columns:1fr auto;gap:40px;align-items:end;margin-bottom:64px}
+  @media(max-width:768px){.features-head{grid-template-columns:1fr}}
+  .features-head p{font-family:var(--body);font-size:1rem;color:var(--muted);max-width:380px;line-height:1.5}
+  .stamps{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid var(--border);border-left:1px solid var(--border)}
+  @media(max-width:880px){.stamps{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:480px){.stamps{grid-template-columns:1fr}}
+  .stamp{padding:36px 28px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);position:relative;transition:background 0.25s;min-height:240px;display:flex;flex-direction:column;cursor:default}
+  .stamp:hover{background:#111}
+  .stamp:hover .stamp-arrow{transform:translate(4px,-4px);color:var(--accent)}
+  .stamp:hover .stamp-num{color:var(--accent)}
+  .stamp-num{position:absolute;top:18px;right:24px;font-family:var(--mono);font-size:0.68rem;color:var(--muted);letter-spacing:0.1em;transition:color 0.2s}
+  .stamp-arrow{position:absolute;bottom:24px;right:28px;font-size:1.2rem;color:var(--muted);transition:all 0.25s}
+  .stamp h3{font-family:var(--display);font-size:1.6rem;line-height:0.95;letter-spacing:-0.02em;text-transform:uppercase;margin-bottom:14px;margin-top:36px}
+  .stamp p{font-family:var(--mono);font-size:0.78rem;line-height:1.55;color:#999;flex:1}
+
+  /* ─── Comparison ─── */
+  .compare-block{margin-top:64px;border:1px solid var(--border)}
+  .compare-head{display:grid;grid-template-columns:1.3fr 1fr 1fr;background:#111;border-bottom:1px solid var(--border)}
+  .compare-head>div{padding:20px 24px;font-family:var(--mono);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.1em;border-right:1px solid var(--border)}
+  .compare-head>div:last-child{border-right:none;background:var(--accent);color:#fff}
+  .compare-row{display:grid;grid-template-columns:1.3fr 1fr 1fr;border-bottom:1px solid var(--border);transition:background 0.2s}
+  .compare-row:last-child{border-bottom:none}
+  .compare-row:hover{background:#0e0e0e}
+  .compare-row>div{padding:22px 24px;font-family:var(--mono);font-size:0.85rem;border-right:1px solid var(--border);display:flex;align-items:center;gap:10px}
+  .compare-row>div:last-child{border-right:none}
+  .compare-row .y{color:#00E676}
+  .compare-row .n{color:#666}
+  .compare-row .y::before{content:'+';font-weight:bold;color:#00E676}
+  .compare-row .n::before{content:'×';color:#444}
+  @media(max-width:640px){
+    .compare-head,.compare-row{grid-template-columns:1.6fr 0.7fr 0.7fr}
+    .compare-head>div,.compare-row>div{padding:14px 12px;font-size:0.7rem}
+  }
+
+  /* ─── Cases ─── */
+  .cases{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:64px}
+  @media(max-width:880px){.cases{grid-template-columns:1fr}}
+  .case{padding:36px 28px;border:1px solid var(--border);background:#0c0c0c;display:flex;flex-direction:column;gap:24px;transition:all 0.25s;position:relative;overflow:hidden}
+  .case:hover{background:#111;border-color:var(--accent)}
+  .case-tag{font-family:var(--mono);font-size:0.68rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--accent);padding:6px 10px;border:1px solid var(--accent);align-self:flex-start}
+  .case-num{font-family:var(--display);font-size:clamp(3rem,5vw,4.5rem);line-height:1;letter-spacing:-0.04em;color:var(--fg)}
+  .case-num small{font-size:0.4em;color:var(--muted);font-family:var(--mono);letter-spacing:0.05em;display:block;margin-top:4px;text-transform:uppercase}
+  .case h3{font-family:var(--display);font-size:1.2rem;text-transform:uppercase;line-height:1.1;letter-spacing:-0.01em}
+  .case p{font-family:var(--body);font-size:0.92rem;color:#999;line-height:1.55}
+
+  /* ─── Pricing ─── */
+  .pricing{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:64px;border-top:1px solid var(--border);border-left:1px solid var(--border)}
+  @media(max-width:880px){.pricing{grid-template-columns:1fr}}
+  .price{padding:48px 32px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:24px;background:#0a0a0a;transition:background 0.3s;position:relative}
+  .price.hi{background:var(--accent);color:#fff}
+  .price.hi *{color:#fff !important}
+  .price.hi .price-tier{color:rgba(255,255,255,0.7)!important}
+  .price:hover:not(.hi){background:#111}
+  .price-tier{font-family:var(--mono);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--accent)}
+  .price-amount{font-family:var(--display);font-size:clamp(3rem,5vw,4rem);line-height:0.9;letter-spacing:-0.04em}
+  .price-amount small{font-family:var(--mono);font-size:0.32em;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;font-weight:normal;display:inline-block;margin-left:8px}
+  .price h3{font-family:var(--display);font-size:1.4rem;text-transform:uppercase;letter-spacing:-0.01em}
+  .price ul{list-style:none;display:flex;flex-direction:column;gap:10px;flex:1;font-family:var(--mono);font-size:0.8rem;color:#aaa}
+  .price ul li{padding-left:18px;position:relative;line-height:1.4}
+  .price ul li::before{content:'+';position:absolute;left:0;color:var(--accent);font-weight:bold}
+  .price.hi ul li::before{color:#fff}
+  .price-badge{position:absolute;top:0;right:0;background:#0a0a0a;color:var(--accent);padding:6px 14px;font-family:var(--mono);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.12em;font-weight:500}
+  .price .btn{width:100%;justify-content:center}
+
+  /* ─── FAQ ─── */
+  .faq{margin-top:64px;border-top:1px solid var(--border)}
+  .faq-item{border-bottom:1px solid var(--border);overflow:hidden}
+  .faq-q{padding:28px 0;cursor:pointer;display:flex;align-items:center;gap:32px;transition:padding 0.2s}
+  .faq-q:hover{padding-left:8px}
+  .faq-q:hover .faq-q-text{color:var(--accent)}
+  .faq-num{font-family:var(--mono);font-size:0.78rem;color:var(--muted);min-width:50px;letter-spacing:0.1em}
+  .faq-q-text{font-family:var(--display);font-size:clamp(1.1rem,2vw,1.6rem);text-transform:uppercase;letter-spacing:-0.01em;flex:1;line-height:1.1;transition:color 0.2s}
+  .faq-icon{font-family:var(--mono);font-size:1.2rem;color:var(--accent);transition:transform 0.3s;flex-shrink:0}
+  .faq-item.open .faq-icon{transform:rotate(45deg)}
+  .faq-a{max-height:0;overflow:hidden;transition:max-height 0.4s ease;font-family:var(--body);font-size:1rem;color:#999;line-height:1.6}
+  .faq-item.open .faq-a{max-height:300px}
+  .faq-a-inner{padding:0 0 28px 82px;max-width:760px}
+  @media(max-width:640px){.faq-a-inner{padding-left:0}}
+
+  /* ─── CTA Final ─── */
+  .cta-final{padding:140px 0;background:var(--accent);color:#fff;text-align:center;border-bottom:none;position:relative;overflow:hidden}
+  .cta-final::before{content:'MAX/MARKETING';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:var(--display);font-size:clamp(8rem,20vw,18rem);color:rgba(255,255,255,0.08);white-space:nowrap;letter-spacing:-0.04em;pointer-events:none;line-height:1}
+  .cta-final h2{font-family:var(--display);font-size:clamp(3rem,8vw,7rem);line-height:0.85;letter-spacing:-0.04em;text-transform:uppercase;margin-bottom:32px;position:relative}
+  .cta-final p{font-family:var(--mono);font-size:0.9rem;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:40px;position:relative;opacity:0.9}
+  .cta-final .btn{background:#0a0a0a;color:#fff;padding:18px 32px;font-size:0.85rem;position:relative}
+  .cta-final .btn:hover{background:#fff;color:#0a0a0a}
+
+  /* ─── Footer ─── */
+  footer{padding:60px 0 40px;background:#000;border-top:1px solid var(--border)}
+  .footer-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:48px;margin-bottom:48px}
+  @media(max-width:768px){.footer-grid{grid-template-columns:1fr 1fr;gap:32px}}
+  .footer-grid h4{font-family:var(--mono);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);margin-bottom:18px}
+  .footer-grid ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+  .footer-grid a{font-family:var(--body);font-size:0.92rem;color:#aaa;transition:color 0.15s}
+  .footer-grid a:hover{color:var(--accent)}
+  .footer-bottom{display:flex;justify-content:space-between;padding-top:32px;border-top:1px solid var(--border);font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;flex-wrap:wrap;gap:12px}
+
+  /* ─── Reveal animation ─── */
+  .reveal{opacity:0;transform:translateY(24px);transition:opacity 0.7s cubic-bezier(0.22,1,0.36,1),transform 0.7s cubic-bezier(0.22,1,0.36,1)}
+  .reveal.in{opacity:1;transform:translateY(0)}
+  .reveal-stagger>*{opacity:0;transform:translateY(20px);transition:opacity 0.6s cubic-bezier(0.22,1,0.36,1),transform 0.6s cubic-bezier(0.22,1,0.36,1)}
+  .reveal-stagger.in>*:nth-child(1){transition-delay:0.05s}
+  .reveal-stagger.in>*:nth-child(2){transition-delay:0.1s}
+  .reveal-stagger.in>*:nth-child(3){transition-delay:0.15s}
+  .reveal-stagger.in>*:nth-child(4){transition-delay:0.2s}
+  .reveal-stagger.in>*:nth-child(5){transition-delay:0.25s}
+  .reveal-stagger.in>*:nth-child(6){transition-delay:0.3s}
+  .reveal-stagger.in>*:nth-child(7){transition-delay:0.35s}
+  .reveal-stagger.in>*:nth-child(8){transition-delay:0.4s}
+  .reveal-stagger.in>*:nth-child(9){transition-delay:0.45s}
+  .reveal-stagger.in>*{opacity:1;transform:translateY(0)}
+
+  /* marquee strip */
+  .strip{padding:18px 0;background:var(--accent);color:#fff;overflow:hidden;border-top:1px solid var(--accent);border-bottom:1px solid var(--accent)}
+  .strip-inner{display:flex;gap:48px;animation:marquee 30s linear infinite;white-space:nowrap;font-family:var(--display);font-size:1.1rem;text-transform:uppercase;letter-spacing:-0.01em}
+  .strip-inner span::before{content:'★';color:#0a0a0a;margin-right:48px;font-size:0.9rem;display:inline-block;vertical-align:middle}
+  @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+</style>
+</head>
+<body>
+
+<header>
+  <nav class="nav">
+    <a href="#" class="logo"><span class="logo-dot"></span>MAX/MARKETING</a>
+    <div class="nav-links">
+      <a href="#features">001 / Функции</a>
+      <a href="#cases">003 / Кейсы</a>
+      <a href="#pricing">004 / Тарифы</a>
+      <a href="#faq">005 / FAQ</a>
+    </div>
+    <a href="https://itcakes.ru/login" class="btn">Войти</a>
+  </nav>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="container reveal">
+    <div class="hero-meta">
+      <span>Версия 2.4</span>
+      <span>Только для MAX</span>
+      <span>Активно</span>
+    </div>
+    <h1>
+      Маркетинг<br>
+      для каналов<br>
+      <span class="slash">/</span> <span class="accent">MAX</span>
+    </h1>
+    <p>Привлекайте, удерживайте и монетизируйте подписчиков. Один сервис вместо десятка инструментов. ИИ-лендинги, воронки, рассылки, магазин и платные чаты.</p>
+    <div class="hero-cta">
+      <a href="https://itcakes.ru/login" class="btn btn-accent">Начать бесплатно</a>
+      <a href="#features" class="btn btn-ghost">Изучить функции</a>
+      <span class="hero-tag">→ <b>14 дней</b> без оплаты</span>
+    </div>
+  </div>
+  <div class="scroll-cue">SCROLL</div>
+</section>
+
+<!-- METRICS -->
+<div class="metrics reveal-stagger">
+  <div class="metric"><div class="metric-num">×10</div><div class="metric-label">Рост подписчиков</div></div>
+  <div class="metric"><div class="metric-num">24/7</div><div class="metric-label">Автоворонки</div></div>
+  <div class="metric"><div class="metric-num">50+</div><div class="metric-label">Инструментов</div></div>
+  <div class="metric"><div class="metric-num">100%</div><div class="metric-label">MAX API</div></div>
+</div>
+
+<!-- DEMO -->
+<section>
+  <div class="container">
+    <div class="reveal">
+      <div class="sec-num">002 / Личный кабинет</div>
+      <h2 class="sec-title">Один экран —<br>вся аналитика</h2>
+      <p class="sec-sub">Дашборд с подписками, визитами, конверсиями. Все каналы в одном выпадающем списке. Графики, метрики, фильтры по периодам.</p>
+    </div>
+    <div class="demo-wrap reveal">
+      <div class="demo-bar">
+        <span class="demo-dot"></span><span class="demo-dot"></span><span class="demo-dot"></span>
+        <span class="demo-bar-url">itcakes.ru/dashboard</span>
+      </div>
+      <div class="demo-grid">
+        <div class="demo-side">
+          <div class="active">→ Дашборд</div>
+          <div>Ссылки</div>
+          <div>Воронки</div>
+          <div>Рассылки</div>
+          <div>Магазин</div>
+          <div>Аналитика</div>
+        </div>
+        <div class="demo-main">
+          <div class="demo-card acc"><div class="num">12 480</div><div class="lbl">Подписчики</div></div>
+          <div class="demo-card"><div class="num">+847</div><div class="lbl">За неделю</div></div>
+          <div class="demo-card"><div class="num">38%</div><div class="lbl">Конверсия</div></div>
+          <div class="demo-card"><div class="num">156</div><div class="lbl">Рассылок</div></div>
+          <div class="demo-card acc"><div class="num">94K ₽</div><div class="lbl">Доход</div></div>
+          <div class="demo-card"><div class="num">23</div><div class="lbl">Активных воронок</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div class="features-head reveal">
+      <div>
+        <div class="sec-num">003 / Функции</div>
+        <h2 class="sec-title">Девять<br>инструментов,<br>одна платформа</h2>
+      </div>
+      <p>Каждый инструмент решает свою задачу — от привлечения трафика до автоматизации продаж. Запускайте по отдельности или вместе.</p>
+    </div>
+    <div class="stamps reveal-stagger">
+      <div class="stamp">
+        <span class="stamp-num">/01</span>
+        <h3>ИИ Лендинг</h3>
+        <p>Генерация HTML-лендинга по ТЗ. Подставит ваши фото, тексты, аналитику. 500 токенов = готовая страница за 2 минуты.</p>
+        <span class="stamp-arrow">↗</span>
+      </div>
+      <div class="stamp">
+        <span class="stamp-num">/02</span>
+        <h3>Трекинг ссылки</h3>
+        <p>UTM-метки, Яндекс Метрика, VK Пиксель. Статистика визитов и подписок по дням. График конверсий с переключателем месяца.</p>
+        <span class="stamp-arrow">↗</span>
+      </div>
+      <div class="stamp">
+        <span class="stamp-num">/03</span>
+        <h3>Воронки</h3>
+        <p>Автоматические цепочки сообщений после подписки. Шаги с задержками: секунды, дни, конкретное время.</p>
+        <span class="stamp-arrow">↗</span>
+      </div>
+      <div class="stamp">
+        <span class="stamp-num">/04</span>
+        <h3>Рассылки</h3>
+        <p>Личные сообщения подписчикам через бота. Таргетинг, отложенная отправка, статистика доставки, тестовый режим.</p>
+        <span class="stamp-arrow">↗</span>
+      </div>
+      <div class="stamp">
+        <span class="stamp-num">/05</span>
+        <h3>Розыгрыши</h3>
+        <p>Конкурсы среди подписчиков с автоматическим выбором победителей. ERID, призы, сроки, условия.</p>
+        <span class="stamp-arrow">↗</span>
+      </div>
+      <div class="stamp">
+        <span class="stamp-num">/06</span>
+        <h3>Платные чаты</h3>
+        <p>Подписка за деньги на чат или канал. Tinkoff, YooKassa, Robokassa. Авто-добавление при оплате, удаление при истечении.</p>
+        <span class="stamp-arrow">↗</span>
+      </div>
+      <div class="stamp">
+        <span class="stamp-num">/07</span>
+        <h3>Магазин</h3>
+        <p>Каталог, корзина, доставка, промокоды. MiniApp в MAX. Категории, атрибуты, варианты товаров, статусы заказов.</p>
+        <span class="stamp-arrow">↗</span>
+      </div>
+      <div class="stamp">
+        <span class="stamp-num">/08</span>
+        <h3>Услуги и запись</h3>
+        <p>Онлайн-запись к специалистам. Филиалы, расписание, услуги, оплата. Напоминания клиентам и сотрудникам.</p>
+        <span class="stamp-arrow">↗</span>
+      </div>
+      <div class="stamp">
+        <span class="stamp-num">/09</span>
+        <h3>ИИ Оформление</h3>
+        <p>Аватарка канала + описание + лид-магнит за один клик. ИИ создаст 9 вариантов аватара, выберите лучший.</p>
+        <span class="stamp-arrow">↗</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MARQUEE STRIP -->
+<div class="strip">
+  <div class="strip-inner">
+    <span>MAX/MARKETING</span><span>2026</span><span>API NATIVE</span><span>NO CODE</span><span>BUILT FOR MAX</span><span>OFFICIAL BOT</span>
+    <span>MAX/MARKETING</span><span>2026</span><span>API NATIVE</span><span>NO CODE</span><span>BUILT FOR MAX</span><span>OFFICIAL BOT</span>
+  </div>
+</div>
+
+<!-- COMPARISON -->
+<section>
+  <div class="container">
+    <div class="reveal">
+      <div class="sec-num">004 / Сравнение</div>
+      <h2 class="sec-title">Стандартный<br>MAX vs нас</h2>
+      <p class="sec-sub">Что вы теряете без MAXМаркетинг и что получаете с ним.</p>
+    </div>
+    <div class="compare-block reveal">
+      <div class="compare-head">
+        <div>Возможность</div>
+        <div>MAX</div>
+        <div>+ MAXМаркетинг</div>
+      </div>
+      <div class="compare-row">
+        <div>Аналитика подписчиков</div>
+        <div class="n">Базовая</div>
+        <div class="y">Полная +UTM</div>
+      </div>
+      <div class="compare-row">
+        <div>Авто-воронки</div>
+        <div class="n">Нет</div>
+        <div class="y">До 50 шагов</div>
+      </div>
+      <div class="compare-row">
+        <div>Платные подписки</div>
+        <div class="n">Нет</div>
+        <div class="y">4 платёжки</div>
+      </div>
+      <div class="compare-row">
+        <div>Магазин в боте</div>
+        <div class="n">Нет</div>
+        <div class="y">MiniApp</div>
+      </div>
+      <div class="compare-row">
+        <div>ИИ-генерация контента</div>
+        <div class="n">Нет</div>
+        <div class="y">Лендинги, аватары</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CASES -->
+<section id="cases">
+  <div class="container">
+    <div class="reveal">
+      <div class="sec-num">005 / Кейсы</div>
+      <h2 class="sec-title">Цифры,<br>а не обещания</h2>
+      <p class="sec-sub">Реальные результаты клиентов после внедрения сервиса.</p>
+    </div>
+    <div class="cases reveal-stagger">
+      <div class="case">
+        <span class="case-tag">E-Commerce</span>
+        <div class="case-num">+248%<small>Конверсия в продажу</small></div>
+        <h3>Магазин косметики</h3>
+        <p>Запустили MiniApp каталог + воронку отправки купона после первой покупки. Средний чек вырос на 40%, повторные покупки — 32%.</p>
+      </div>
+      <div class="case">
+        <span class="case-tag">Инфобизнес</span>
+        <div class="case-num">×7<small>Рост подписной базы</small></div>
+        <h3>Школа дизайна</h3>
+        <p>ИИ-лендинг + лид-магнит "Чек-лист 50 сервисов". Подписчики получили файл, попали в воронку из 14 шагов, конверсия в покупку 18%.</p>
+      </div>
+      <div class="case">
+        <span class="case-tag">Услуги</span>
+        <div class="case-num">−63%<small>No-show на записях</small></div>
+        <h3>Барбершоп</h3>
+        <p>MiniApp онлайн-записи + автонапоминания за 24 часа и 1 час. Загрузка мастеров 92%, ручной работы у админа стало в 4 раза меньше.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing">
+  <div class="container">
+    <div class="reveal">
+      <div class="sec-num">006 / Тарифы</div>
+      <h2 class="sec-title">Без скрытых<br>условий</h2>
+      <p class="sec-sub">Цены за канал в месяц. Скидки за длительный срок: 6 мес −15%, 12 мес −30%.</p>
+    </div>
+    <div class="pricing reveal-stagger">
+      <div class="price">
+        <div>
+          <div class="price-tier">/01 Старт</div>
+          <h3>Старт</h3>
+        </div>
+        <div class="price-amount">0<small>₽/месяц</small></div>
+        <ul>
+          <li>До 1 000 подписчиков</li>
+          <li>Трекинг-ссылки и аналитика</li>
+          <li>1 канал</li>
+          <li>Базовая поддержка</li>
+        </ul>
+        <a href="https://itcakes.ru/login" class="btn btn-ghost">Начать</a>
+      </div>
+      <div class="price hi">
+        <div class="price-badge">Популярный</div>
+        <div>
+          <div class="price-tier">/02 Бизнес</div>
+          <h3>Бизнес</h3>
+        </div>
+        <div class="price-amount">1990<small>₽/месяц</small></div>
+        <ul>
+          <li>До 50 000 подписчиков</li>
+          <li>Все инструменты</li>
+          <li>До 5 каналов</li>
+          <li>Воронки, рассылки, магазин</li>
+          <li>Приоритетная поддержка</li>
+        </ul>
+        <a href="https://itcakes.ru/login" class="btn">Выбрать</a>
+      </div>
+      <div class="price">
+        <div>
+          <div class="price-tier">/03 Премиум</div>
+          <h3>Премиум</h3>
+        </div>
+        <div class="price-amount">4990<small>₽/месяц</small></div>
+        <ul>
+          <li>Без лимитов</li>
+          <li>Все инструменты + ИИ-токены</li>
+          <li>Безлимит каналов</li>
+          <li>Персональный менеджер</li>
+          <li>Кастомизация</li>
+        </ul>
+        <a href="https://itcakes.ru/login" class="btn btn-ghost">Выбрать</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="container">
+    <div class="reveal" style="max-width:780px">
+      <div class="sec-num">007 / Вопросы</div>
+      <h2 class="sec-title">Часто<br>спрашивают</h2>
+    </div>
+    <div class="faq reveal">
+      <div class="faq-item" onclick="this.classList.toggle('open')">
+        <div class="faq-q"><span class="faq-num">/01</span><span class="faq-q-text">Нужно ли платить за подключение?</span><span class="faq-icon">+</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Нет. Регистрация бесплатна, тариф «Старт» подходит для каналов до 1000 подписчиков. Платите только когда нужны платные функции или большой канал.</div></div>
+      </div>
+      <div class="faq-item" onclick="this.classList.toggle('open')">
+        <div class="faq-q"><span class="faq-num">/02</span><span class="faq-q-text">Какие платёжные системы поддерживаются?</span><span class="faq-icon">+</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Tinkoff, YooKassa, Prodamus, Robokassa. Подключаются за 5 минут через ваш аккаунт у платёжки. Деньги клиентов идут напрямую к вам.</div></div>
+      </div>
+      <div class="faq-item" onclick="this.classList.toggle('open')">
+        <div class="faq-q"><span class="faq-num">/03</span><span class="faq-q-text">Как подключить канал MAX?</span><span class="faq-icon">+</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Найдите бота PKMarketing в MAX → /start → откройте личный кабинет → добавьте бота PKMarketing администратором вашего канала. Канал появится автоматически.</div></div>
+      </div>
+      <div class="faq-item" onclick="this.classList.toggle('open')">
+        <div class="faq-q"><span class="faq-num">/04</span><span class="faq-q-text">Можно ли использовать на нескольких каналах?</span><span class="faq-icon">+</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Да. Тариф «Бизнес» включает до 5 каналов, «Премиум» — без лимита. Каждый канал имеет отдельную статистику и настройки. Скидка 10% за каждый дополнительный канал.</div></div>
+      </div>
+      <div class="faq-item" onclick="this.classList.toggle('open')">
+        <div class="faq-q"><span class="faq-num">/05</span><span class="faq-q-text">Что такое ИИ-токены?</span><span class="faq-icon">+</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Виртуальная валюта для ИИ-функций: лендинги, аватары, описания. Покупаются отдельно: 100 токенов = 300 ₽. ИИ Оформление = 150 токенов, ИИ Лендинг = 500.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="cta-final">
+  <div class="container">
+    <p class="reveal">→ Готовы начать?</p>
+    <h2 class="reveal">Откройте<br>личный кабинет</h2>
+    <a href="https://itcakes.ru/login" class="btn reveal">Войти в MAXМаркетинг</a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <a href="#" class="logo" style="margin-bottom:16px;display:flex"><span class="logo-dot"></span>MAX/MARKETING</a>
+        <p style="font-family:var(--mono);font-size:0.78rem;color:var(--muted);max-width:300px;line-height:1.6">SaaS-платформа для управления каналами в мессенджере MAX. Маркетинг, аналитика, монетизация.</p>
+      </div>
+      <div>
+        <h4>Продукт</h4>
+        <ul>
+          <li><a href="#features">Функции</a></li>
+          <li><a href="#pricing">Тарифы</a></li>
+          <li><a href="#cases">Кейсы</a></li>
+          <li><a href="#faq">FAQ</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Компания</h4>
+        <ul>
+          <li><a href="https://itcakes.ru/login">Войти</a></li>
+          <li><a href="https://itcakes.ru/login">Регистрация</a></li>
+          <li><a href="https://max.ru/PKMarketing">Бот в MAX</a></li>
+          <li><a href="mailto:hello@itcakes.ru">Поддержка</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Право</h4>
+        <ul>
+          <li><a href="#">Оферта</a></li>
+          <li><a href="#">Конфиденциальность</a></li>
+          <li><a href="#">Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 MAXМаркетинг</span>
+      <span>Build 2.4 / Made in 2026</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Reveal on scroll
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+  document.querySelectorAll('.reveal, .reveal-stagger').forEach(el => io.observe(el));
+
+  // Subtle parallax for hero grid
+  const heroGrid = document.querySelector('.hero-grid');
+  if (heroGrid) {
+    window.addEventListener('scroll', () => {
+      const y = window.scrollY * 0.3;
+      heroGrid.style.transform = `translateY(${y}px)`;
+    }, { passive: true });
+  }
+</script>
+</body>
+</html>

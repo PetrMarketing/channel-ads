@@ -5,6 +5,7 @@ import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 import BroadcastList from './broadcasts/BroadcastList';
 import BroadcastModal from './broadcasts/BroadcastModal';
+import { usePageOnboarding } from '../components/OnboardingTour';
 
 function defaultFilterValue(type) {
   if (type === 'lead_magnet') return { lead_magnet_id: '' };
@@ -43,7 +44,7 @@ export default function BroadcastsPage() {
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [statsData, setStatsData] = useState(null);
-  const [modalTab, setModalTab] = useState('edit'); // 'edit' | 'preview'
+  const [modalTab, setModalTab] = useState('edit');
   const [showEditSentModal, setShowEditSentModal] = useState(false);
   const [editSentBc, setEditSentBc] = useState(null);
   const [editSentText, setEditSentText] = useState('');
@@ -54,7 +55,10 @@ export default function BroadcastsPage() {
 
   const tc = currentChannel?.tracking_code;
 
-  // Close dropdown on outside click
+  const { overlay: pageTour } = usePageOnboarding('broadcasts', [
+    { selector: '[data-tour-page="broadcasts-create"]', title: 'Новая рассылка', text: 'Личное сообщение каждому подписчику. Можно настроить таргетинг по лид-магниту, дате регистрации и отложить отправку.', placement: 'bottom' },
+  ]);
+
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -121,7 +125,6 @@ export default function BroadcastsPage() {
     } catch { setRecipientCount(null); }
   }, [tc]);
 
-  // Recount when filters change
   useEffect(() => {
     if (!showModal) return;
     loadRecipientCount(editingBc?.id, filterRules);
@@ -347,7 +350,6 @@ export default function BroadcastsPage() {
     }
   };
 
-  /* --- Filter rules helpers --- */
   const addFilter = () => {
     if (!addFilterType) return;
     setFilterRules(prev => [...prev, { type: addFilterType, value: defaultFilterValue(addFilterType), negate: false }]);
@@ -368,6 +370,7 @@ export default function BroadcastsPage() {
 
   return (
     <Paywall>
+      {pageTour}
       <div>
         <BroadcastList
           loading={loading}
