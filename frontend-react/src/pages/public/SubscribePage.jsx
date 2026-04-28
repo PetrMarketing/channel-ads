@@ -47,7 +47,6 @@ export default function SubscribePage() {
   const goalFired = useRef(false);
   useEffect(() => {
     if (!visitId || subscribed) return;
-    let cleanupRetry;
     const interval = setInterval(async () => {
       if (goalFired.current) return;
       try {
@@ -56,11 +55,11 @@ export default function SubscribePage() {
           goalFired.current = true;
           setSubscribed(true);
           clearInterval(interval);
-          cleanupRetry = fireGoals();
+          fireGoals();
         }
       } catch {}
     }, 5000);
-    return () => { clearInterval(interval); cleanupRetry?.(); };
+    return () => clearInterval(interval);
   }, [visitId, subscribed, fireGoals]);
 
   // Build subscribe URL

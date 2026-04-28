@@ -40,7 +40,6 @@ export default function LeadMagnetLandingPage() {
   // Poll for subscription
   useEffect(() => {
     if (!visitId || subscribed) return;
-    let cleanupRetry;
     const interval = setInterval(async () => {
       if (goalFired.current) return;
       try {
@@ -49,11 +48,11 @@ export default function LeadMagnetLandingPage() {
           goalFired.current = true;
           setSubscribed(true);
           clearInterval(interval);
-          cleanupRetry = fireGoals();
+          fireGoals();
         }
       } catch {}
     }, 5000);
-    return () => { clearInterval(interval); cleanupRetry?.(); };
+    return () => clearInterval(interval);
   }, [visitId, subscribed, fireGoals]);
 
   const getBotUrl = () => {
