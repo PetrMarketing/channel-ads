@@ -534,11 +534,43 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
             for it in items:
                 lines.append(f"  {it['product_name']} x{it['quantity']} - {float(it['price']) * it['quantity']:.0f} RUB")
             lines.append(f"\nИтого: **{float(order['total']):.0f} RUB**")
-            lines.append("\nВы можете оплатить заказ или связаться с менеджером.")
-            # Get manager link
+
             shop_s = await fetch_one("SELECT manager_user_id, manager_contact_url FROM shop_settings WHERE channel_id = $1", order["channel_id"])
             mgr_link = (shop_s.get("manager_contact_url") or "") if shop_s else ""
+
+            # Генерируем свежий payment_url если есть платёжная система и заказ не оплачен
+            pay_url = None
+            if order.get("payment_status") != "paid" and float(order.get("total") or 0) > 0:
+                try:
+                    from ..services.payment_gateway import get_active_provider, generate_order_id, init_payment
+                    ps = await get_active_provider(order["channel_id"], "shop")
+                    if ps:
+                        creds = ps.get("credentials", {})
+                        if isinstance(creds, str):
+                            import json as _json
+                            creds = _json.loads(creds)
+                        new_payment_order_id = generate_order_id("shop", order["channel_id"])
+                        await execute(
+                            "UPDATE shop_orders SET payment_order_id = $1, payment_status = 'pending' WHERE id = $2",
+                            new_payment_order_id, order["id"],
+                        )
+                        pay_url = await init_payment(
+                            section="shop", provider=ps["provider"], creds=creds,
+                            order_id=new_payment_order_id, amount=float(order["total"]),
+                            description=f"Заказ {order_num}", app_url=settings.APP_URL.rstrip("/"),
+                            phone=order.get("client_phone", ""), email=order.get("client_email", ""),
+                        )
+                except Exception as e:
+                    print(f"[Shop] Payment init for order {order_num} failed: {e}")
+
+            if pay_url:
+                lines.append("\nОплатите заказ или свяжитесь с менеджером.")
+            else:
+                lines.append("\nСвяжитесь с менеджером для оплаты.")
+
             btns = []
+            if pay_url:
+                btns.append([{"type": "link", "text": f"💳 Оплатить {float(order['total']):.0f} ₽", "url": pay_url}])
             if mgr_link:
                 btns.append([{"type": "link", "text": "Связаться с менеджером", "url": mgr_link}])
             await _send_to_chat(max_api, chat_id, "\n".join(lines), buttons=btns if btns else None)

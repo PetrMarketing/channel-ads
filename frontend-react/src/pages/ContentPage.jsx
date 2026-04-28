@@ -14,6 +14,29 @@ import EridModal from '../components/EridModal';
 const STATUS_LABELS = { draft: 'Черновик', scheduled: 'Ожидает публикации', publishing: 'Публикуется...', published: 'Опубликовано' };
 const STATUS_COLORS = { draft: '#888', scheduled: '#3b82f6', published: 'var(--success)' };
 
+// Бэк возвращает timestamp без TZ — принудительно трактуем как UTC
+function parseUtc(s) {
+  if (!s) return null;
+  const str = s.includes('T') ? s : s.replace(' ', 'T');
+  const withTz = str.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(str) ? str : str + 'Z';
+  const d = new Date(withTz);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Конвертирует UTC ISO/timestamp в локальное datetime-local значение для input
+function toLocalDatetime(utcStr) {
+  const d = parseUtc(utcStr);
+  if (!d) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Локальное человекочитаемое отображение UTC даты
+function fmtLocal(utcStr) {
+  const d = parseUtc(utcStr);
+  return d ? d.toLocaleString('ru-RU') : '';
+}
+
 const btnSmall = { padding: '4px 10px', fontSize: '0.8rem' };
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -141,7 +164,7 @@ export default function ContentPage() {
     setForm({
       title: post.title || '',
       message_text: post.message_text || '',
-      scheduled_at: post.scheduled_at ? post.scheduled_at.slice(0, 16) : '',
+      scheduled_at: post.scheduled_at ? toLocalDatetime(post.scheduled_at) : '',
       inline_buttons: btns,
       attach_type: post.attach_type || '',
       erid: post.erid || '',
@@ -175,12 +198,15 @@ export default function ContentPage() {
 
       let data;
 
+      // Конвертируем локальное datetime-local в UTC ISO для бэка
+      const scheduledUtc = form.scheduled_at ? new Date(form.scheduled_at).toISOString() : '';
+
       if (postFile) {
         // Use FormData for file upload
         const fd = new FormData();
         fd.append('title', defaultTitle);
         fd.append('message_text', form.message_text);
-        fd.append('scheduled_at', form.scheduled_at || '');
+        fd.append('scheduled_at', scheduledUtc);
         if (parsedButtons) {
           fd.append('inline_buttons', JSON.stringify(parsedButtons));
         }
@@ -196,7 +222,7 @@ export default function ContentPage() {
         const payload = {
           title: defaultTitle,
           message_text: form.message_text,
-          scheduled_at: form.scheduled_at || null,
+          scheduled_at: scheduledUtc || null,
         };
         if (parsedButtons) {
           payload.inline_buttons = parsedButtons;
@@ -315,8 +341,8 @@ export default function ContentPage() {
                   dangerouslySetInnerHTML={{ __html: post.message_text || '' }}
                 />
                 <div style={{ display: 'flex', gap: '12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  {post.scheduled_at && <span>Запланировано: {new Date(post.scheduled_at).toLocaleString('ru-RU')}</span>}
-                  {post.published_at && <span>Опубликовано: {new Date(post.published_at).toLocaleString('ru-RU')}</span>}
+                  {post.scheduled_at && <span>Запланировано: {fmtLocal(post.scheduled_at)}</span>}
+                  {post.published_at && <span>Опубликовано: {fmtLocal(post.published_at)}</span>}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
