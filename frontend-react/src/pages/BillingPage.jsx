@@ -207,6 +207,17 @@ export default function BillingPage() {
   const monthlyDur = durations.find(d => d.months === 1);
   const monthlyBase = monthlyDur?.price || 0;
 
+  const [channelsOpen, setChannelsOpen] = useState(true);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+
+  // Default state for channels accordion: expanded if 0/none-selected OR >1 channels
+  useEffect(() => {
+    if (!channels?.length) return;
+    const sel = channels.filter(ch => channelConfigs[ch.tracking_code]?.selected).length;
+    setChannelsOpen(sel === 0 || channels.length > 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channels?.length]);
+
   if (loading) return <Loading />;
 
   if (!channels?.length) return (
@@ -312,54 +323,6 @@ export default function BillingPage() {
         </div>
       </section>
 
-      {channelsWithSubs.length > 0 && (
-        <section style={{ marginBottom: 26 }}>
-          <div style={sectionHeaderRow}>
-            <div>
-              <h2 style={sectionTitleStyle}>Текущие подписки</h2>
-              <p style={sectionSubStyle}>Активны на ваших каналах</p>
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
-            {channelsWithSubs.map((s, i) => (
-              <div
-                key={s.tracking_code}
-                className="bp-card"
-                style={{
-                  ...cardBase, padding: 18,
-                  background: `linear-gradient(135deg, ${ACCENT}06, ${ACCENT2}06)`,
-                  borderColor: `${ACCENT}25`,
-                  animation: `dashFadeUp 0.4s ease ${0.05 + i * 0.04}s both`,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: 10,
-                    background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
-                    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: `0 4px 12px ${ACCENT}33`,
-                  }}>
-                    <Crown />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: DARK, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {s.title || s.tracking_code}
-                    </div>
-                    <div style={{ fontSize: '0.74rem', color: MUTED, marginTop: 2 }}>Активная подписка</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                  <span style={{ fontSize: '1.9rem', fontWeight: 800, color: DARK, letterSpacing: '-0.04em', lineHeight: 1 }}>
-                    {s.billing_days_left}
-                  </span>
-                  <span style={{ fontSize: '0.82rem', color: MUTED }}>дн. осталось</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       <section data-tour-page="billing-duration" style={{ marginBottom: 26 }}>
         <div style={sectionHeaderRow}>
           <div>
@@ -455,17 +418,44 @@ export default function BillingPage() {
       </section>
 
       <section data-tour-page="billing-channels" style={{ marginBottom: 22 }}>
-        <div style={sectionHeaderRow}>
-          <div>
-            <h2 style={sectionTitleStyle}>Каналы для оплаты</h2>
-            <p style={sectionSubStyle}>Выбрано: {selectedCount} из {channels.length}. Каждый дополнительный — со скидкой.</p>
+        <div
+          style={{
+            ...sectionHeaderRow,
+            cursor: 'pointer', userSelect: 'none',
+            padding: '12px 14px', borderRadius: 12,
+            border: `1px solid ${BORDER}`, background: '#fff',
+            marginBottom: channelsOpen ? 14 : 0,
+            transition: 'border-color .15s ease, background .15s ease',
+          }}
+          onClick={() => setChannelsOpen(o => !o)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 22, height: 22, color: MUTED,
+              transform: channelsOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform .2s ease',
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 6 15 12 9 18" />
+              </svg>
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <h2 style={sectionTitleStyle}>Каналы для оплаты</h2>
+              <p style={sectionSubStyle}>Каждый дополнительный — со скидкой</p>
+            </div>
+            <span style={{ ...pill(`${ACCENT}12`, ACCENT), marginLeft: 4 }}>
+              {selectedCount} выбрано
+            </span>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="bp-ghost" style={ghostBtn} onClick={() => toggleAll(true)}>Выбрать все</button>
-            <button className="bp-ghost" style={ghostBtn} onClick={() => toggleAll(false)}>Снять все</button>
-          </div>
+          {channelsOpen && (
+            <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>
+              <button className="bp-ghost" style={ghostBtn} onClick={() => toggleAll(true)}>Выбрать все</button>
+              <button className="bp-ghost" style={ghostBtn} onClick={() => toggleAll(false)}>Снять все</button>
+            </div>
+          )}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: channelsOpen ? 'flex' : 'none', flexDirection: 'column', gap: 10 }}>
           {channels.map((ch, i) => {
             const tc = ch.tracking_code;
             const cfg = channelConfigs[tc] || { selected: false, users: 1 };
@@ -540,10 +530,18 @@ export default function BillingPage() {
             borderColor: `${ACCENT}25`,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+              gap: 16, flexWrap: 'wrap',
+              cursor: price.breakdown.length > 0 ? 'pointer' : 'default',
+              userSelect: 'none',
+            }}
+            onClick={() => price.breakdown.length > 0 && setBreakdownOpen(o => !o)}
+          >
             <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ fontSize: '0.7rem', color: MUTED, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 6 }}>
-                Итого к оплате
+                Расчёт стоимости
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '2.2rem', fontWeight: 800, color: DARK, letterSpacing: '-0.04em', lineHeight: 1 }}>
@@ -568,9 +566,21 @@ export default function BillingPage() {
                 <span style={pill(SOFT_BG, MUTED)}>Срок · {durations.find(d => d.months === selectedMonths)?.label}</span>
               </div>
             </div>
+            {price.breakdown.length > 0 && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 28, height: 28, color: MUTED, marginTop: 4,
+                transform: breakdownOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                transition: 'transform .2s ease',
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 6 15 12 9 18" />
+                </svg>
+              </span>
+            )}
           </div>
 
-          {price.breakdown.length > 0 && (
+          {breakdownOpen && price.breakdown.length > 0 && (
             <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${ACCENT}20`, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {price.breakdown.map((b, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.84rem', flexWrap: 'wrap', gap: 8 }}>

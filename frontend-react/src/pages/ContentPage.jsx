@@ -505,12 +505,18 @@ export default function ContentPage() {
   };
 
   const handlePublish = async (post) => {
-    if (!window.confirm('Опубликовать пост в канал?')) return;
+    const isUpdate = post.status === 'published';
+    const confirmMsg = isUpdate
+      ? 'Обновить уже опубликованный пост в канале?'
+      : 'Опубликовать пост в канал?';
+    if (!window.confirm(confirmMsg)) return;
     try {
       const data = await api.post(`/content/${tc}/${post.id}/publish`);
-      if (data.success) { showToast('Пост опубликован'); loadPosts(); }
-      else showToast(data.error || 'Ошибка публикации', 'error');
-    } catch { showToast('Ошибка публикации', 'error'); }
+      if (data.success) {
+        showToast(isUpdate ? 'Пост обновлён в канале' : 'Пост опубликован');
+        loadPosts();
+      } else showToast(data.error || 'Ошибка', 'error');
+    } catch { showToast(isUpdate ? 'Ошибка обновления' : 'Ошибка публикации', 'error'); }
   };
 
   const calendarDays = useMemo(() => getCalendarDays(calYear, calMonth), [calYear, calMonth]);
@@ -606,12 +612,12 @@ export default function ContentPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <button className="cp-ghost" style={iconGhostBtn} onClick={() => openEdit(post)} title="Редактировать">✎</button>
+            <button className="cp-ghost" style={iconGhostBtn} onClick={() => openEdit(post)} title={post.status === 'published' ? 'Изменить текст / медиа поста' : 'Редактировать'}>✎</button>
             <button
               className="cp-ghost-accent"
               style={iconAccentBtn}
               onClick={() => handlePublish(post)}
-              title={post.status === 'published' ? 'Обновить публикацию' : 'Опубликовать'}
+              title={post.status === 'published' ? 'Обновить публикацию в канале (отредактирует уже опубликованное сообщение)' : 'Опубликовать в канал'}
             >
               {post.status === 'published' ? '↻' : '▶'}
             </button>

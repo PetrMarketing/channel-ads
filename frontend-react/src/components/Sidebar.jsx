@@ -167,7 +167,7 @@ const menuItems = [
   },
 ];
 
-export default function Sidebar({ isOpen, onClose }) {
+export default function Sidebar({ isOpen, mobileOpen, onClose }) {
   const location = useLocation();
   const { currentChannel } = useChannels();
   const [openCategories, setOpenCategories] = useState(new Set(['marketing']));
@@ -184,7 +184,18 @@ export default function Sidebar({ isOpen, onClose }) {
   const isDisabled = !currentChannel;
 
   return (
-    <nav className={`sidebar ${isOpen ? 'open' : ''}`}>
+    <nav className={`sidebar ${isOpen ? 'open' : ''} ${mobileOpen ? 'sidebar-mobile-open' : ''}`}>
+      <button
+        type="button"
+        className="sidebar-close-btn"
+        aria-label="Закрыть меню"
+        onClick={onClose}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
       <div className="sidebar-inner">
         {menuItems.map((item) => {
           if (item.standalone) {

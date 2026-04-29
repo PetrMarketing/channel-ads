@@ -114,6 +114,25 @@ const STEP_GROUPS = {
   ],
 };
 
+const isMobile = () => typeof window !== 'undefined' && window.innerWidth <= 768;
+const isNarrow = () => typeof window !== 'undefined' && window.innerWidth < 480;
+
+// Heuristic: a selector targets a sidebar element if it's a sidebar
+// category toggle (`[data-tour="cat-*"]`) or its resolved DOM element lives
+// inside `.sidebar`. We confirm via `closest('.sidebar')` after lookup.
+const SIDEBAR_CAT_PREFIX = '[data-tour="cat-';
+function selectorTargetsSidebar(selector) {
+  if (!selector) return false;
+  if (selector.startsWith(SIDEBAR_CAT_PREFIX)) return true;
+  // Try DOM probe — element may not exist yet (drawer closed) but if it
+  // exists and lives inside `.sidebar`, it's a sidebar item.
+  try {
+    const el = document.querySelector(selector);
+    if (el && el.closest('.sidebar')) return true;
+  } catch { /* ignore invalid selectors */ }
+  return false;
+}
+
 const Ctx = createContext(null);
 
 export function useOnboarding() {
@@ -294,7 +313,7 @@ function WelcomeModal({ onStart, onSkip, userName, hasChannel, hasActiveBilling 
       zIndex: 10000, padding: 20,
       animation: 'tourFadeIn 0.3s ease',
     }}>
-      <div style={{
+      <div className="tour-welcome-modal" style={{
         ...cardBase,
         borderRadius: 20,
         boxShadow: '0 24px 64px rgba(26,26,46,0.18)',
@@ -318,7 +337,7 @@ function WelcomeModal({ onStart, onSkip, userName, hasChannel, hasActiveBilling 
 
         <div style={{ position: 'relative' }}>
           {/* Hero icon with pulsing halo */}
-          <div style={{
+          <div className="tour-welcome-hero" style={{
             position: 'relative',
             width: 96, height: 96, margin: '0 auto 20px',
           }}>
@@ -382,7 +401,7 @@ function WelcomeModal({ onStart, onSkip, userName, hasChannel, hasActiveBilling 
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div className="tour-welcome-actions" style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button
               onClick={onSkip}
               style={ghostBtn}
@@ -415,16 +434,48 @@ function WelcomeModal({ onStart, onSkip, userName, hasChannel, hasActiveBilling 
 function TourOverlay({ step, stepIndex, totalSteps, onNext, onPrev, onSkip }) {
   const [rect, setRect] = useState(null);
 
+  // When the tour overlay unmounts (skip/finish), make sure the mobile
+  // drawer doesn't get stuck open.
+  useEffect(() => {
+    return () => {
+      if (isMobile()) {
+        window.dispatchEvent(new Event('onboarding:close-sidebar'));
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!step) return;
 
-    if (step.expand) {
+    const mobile = isMobile();
+    // On mobile, decide whether this step's target lives in the sidebar.
+    // If yes -> open the drawer; if no -> close it so page-level targets are
+    // visible. Done before the first measurement attempt.
+    let sidebarTarget = false;
+    if (mobile) {
+      sidebarTarget = !!step.expand || selectorTargetsSidebar(step.selector);
+      if (sidebarTarget) {
+        console.info('[tour] opening sidebar for selector', step.selector);
+        window.dispatchEvent(new Event('onboarding:open-sidebar'));
+      } else {
+        console.info('[tour] closing sidebar for selector', step.selector);
+        window.dispatchEvent(new Event('onboarding:close-sidebar'));
+      }
+    }
+
+    // Expand the sidebar category accordion. On mobile we delay until the
+    // drawer slide-in (250ms) has completed so the click hits the visible
+    // toggle and lays out the subitems correctly.
+    const expandCategory = () => {
+      if (!step.expand) return;
       const catEl = document.querySelector(`[data-tour="cat-${step.expand}"]`);
       const catWrap = catEl?.closest('.sidebar-category');
       if (catEl && catWrap && !catWrap.classList.contains('open')) {
         catEl.click();
       }
-    }
+    };
+    const expandDelay = mobile && sidebarTarget ? 280 : 0;
+    const tExpand = setTimeout(expandCategory, expandDelay);
 
     const update = () => {
       const el = document.querySelector(step.selector);
@@ -442,12 +493,16 @@ function TourOverlay({ step, stepIndex, totalSteps, onNext, onPrev, onSkip }) {
         setRect(null);
       }
     };
-    const t1 = setTimeout(update, 50);
-    const t2 = setTimeout(update, 400);
-    const t3 = setTimeout(update, 800);
+    // On mobile, push the first measurement past the drawer transition + the
+    // category accordion expansion so the target has its real bounding rect.
+    const baseDelay = mobile && sidebarTarget ? 320 : 50;
+    const t1 = setTimeout(update, baseDelay);
+    const t2 = setTimeout(update, baseDelay + 350);
+    const t3 = setTimeout(update, baseDelay + 750);
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
     return () => {
+      clearTimeout(tExpand);
       clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
@@ -460,6 +515,7 @@ function TourOverlay({ step, stepIndex, totalSteps, onNext, onPrev, onSkip }) {
   const tooltipPos = rect
     ? calcTooltipPos(rect, step.placement, PAD)
     : { left: '50%', top: '50%', transform: 'translate(-50%,-50%)' };
+  const tooltipWidth = tooltipPos.width || (isNarrow() ? Math.min(360, window.innerWidth - 24) : 360);
 
   const isLastStep = stepIndex === totalSteps - 1;
 
@@ -533,12 +589,15 @@ function TourOverlay({ step, stepIndex, totalSteps, onNext, onPrev, onSkip }) {
       )}
 
       <div
+        className="tour-tooltip-card"
         style={{
           position: 'fixed', ...tooltipPos, zIndex: 10001, pointerEvents: 'auto',
           ...cardBase,
           borderRadius: 16,
           boxShadow: '0 20px 50px rgba(26,26,46,0.18)',
-          width: 360, maxWidth: 'calc(100vw - 32px)', minWidth: 300,
+          width: tooltipWidth, maxWidth: 'calc(100vw - 24px)', minWidth: Math.min(280, tooltipWidth),
+          maxHeight: 'calc(100vh - 24px)',
+          display: 'flex', flexDirection: 'column',
           overflow: 'hidden',
           transition: 'top .35s cubic-bezier(0.4, 0, 0.2, 1), left .35s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
@@ -589,13 +648,14 @@ function TourOverlay({ step, stepIndex, totalSteps, onNext, onPrev, onSkip }) {
         <div style={{
           padding: '10px 20px 16px',
           fontSize: '0.88rem', color: MUTED, lineHeight: 1.55,
+          overflowY: 'auto', flex: '1 1 auto', minHeight: 0,
         }}>
           {step.text}
         </div>
 
         {/* Footer */}
-        <div style={{ borderTop: `1px solid ${BORDER}`, padding: '12px 16px 14px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <div style={{ borderTop: `1px solid ${BORDER}`, padding: '12px 16px 14px', flex: '0 0 auto' }}>
+          <div className="tour-footer-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <button
               onClick={onPrev}
               disabled={stepIndex === 0}
@@ -711,28 +771,39 @@ export function usePageOnboarding() {
 }
 
 function calcTooltipPos(rect, placement) {
-  const tooltipW = 360;
-  const tooltipH = 240;
-  const margin = 16;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  const narrow = vw < 480;
+  const mobile = vw <= 768;
+  // On narrow screens shrink the tooltip and force a `bottom` placement so
+  // we never try to fit a 360px card next to a 280px-wide drawer.
+  const tooltipW = narrow ? Math.min(360, vw - 24) : 360;
+  const tooltipH = narrow ? 280 : 240;
+  const margin = narrow ? 12 : 16;
+  const effectivePlacement = narrow ? 'bottom' : placement;
   let top, left;
 
-  switch (placement) {
+  switch (effectivePlacement) {
     case 'right':
       left = rect.left + rect.width + margin;
       top = rect.top + rect.height / 2 - tooltipH / 2;
       if (left + tooltipW > vw - 20) {
-        left = Math.max(20, rect.left + rect.width / 2 - tooltipW / 2);
-        top = rect.top + rect.height + margin;
+        // On mobile the drawer (~280px) covers the left, so prefer below.
+        if (mobile) {
+          left = Math.max(12, Math.min(vw - tooltipW - 12, rect.left + rect.width / 2 - tooltipW / 2));
+          top = rect.top + rect.height + margin;
+        } else {
+          left = Math.max(20, rect.left + rect.width / 2 - tooltipW / 2);
+          top = rect.top + rect.height + margin;
+        }
       }
       break;
     case 'bottom':
-      left = Math.max(20, Math.min(vw - tooltipW - 20, rect.left + rect.width / 2 - tooltipW / 2));
+      left = Math.max(narrow ? 12 : 20, Math.min(vw - tooltipW - (narrow ? 12 : 20), rect.left + rect.width / 2 - tooltipW / 2));
       top = rect.top + rect.height + margin;
       break;
     case 'top':
-      left = Math.max(20, Math.min(vw - tooltipW - 20, rect.left + rect.width / 2 - tooltipW / 2));
+      left = Math.max(narrow ? 12 : 20, Math.min(vw - tooltipW - (narrow ? 12 : 20), rect.left + rect.width / 2 - tooltipW / 2));
       top = rect.top - tooltipH - margin;
       break;
     case 'left':
@@ -741,9 +812,9 @@ function calcTooltipPos(rect, placement) {
       top = rect.top + rect.height / 2 - tooltipH / 2;
       break;
   }
-  top = Math.max(20, Math.min(vh - tooltipH - 20, top));
-  left = Math.max(20, Math.min(vw - tooltipW - 20, left));
-  return { left, top };
+  top = Math.max(narrow ? 12 : 20, Math.min(vh - tooltipH - (narrow ? 12 : 20), top));
+  left = Math.max(narrow ? 12 : 20, Math.min(vw - tooltipW - (narrow ? 12 : 20), left));
+  return { left, top, width: tooltipW };
 }
 
 const tourKeyframes = `
@@ -759,5 +830,41 @@ const tourKeyframes = `
   @keyframes tourShimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
+  }
+
+  /* — Mobile tour styling — */
+  @media (max-width: 480px) {
+    .tour-tooltip-card {
+      max-width: calc(100vw - 16px) !important;
+      min-width: 0 !important;
+      font-size: 0.95em;
+    }
+    .tour-tooltip-card h3 { font-size: 1rem !important; }
+    .tour-tooltip-card .tour-footer-row {
+      flex-wrap: wrap;
+      gap: 6px !important;
+    }
+    .tour-tooltip-card .tour-footer-row > button {
+      padding: 8px 12px !important;
+      font-size: 0.78rem !important;
+    }
+    .tour-welcome-modal {
+      max-width: calc(100vw - 24px) !important;
+      padding: 24px 18px !important;
+    }
+    .tour-welcome-modal h2 { font-size: 1.35rem !important; }
+    .tour-welcome-modal .tour-welcome-actions {
+      flex-direction: column !important;
+      gap: 8px !important;
+    }
+    .tour-welcome-modal .tour-welcome-actions > button {
+      width: 100% !important;
+      justify-content: center;
+    }
+    .tour-welcome-modal .tour-welcome-hero {
+      width: 78px !important;
+      height: 78px !important;
+      margin-bottom: 16px !important;
+    }
   }
 `;

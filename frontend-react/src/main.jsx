@@ -6,6 +6,9 @@ import { AuthProvider } from './contexts/AuthContext';
 import { AdminAuthProvider } from './contexts/AdminAuthContext';
 import './styles/global.css';
 
+document.documentElement.classList.remove('dark-theme');
+try { localStorage.removeItem('theme'); } catch {}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>

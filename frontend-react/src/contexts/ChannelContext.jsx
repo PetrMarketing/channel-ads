@@ -16,7 +16,22 @@ export function ChannelProvider({ children }) {
     try {
       const data = await api.get('/channels');
       if (data.success) {
-        setChannels(data.channels);
+        setChannels(prev => {
+          // Skip update if nothing meaningful changed — avoids re-firing dependent
+          // effects (e.g. BillingPage's loadStatuses) on every 10s poll.
+          if (prev.length === data.channels.length &&
+              prev.every((p, i) => {
+                const n = data.channels[i];
+                return p.tracking_code === n.tracking_code &&
+                       p.title === n.title &&
+                       p.billing_active === n.billing_active &&
+                       p.billing_expires_at === n.billing_expires_at &&
+                       p.max_users === n.max_users;
+              })) {
+            return prev;
+          }
+          return data.channels;
+        });
         setCurrentChannel(prev => {
           const savedTc = localStorage.getItem('selected_channel');
           if (!prev && data.channels.length > 0) {

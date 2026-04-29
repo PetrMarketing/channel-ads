@@ -5,7 +5,6 @@ import { useState, useRef, useEffect } from 'react';
 import { api } from '../services/api';
 import { useToast } from './Toast';
 import Modal from './Modal';
-import ThemeToggle from './ThemeToggle';
 import { useOnboarding } from './OnboardingTour';
 
 const ACCENT = '#4361ee';
@@ -96,7 +95,7 @@ function PlatformBadge({ platform, user, channels, onUnlink }) {
   );
 }
 
-export default function Header({ onToggleSidebar }) {
+export default function Header({ onToggleSidebar, onBurgerClick }) {
   const { user, logout } = useAuth();
   const { channels, currentChannel, selectChannel } = useChannels();
   const navigate = useNavigate();
@@ -145,9 +144,23 @@ export default function Header({ onToggleSidebar }) {
 
   return (
     <header className="header" style={headerStyle}>
-      <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', minWidth: 0 }}>
+        {/* Mobile burger (≤768px only via CSS) */}
+        <button
+          type="button"
+          className="header-burger-btn"
+          aria-label="Открыть меню"
+          onClick={onBurgerClick}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, animation: 'hdrFadeIn 0.4s ease' }}>
+        <div className="header-logo" style={{ display: 'flex', alignItems: 'center', gap: 10, animation: 'hdrFadeIn 0.4s ease', minWidth: 0 }}>
           <div style={{
             width: 32, height: 32, borderRadius: 9,
             background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
@@ -201,11 +214,10 @@ export default function Header({ onToggleSidebar }) {
       </div>
 
       <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <ThemeToggle />
-
         {/* Onboarding button */}
         {user && onboarding.totalSteps > 0 && (
           <button onClick={onboarding.start} title="Запустить обучение"
+            className="header-onboarding-btn"
             style={{
               ...onboardingBtn,
               animation: 'hdrFadeIn 0.4s ease 0.1s both',
@@ -216,8 +228,8 @@ export default function Header({ onToggleSidebar }) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
             </svg>
-            <span>Обучение</span>
-            <span style={progressPill}>
+            <span className="header-onboarding-label">Обучение</span>
+            <span style={progressPill} className="header-onboarding-progress">
               {onboarding.completedCount}/{onboarding.totalSteps}
               <span style={{
                 position: 'absolute', left: 0, bottom: -1, height: 2,
@@ -232,6 +244,7 @@ export default function Header({ onToggleSidebar }) {
 
         {/* + Канал */}
         <button onClick={() => navigate('/')} data-tour="add-channel"
+          className="header-add-channel-btn"
           style={{ ...addChannelBtn, animation: 'hdrFadeIn 0.4s ease 0.15s both' }}
           onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 6px 20px ${ACCENT}50`; }}
           onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = `0 4px 14px ${ACCENT}40`; }}
@@ -239,7 +252,7 @@ export default function Header({ onToggleSidebar }) {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <path d="M12 5v14M5 12h14"/>
           </svg>
-          <span>Канал</span>
+          <span className="header-add-channel-label">Канал</span>
         </button>
 
         {/* Profile */}
@@ -254,8 +267,8 @@ export default function Header({ onToggleSidebar }) {
               onMouseEnter={e => { e.currentTarget.style.borderColor = `${ACCENT}50`; e.currentTarget.style.background = `${ACCENT}05`; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.background = '#fff'; }}
             >
-              <span style={{ fontWeight: 600, fontSize: '0.82rem', color: DARK }}>Профиль</span>
-              <span style={{ fontSize: '0.72rem', color: MUTED, fontFamily: 'ui-monospace, monospace' }}>
+              <span className="header-profile-label" style={{ fontWeight: 600, fontSize: '0.82rem', color: DARK }}>Профиль</span>
+              <span className="header-profile-pkid" style={{ fontSize: '0.72rem', color: MUTED, fontFamily: 'ui-monospace, monospace' }}>
                 PKid: {user.id}
               </span>
               <span style={{

@@ -132,23 +132,23 @@ export default function DashboardPage() {
       {pageTour}
 
       {/* HERO — приветствие + контекст + быстрый старт */}
-      <section style={heroWrap}>
-        <div style={heroBlur1} />
-        <div style={heroBlur2} />
+      <section className="dash-hero" style={heroWrap}>
+        <div className="dash-hero-blob" style={heroBlur1} />
+        <div className="dash-hero-blob" style={heroBlur2} />
         <div style={heroGrid}>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={heroEyebrow}>
+            <div className="dash-hero-eyebrow" style={heroEyebrow}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: SUCCESS, boxShadow: `0 0 8px ${SUCCESS}` }} />
               {new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
             </div>
-            <h1 style={heroTitle}>
+            <h1 className="dash-hero-title" style={heroTitle}>
               Привет, {user?.first_name || 'друг'}
               <span style={{ background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>!</span>
             </h1>
-            <p style={heroSubtitle}>{heroSub}</p>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 22 }}>
-              <button data-tour-page="dash-add-channel" onClick={openAddModal} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 10,
+            <p className="dash-hero-sub" style={heroSubtitle}>{heroSub}</p>
+            <div className="dash-hero-actions" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 22 }}>
+              <button data-tour-page="dash-add-channel" className="dash-hero-cta" onClick={openAddModal} style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 20px', borderRadius: 10,
                 background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})`, color: '#fff', border: 'none',
                 fontSize: '0.88rem', fontWeight: 600, cursor: 'pointer',
                 boxShadow: `0 4px 14px ${ACCENT}40`, transition: 'transform 0.15s, box-shadow 0.15s',
@@ -160,18 +160,18 @@ export default function DashboardPage() {
                 Добавить канал
               </button>
               {!noChannels && (
-                <button onClick={() => navigate('/links')} style={ghostBtn}>Перейти к ссылкам →</button>
+                <button className="dash-hero-cta" onClick={() => navigate('/links')} style={ghostBtn}>Перейти к ссылкам →</button>
               )}
             </div>
           </div>
 
           {/* Hero gauge — quick metric */}
           {!noChannels && stats && (
-            <div style={heroSidecard}>
+            <div className="dash-hero-sidecard" style={heroSidecard}>
               <div style={{ fontSize: '0.7rem', color: MUTED, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
                 Каналов
               </div>
-              <div style={{ fontSize: '2.6rem', fontWeight: 800, color: DARK, letterSpacing: '-0.04em', lineHeight: 1 }}>
+              <div className="dash-hero-sidecard-value" style={{ fontSize: '2.6rem', fontWeight: 800, color: DARK, letterSpacing: '-0.04em', lineHeight: 1 }}>
                 {channels.length}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: '0.78rem' }}>
@@ -377,6 +377,27 @@ export default function DashboardPage() {
         @keyframes dashFade { from { opacity: 0; } to { opacity: 1; } }
         @keyframes dashFadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes heroBlobFloat { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(20px, -12px); } }
+        .dash-hero-title { overflow-wrap: break-word; word-break: break-word; }
+        @media (max-width: 768px) {
+          .dash-hero { padding: 22px 20px 20px !important; margin-bottom: 20px !important; }
+          .dash-hero-title { font-size: 1.7rem !important; }
+          .dash-hero-sub { font-size: 0.88rem !important; margin-top: 8px !important; }
+          .dash-hero-eyebrow { font-size: 0.7rem !important; margin-bottom: 10px !important; }
+          .dash-hero-actions { margin-top: 16px !important; }
+          .dash-hero-sidecard { padding: 14px 18px !important; min-width: 0 !important; width: 100%; }
+          .dash-hero-sidecard-value { font-size: 2rem !important; }
+        }
+        @media (max-width: 480px) {
+          .dash-hero { padding: 16px !important; margin-bottom: 16px !important; border-radius: 14px !important; }
+          .dash-hero-title { font-size: 1.3rem !important; line-height: 1.15 !important; }
+          .dash-hero-sub { font-size: 0.82rem !important; margin-top: 6px !important; }
+          .dash-hero-eyebrow { font-size: 0.66rem !important; margin-bottom: 8px !important; }
+          .dash-hero-actions { margin-top: 14px !important; gap: 8px !important; flex-direction: column !important; align-items: stretch !important; }
+          .dash-hero-cta { width: 100% !important; padding: 11px 16px !important; font-size: 0.85rem !important; }
+          .dash-hero-blob { display: none !important; }
+          .dash-hero-sidecard { padding: 12px 14px !important; }
+          .dash-hero-sidecard-value { font-size: 1.7rem !important; }
+        }
       `}</style>
     </div>
   );
