@@ -115,27 +115,55 @@ export function useTrackingPixels(info) {
   const ymGoalName = info?.ym_goal_name || 'subscribe_channel';
   const vkGoalName = info?.vk_goal_name || 'subscribe_channel';
 
-  const fireGoals = useCallback(() => {
-    if (counterId) {
-      // Even if tag.js hasn't loaded, the stub queues reachGoal until it does.
-      window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
-      try {
-        window.ym(Number(counterId), 'reachGoal', ymGoalName);
-        console.info('[track] YM reachGoal', counterId, ymGoalName);
-      } catch (e) {
-        console.info('[track] YM reachGoal failed', e);
-      }
+  const fireYM = useCallback((goal) => {
+    if (!counterId || !goal) return;
+    window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
+    try {
+      window.ym(Number(counterId), 'reachGoal', goal);
+      console.info('[track] YM reachGoal', counterId, goal);
+    } catch (e) {
+      console.info('[track] YM reachGoal failed', e);
     }
-    if (pixelId) {
-      window._tmr = window._tmr || [];
-      try {
-        window._tmr.push({ id: pixelId, type: 'reachGoal', goal: vkGoalName });
-        console.info('[track] VK reachGoal', pixelId, vkGoalName);
-      } catch (e) {
-        console.info('[track] VK reachGoal failed', e);
-      }
-    }
-  }, [counterId, pixelId, ymGoalName, vkGoalName]);
+  }, [counterId]);
 
-  return { fireGoals, ymClientIdPromise };
+  const fireVK = useCallback((goal) => {
+    if (!pixelId || !goal) return;
+    window._tmr = window._tmr || [];
+    try {
+      window._tmr.push({ id: pixelId, type: 'reachGoal', goal });
+      console.info('[track] VK reachGoal', pixelId, goal);
+    } catch (e) {
+      console.info('[track] VK reachGoal failed', e);
+    }
+  }, [pixelId]);
+
+  // Subscription goal — fires when subscription is actually confirmed (polling).
+  const fireGoals = useCallback(() => {
+    fireYM(ymGoalName);
+    fireVK(vkGoalName);
+  }, [fireYM, fireVK, ymGoalName, vkGoalName]);
+
+  // Click-intent goal — fires the moment user taps "Перейти в канал".
+  // Reliable signal for ad optimization (Yandex Direct / VK Реклама),
+  // works even if user closes the tab right after clicking.
+  const fireClickGoals = useCallback(() => {
+    fireYM('click_to_channel');
+    fireVK('click_to_channel');
+  }, [fireYM, fireVK]);
+
+  // Synchronous lookup for the YM ClientID — used at click time so we can
+  // POST it to the backend before the user leaves the page (mirrors what
+  // ParamsParser-style trackers do).
+  const getYmClientIdSync = useCallback(() => {
+    if (!counterId) return null;
+    try {
+      const counter = window[`yaCounter${counterId}`];
+      if (counter && typeof counter.getClientID === 'function') {
+        return counter.getClientID() || null;
+      }
+    } catch {}
+    return null;
+  }, [counterId]);
+
+  return { fireGoals, fireClickGoals, ymClientIdPromise, getYmClientIdSync };
 }

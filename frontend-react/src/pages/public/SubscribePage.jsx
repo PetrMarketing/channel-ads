@@ -52,7 +52,29 @@ export default function SubscribePage() {
 
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  const { fireGoals, ymClientIdPromise } = useTrackingPixels(info);
+  const { fireGoals, fireClickGoals, ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
+
+  const clickFiredRef = useRef(false);
+  const handleChannelClick = useCallback(() => {
+    setClicked(true);
+    if (clickFiredRef.current) return;
+    clickFiredRef.current = true;
+    // Send the YM ClientID right at click time — by now tag.js has had max 5s
+    // to load and getClientID is most likely to return a real value. The server
+    // uses it later for attributed reachGoal via Measurement API in case the
+    // client tab closes before subscription is detected.
+    if (visitId) {
+      const cid = getYmClientIdSync();
+      if (cid) {
+        api.post(`/track/visit/${visitId}/ym-client-id`, { ym_client_id: String(cid) })
+          .catch(() => {});
+      }
+    }
+    // Fire click-intent goal immediately — this is a reliable signal for
+    // ad-platform optimization even if YM tag.js hasn't fully initialized
+    // (the stub queues the call and replays once tag.js loads).
+    fireClickGoals();
+  }, [visitId, getYmClientIdSync, fireClickGoals]);
 
   // Surface the YM ClientID to the backend so the server-side fallback fire
   // (services/conversion_pixels.fire_server_goals) can attribute properly.
@@ -257,7 +279,7 @@ export default function SubscribePage() {
                 href={subscribeUrl}
                 target="_blank"
                 rel="noreferrer"
-                onClick={() => setClicked(true)}
+                onClick={handleChannelClick}
                 style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                   padding: '10px 20px', borderRadius: 12, textDecoration: 'none',
@@ -310,7 +332,7 @@ export default function SubscribePage() {
                   href={subscribeUrl}
                   target="_blank"
                   rel="noreferrer"
-                  onClick={() => setClicked(true)}
+                  onClick={handleChannelClick}
                   style={{
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                     padding: '14px 28px', borderRadius: 14, textDecoration: 'none',
