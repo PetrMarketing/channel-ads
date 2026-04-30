@@ -292,40 +292,66 @@ async def update_visit_ym_client_id(visit_id: int, request: Request):
     return {"success": True}
 
 
+async def _safe_query(label: str, coro):
+    """Wrap a single DB lookup so polling never 500s — schema gaps on a deployment
+    that hasn't run a migration yet shouldn't break the page."""
+    try:
+        return await coro
+    except Exception as e:
+        print(f"[track] {label} failed: {type(e).__name__}: {e}")
+        return None
+
+
 @router.get("/check-subscription-by-visit")
 async def check_subscription_by_visit(visit_id: int = Query(...)):
-    visit = await fetch_one("SELECT * FROM visits WHERE id = $1", visit_id)
+    try:
+        visit = await fetch_one("SELECT * FROM visits WHERE id = $1", visit_id)
+    except Exception as e:
+        print(f"[track] visit lookup failed visit_id={visit_id}: {type(e).__name__}: {e}")
+        return {"success": True, "subscribed": False, "server_fired": False}
     if not visit:
-        return {"success": True, "subscribed": False}
+        return {"success": True, "subscribed": False, "server_fired": False}
 
-    sub = await fetch_one(
-        "SELECT * FROM subscriptions WHERE visit_id = $1", visit_id
+    sub = await _safe_query(
+        "subscription by visit_id",
+        fetch_one("SELECT * FROM subscriptions WHERE visit_id = $1", visit_id),
     )
 
     if not sub and visit.get("telegram_id"):
-        sub = await fetch_one(
-            "SELECT * FROM subscriptions WHERE channel_id = $1 AND telegram_id = $2",
-            visit["channel_id"], visit["telegram_id"],
+        sub = await _safe_query(
+            "subscription by tg_id",
+            fetch_one(
+                "SELECT * FROM subscriptions WHERE channel_id = $1 AND telegram_id = $2",
+                visit["channel_id"], visit["telegram_id"],
+            ),
         )
     if not sub and visit.get("max_user_id"):
-        sub = await fetch_one(
-            "SELECT * FROM subscriptions WHERE channel_id = $1 AND max_user_id = $2",
-            visit["channel_id"], visit["max_user_id"],
+        sub = await _safe_query(
+            "subscription by max_id",
+            fetch_one(
+                "SELECT * FROM subscriptions WHERE channel_id = $1 AND max_user_id = $2",
+                visit["channel_id"], visit["max_user_id"],
+            ),
         )
 
     claimed_via_heuristic = False
     if not sub:
-        sub = await _heuristic_claim(visit)
+        sub = await _safe_query("heuristic claim", _heuristic_claim(visit))
         if sub:
             claimed_via_heuristic = True
-            print(f"[track] heuristic claim: visit {visit_id} <- subscription {sub['id']}")
+            print(f"[track] heuristic claim: visit {visit_id} <- subscription {sub.get('id')}")
 
     if claimed_via_heuristic and sub:
-        # Now that we've linked visit_id, fire server-side goals as a backup.
-        # If client also fires, server's goal_fired_at marker prevents duplication.
-        await fire_server_goals_safe(sub["id"])
-        # Re-read to expose updated goal_fired_at on the response.
-        sub = await fetch_one("SELECT * FROM subscriptions WHERE id = $1", sub["id"])
+        try:
+            await fire_server_goals_safe(sub["id"])
+            refreshed = await _safe_query(
+                "post-claim refresh",
+                fetch_one("SELECT * FROM subscriptions WHERE id = $1", sub["id"]),
+            )
+            if refreshed:
+                sub = refreshed
+        except Exception as e:
+            print(f"[track] server-fire after claim failed: {type(e).__name__}: {e}")
 
     server_fired = bool(sub and sub.get("goal_fired_at") is not None)
     return {
