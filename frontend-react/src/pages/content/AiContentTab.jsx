@@ -759,57 +759,94 @@ function ScheduleStep({ schedule, setSchedule, onGenerate, onBack, busy }) {
 // =============================================================================
 // GENERATING STEP
 // =============================================================================
-function GeneratingStep() {
+function GeneratingStep({ targetPostCount = 30 }) {
+  // Анимированный прогресс: от 0% до 90% за ~45s, дальше держится 90% до резолва.
+  // Когда родитель переключит шаг на 'review' — компонент размонтируется автоматически.
+  const [pct, setPct] = useState(0);
+  const startedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    startedAtRef.current = Date.now();
+    setPct(0);
+    const TARGET_MS = 45000; // 45 секунд до 90%
+    const id = setInterval(() => {
+      const elapsed = Date.now() - startedAtRef.current;
+      // ease-out: быстрее в начале, медленнее к 90%
+      const t = Math.min(1, elapsed / TARGET_MS);
+      const eased = 1 - Math.pow(1 - t, 2.5);
+      const next = Math.min(90, eased * 90);
+      setPct(next);
+    }, 500);
+    return () => clearInterval(id);
+  }, []);
+
+  const generated = Math.round((pct / 100) * targetPostCount);
+
   return (
     <div style={{
-      ...cardBase, padding: '64px 32px', textAlign: 'center',
-      maxWidth: 520, margin: '0 auto',
+      ...cardBase, padding: '48px 32px 40px', textAlign: 'center',
+      maxWidth: 560, margin: '0 auto',
       animation: 'aicFade 0.4s ease both',
     }}>
-      <div style={{ position: 'relative', width: 80, height: 80, margin: '0 auto 22px' }}>
-        <svg width="80" height="80" viewBox="0 0 80 80" style={{ animation: 'aicSpin 1.5s linear infinite' }}>
+      <div style={{ position: 'relative', width: 64, height: 64, margin: '0 auto 18px' }}>
+        <svg width="64" height="64" viewBox="0 0 64 64" style={{ animation: 'aicSpin 1.5s linear infinite' }}>
           <defs>
             <linearGradient id="aic-loader" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0%" stopColor={ACCENT} />
               <stop offset="100%" stopColor={ACCENT2} />
             </linearGradient>
           </defs>
-          <circle cx="40" cy="40" r="32" fill="none" stroke={BORDER} strokeWidth="6" />
-          <circle cx="40" cy="40" r="32" fill="none" stroke="url(#aic-loader)" strokeWidth="6"
-            strokeLinecap="round" strokeDasharray="60 200" />
+          <circle cx="32" cy="32" r="26" fill="none" stroke={BORDER} strokeWidth="5" />
+          <circle cx="32" cy="32" r="26" fill="none" stroke="url(#aic-loader)" strokeWidth="5"
+            strokeLinecap="round" strokeDasharray="48 200" />
         </svg>
         <div style={{
           position: 'absolute', inset: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <div style={{
-            width: 36, height: 36, borderRadius: '50%',
+            width: 28, height: 28, borderRadius: '50%',
             background: `linear-gradient(135deg, ${ACCENT2} 0%, ${PURPLE} 100%)`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             boxShadow: `0 4px 14px ${ACCENT2}55`,
           }}>
-            <SparkleIcon size={18} />
+            <SparkleIcon size={14} />
           </div>
         </div>
       </div>
       <h3 style={{
-        margin: '0 0 8px', fontSize: '1.2rem', fontWeight: 800,
+        margin: '0 0 18px', fontSize: '1.15rem', fontWeight: 800,
         color: DARK, letterSpacing: '-0.02em',
       }}>
         ИИ создаёт контент-план
       </h3>
-      <p style={{ margin: '0 0 22px', fontSize: '0.88rem', color: MUTED, lineHeight: 1.55 }}>
+
+      {/* Progress bar */}
+      <div style={{
+        position: 'relative',
+        width: '100%', height: 14, borderRadius: 999,
+        background: SOFT_BG,
+        border: `1px solid ${BORDER}`,
+        overflow: 'hidden',
+        boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
+        marginBottom: 14,
+      }}>
+        <div style={{
+          position: 'absolute', top: 0, left: 0, bottom: 0,
+          width: `${pct}%`,
+          background: `linear-gradient(90deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
+          borderRadius: 999,
+          transition: 'width 0.5s linear',
+          boxShadow: `0 0 8px ${ACCENT2}55`,
+        }} />
+      </div>
+
+      <div style={{ fontSize: '1rem', color: DARK, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 6 }}>
+        Сгенерировано <strong>{generated}/{targetPostCount}</strong> постов
+      </div>
+      <p style={{ margin: '6px 0 0', fontSize: '0.84rem', color: MUTED, lineHeight: 1.55 }}>
         Это занимает 30–60 секунд. Не закрывайте страницу.
       </p>
-      <div style={{ display: 'inline-flex', gap: 6 }}>
-        {[0, 1, 2].map(i => (
-          <span key={i} style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: ACCENT2,
-            animation: `aicDot 1.2s ease-in-out ${i * 0.15}s infinite`,
-          }} />
-        ))}
-      </div>
     </div>
   );
 }
@@ -1359,7 +1396,11 @@ function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadP
     else setCollagePhotos([...collagePhotos, p.id]);
   };
 
-  const canGenerate = !!prompt.trim() && !!format && !genImageBusy;
+  const needsPhoto = mode === 'photo' || mode === 'collage';
+  const photoBankEmpty = needsPhoto && photos.length === 0;
+  const noPhotoPicked = (mode === 'photo' && !refPhotoId) || (mode === 'collage' && collagePhotos.length === 0);
+  const canGenPrompt = !genPromptBusy && !photoBankEmpty && !(needsPhoto && noPhotoPicked);
+  const canGenerate = !!prompt.trim() && !!format && !genImageBusy && !photoBankEmpty && !(needsPhoto && noPhotoPicked);
   if (!post) return null;
 
   return (
@@ -1462,12 +1503,14 @@ function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadP
               <label style={{ ...labelStyle, marginBottom: 0 }}>Промт</label>
               <button
                 onClick={handleGenPrompt}
-                disabled={genPromptBusy}
+                disabled={!canGenPrompt}
+                title={photoBankEmpty ? 'Сначала добавьте хотя бы 1 фото в фотобанк' : noPhotoPicked && needsPhoto ? 'Выберите фото из банка' : ''}
                 style={{
                   ...ghostBtn, padding: '6px 12px', fontSize: '0.76rem',
                   borderColor: ACCENT2, color: ACCENT2,
                   background: `linear-gradient(135deg, ${ACCENT}08 0%, ${ACCENT2}08 100%)`,
-                  opacity: genPromptBusy ? 0.6 : 1,
+                  opacity: canGenPrompt ? 1 : 0.5,
+                  cursor: canGenPrompt ? 'pointer' : 'not-allowed',
                 }}
               >
                 {genPromptBusy ? '…' : '🪄 Сгенерировать промт (1 токен)'}
@@ -1488,11 +1531,16 @@ function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadP
             <button style={ghostBtn} onClick={onClose}>Отмена</button>
             <button
               className="aic-primary"
-              style={{ ...primaryBtn, opacity: canGenerate ? 1 : 0.5 }}
+              style={{ ...primaryBtn, opacity: canGenerate ? 1 : 0.5, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
               onClick={handleGenImage}
               disabled={!canGenerate}
+              title={photoBankEmpty ? 'Сначала добавьте хотя бы 1 фото в фотобанк' : noPhotoPicked && needsPhoto ? 'Выберите фото из банка' : !prompt.trim() ? 'Заполните промт' : ''}
             >
-              {genImageBusy ? 'Генерация…' : 'Сгенерировать (10 токенов)'}
+              {genImageBusy
+                ? 'Генерация…'
+                : photoBankEmpty
+                  ? 'Нужно добавить фото в банк'
+                  : 'Сгенерировать (10 токенов)'}
             </button>
           </div>
         </div>
@@ -1512,7 +1560,7 @@ function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadP
 // =============================================================================
 // BATCH IMAGE GENERATION MODAL
 // =============================================================================
-function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onComplete }) {
+function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onComplete, photos = [], onOpenPhotoBank }) {
   const { showToast } = useToast();
   const [palette, setPalette] = useState([]);
   const [format, setFormat] = useState('1:1');
@@ -1529,13 +1577,40 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
     }
   }, [isOpen]);
 
+  const modeNeedsPhotos = defaultMode === 'auto' || defaultMode === 'photo' || defaultMode === 'collage';
+  const photoBankEmpty = modeNeedsPhotos && photos.length === 0;
+
   const handleStart = async () => {
     if (postsToProcess.length === 0) {
       showToast('Все посты уже имеют картинки', 'info');
       return;
     }
+    if (photoBankEmpty) {
+      showToast('Сначала добавьте хотя бы 1 фото в фотобанк', 'error');
+      return;
+    }
     setBusy(true);
-    setProgress({ status: 'running', total: postsToProcess.length });
+    setProgress({ status: 'running', total: postsToProcess.length, generated: 0, failed: 0 });
+
+    // Polling прогресса каждые 1500ms
+    let pollTimer = setInterval(async () => {
+      try {
+        const p = await api.get(`/ai-content/${tc}/session/${sessionId}/batch-progress`);
+        if (p && p.success) {
+          setProgress(prev => prev && prev.status === 'running' ? {
+            ...prev,
+            total: p.total || prev.total,
+            generated: p.generated || 0,
+            failed: p.failed || 0,
+          } : prev);
+          if (!p.in_progress) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+          }
+        }
+      } catch { /* ignore poll errors */ }
+    }, 1500);
+
     try {
       const res = await api.post(`/ai-content/${tc}/session/${sessionId}/generate-images-all`, {
         format,
@@ -1556,6 +1631,7 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
       showToast(e.message, 'error');
       setProgress(null);
     } finally {
+      if (pollTimer) clearInterval(pollTimer);
       setBusy(false);
     }
   };
@@ -1608,6 +1684,24 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
               </div>
             </div>
 
+            {photoBankEmpty && (
+              <div style={{
+                padding: '12px 14px', borderRadius: 10,
+                background: `${WARNING}10`, border: `1px solid ${WARNING}40`,
+                fontSize: '0.84rem', color: DARK,
+              }}>
+                <div style={{ fontWeight: 700, color: WARNING, marginBottom: 4 }}>⚠️ Фотобанк пуст</div>
+                <div style={{ color: MUTED, marginBottom: 8 }}>
+                  Для режима «{defaultMode === 'auto' ? 'Авто' : defaultMode === 'photo' ? 'По фото' : 'Коллаж'}» нужно хотя бы 1 фото в банке.
+                </div>
+                {onOpenPhotoBank && (
+                  <button onClick={onOpenPhotoBank} style={{ ...ghostBtn, padding: '6px 12px', fontSize: '0.78rem' }}>
+                    📁 Открыть фотобанк
+                  </button>
+                )}
+              </div>
+            )}
+
             <div>
               <label style={labelStyle}>Цветовая палитра</label>
               <ColorPaletteSelector value={palette} onChange={setPalette} />
@@ -1620,22 +1714,55 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
           </>
         )}
 
-        {progress?.status === 'running' && (
-          <div style={{ padding: '20px 0', textAlign: 'center' }}>
-            <div style={{ display: 'inline-block', position: 'relative', width: 60, height: 60, marginBottom: 14 }}>
-              <svg width="60" height="60" viewBox="0 0 60 60" style={{ animation: 'aicSpin 1.5s linear infinite' }}>
-                <circle cx="30" cy="30" r="24" fill="none" stroke={BORDER} strokeWidth="5" />
-                <circle cx="30" cy="30" r="24" fill="none" stroke={ACCENT} strokeWidth="5" strokeLinecap="round" strokeDasharray="50 200" />
-              </svg>
+        {progress?.status === 'running' && (() => {
+          const total = progress.total || 1;
+          const gen = progress.generated || 0;
+          const fail = progress.failed || 0;
+          const pct = Math.min(100, Math.round(((gen + fail) / total) * 100));
+          return (
+            <div style={{ padding: '14px 0 6px' }}>
+              {/* Progress bar */}
+              <div style={{
+                position: 'relative',
+                width: '100%', height: 14, borderRadius: 999,
+                background: SOFT_BG,
+                border: `1px solid ${BORDER}`,
+                overflow: 'hidden',
+                boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
+                marginBottom: 14,
+              }}>
+                <div style={{
+                  position: 'absolute', top: 0, left: 0, bottom: 0,
+                  width: `${pct}%`,
+                  background: `linear-gradient(90deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
+                  borderRadius: 999,
+                  transition: 'width 0.5s ease',
+                  boxShadow: `0 0 8px ${ACCENT2}55`,
+                }} />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: '1rem', color: DARK, fontWeight: 800, letterSpacing: '-0.01em' }}>
+                    Сгенерировано <strong>{gen}/{total}</strong> картинок
+                  </div>
+                  {fail > 0 && (
+                    <div style={{ fontSize: '0.78rem', color: MUTED, marginTop: 4 }}>
+                      Неудачных: {fail}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '0.78rem', color: MUTED, marginTop: 4 }}>
+                    Это занимает несколько минут. Не закрывайте окно.
+                  </div>
+                </div>
+                <svg width="28" height="28" viewBox="0 0 28 28" style={{ animation: 'aicSpin 1.5s linear infinite', flexShrink: 0 }}>
+                  <circle cx="14" cy="14" r="11" fill="none" stroke={BORDER} strokeWidth="3" />
+                  <circle cx="14" cy="14" r="11" fill="none" stroke={ACCENT} strokeWidth="3" strokeLinecap="round" strokeDasharray="22 100" />
+                </svg>
+              </div>
             </div>
-            <div style={{ fontWeight: 700, color: DARK, marginBottom: 4 }}>
-              Генерация {progress.total} иллюстраций…
-            </div>
-            <div style={{ fontSize: '0.82rem', color: MUTED }}>
-              Это занимает несколько минут. Не закрывайте окно.
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {progress?.status === 'done' && (
           <div style={{ padding: '14px 16px', borderRadius: 12, background: `${SUCCESS}08`, border: `1px solid ${SUCCESS}30` }}>
@@ -1655,11 +1782,20 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
           ) : (
             <button
               className="aic-primary"
-              style={{ ...primaryBtn, opacity: busy || postsToProcess.length === 0 ? 0.5 : 1 }}
+              style={{
+                ...primaryBtn,
+                opacity: busy || postsToProcess.length === 0 || photoBankEmpty ? 0.5 : 1,
+                cursor: busy || postsToProcess.length === 0 || photoBankEmpty ? 'not-allowed' : 'pointer',
+              }}
               onClick={handleStart}
-              disabled={busy || postsToProcess.length === 0}
+              disabled={busy || postsToProcess.length === 0 || photoBankEmpty}
+              title={photoBankEmpty ? 'Сначала добавьте хотя бы 1 фото в фотобанк' : ''}
             >
-              {busy ? 'Генерация…' : `Запустить (${totalCost} токенов)`}
+              {busy
+                ? 'Генерация…'
+                : photoBankEmpty
+                  ? 'Нужно фото в банке'
+                  : `Запустить (${totalCost} токенов)`}
             </button>
           )}
         </div>
@@ -1968,6 +2104,8 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
         sessionId={sessionId}
         postsToProcess={postsWithoutImage}
         onComplete={handleBatchComplete}
+        photos={photos}
+        onOpenPhotoBank={() => { setShowBatchModal(false); setShowPhotoBank(true); }}
       />
     </div>
   );
@@ -2247,7 +2385,7 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
           busy={loading}
         />
       )}
-      {step === 'generating' && <GeneratingStep />}
+      {step === 'generating' && <GeneratingStep targetPostCount={schedule.posts_count || 30} />}
       {step === 'review' && (
         <ReviewStep
           tc={tc}

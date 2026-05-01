@@ -799,6 +799,7 @@ export default function ContentPage() {
           <button
             role="tab"
             aria-selected={viewMode === 'ai-content'}
+            data-tour-page="content-ai"
             className={`cp-tab${viewMode === 'ai-content' ? ' active' : ''}`}
             onClick={() => setViewMode('ai-content')}
           >

@@ -10,6 +10,7 @@ import io
 import json as json_mod
 import os
 import secrets
+import time
 from datetime import datetime, timedelta, date
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
@@ -28,6 +29,12 @@ router = APIRouter()
 # =============================================================================
 TOKENS_PROMPT_GEN = 1
 TOKENS_IMAGE_GEN = 10
+
+
+# =============================================================================
+# Прогресс батчевой генерации картинок (in-memory, per-process)
+# =============================================================================
+_BATCH_PROGRESS: Dict[int, Dict[str, Any]] = {}
 
 
 # =============================================================================
@@ -1302,6 +1309,17 @@ async def generate_image_prompt(
     image_format = (body.get("format") or "1:1").strip()
     ref_photo_id = body.get("reference_photo_id")
 
+    if mode in ("photo", "collage"):
+        bank_count = await fetch_one(
+            "SELECT COUNT(*)::int AS n FROM ai_content_photos WHERE user_id=$1 AND channel_id=$2",
+            user["id"], channel["id"],
+        )
+        if not bank_count or (bank_count.get("n") or 0) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Фотобанк пуст. Добавьте хотя бы 1 фото для режима «По фото» или «Коллаж».",
+            )
+
     photo_description = None
     if ref_photo_id:
         ref = await fetch_one(
@@ -1431,6 +1449,17 @@ async def generate_image_for_post(
     palette = body.get("palette") or []
     ref_photo_id = body.get("reference_photo_id")
 
+    if mode in ("photo", "collage"):
+        bank_count = await fetch_one(
+            "SELECT COUNT(*)::int AS n FROM ai_content_photos WHERE user_id=$1 AND channel_id=$2",
+            user["id"], channel["id"],
+        )
+        if not bank_count or (bank_count.get("n") or 0) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Фотобанк пуст. Добавьте хотя бы 1 фото для режима «По фото» или «Коллаж».",
+            )
+
     await _charge_tokens(
         user["id"], TOKENS_IMAGE_GEN, "ai_content_image",
         f"Иллюстрация к посту #{pid}",
@@ -1480,6 +1509,17 @@ async def generate_images_all(
     palette = body.get("palette") or []
     default_mode = (body.get("default_mode") or "auto").strip()
 
+    if default_mode in ("auto", "photo", "collage"):
+        bank_count = await fetch_one(
+            "SELECT COUNT(*)::int AS n FROM ai_content_photos WHERE user_id=$1 AND channel_id=$2",
+            user["id"], channel["id"],
+        )
+        if not bank_count or (bank_count.get("n") or 0) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Фотобанк пуст. Добавьте хотя бы 1 фото для режима «Авто», «По фото» или «Коллаж».",
+            )
+
     posts = await fetch_all(
         """SELECT * FROM ai_content_session_posts
            WHERE session_id=$1 AND (generated_image_url IS NULL OR generated_image_url='')
@@ -1508,6 +1548,15 @@ async def generate_images_all(
     generated = 0
     failed = 0
     total_charged = 0
+
+    # Инициализируем прогресс для polling-эндпоинта
+    _BATCH_PROGRESS[sid] = {
+        "total": len(posts),
+        "generated": 0,
+        "failed": 0,
+        "in_progress": True,
+        "started_at": time.time(),
+    }
 
     sem = asyncio.Semaphore(2)
 
@@ -1563,14 +1612,31 @@ async def generate_images_all(
                 total_charged += TOKENS_IMAGE_GEN
                 generated += 1
                 results.append({"post_id": post_id, "image_url": image_url, "mode": mode})
+                # Обновляем счётчик прогресса (атомарно — только запись в свой ключ)
+                bp = _BATCH_PROGRESS.get(sid)
+                if bp is not None:
+                    bp["generated"] = generated
             except HTTPException as e:
                 failed += 1
                 results.append({"post_id": post_id, "error": e.detail})
+                bp = _BATCH_PROGRESS.get(sid)
+                if bp is not None:
+                    bp["failed"] = failed
             except Exception as e:
                 failed += 1
                 results.append({"post_id": post_id, "error": str(e)})
+                bp = _BATCH_PROGRESS.get(sid)
+                if bp is not None:
+                    bp["failed"] = failed
 
-    await asyncio.gather(*[process_post(dict(p)) for p in posts])
+    try:
+        await asyncio.gather(*[process_post(dict(p)) for p in posts])
+    finally:
+        bp = _BATCH_PROGRESS.get(sid)
+        if bp is not None:
+            bp["in_progress"] = False
+            bp["generated"] = generated
+            bp["failed"] = failed
 
     return {
         "success": True,
@@ -1579,6 +1645,27 @@ async def generate_images_all(
         "tokens_charged": total_charged,
         "results": results,
     }
+
+
+@router.get("/{tc}/session/{sid}/batch-progress")
+async def get_batch_progress(
+    tc: str, sid: int,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Опрос прогресса батчевой генерации картинок (in-memory, текущий процесс)."""
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    progress = _BATCH_PROGRESS.get(sid)
+    if not progress:
+        return {
+            "success": True,
+            "in_progress": False,
+            "total": 0,
+            "generated": 0,
+            "failed": 0,
+        }
+    return {"success": True, **progress}
 
 
 @router.delete("/{tc}/session/{sid}/post/{pid}/image")

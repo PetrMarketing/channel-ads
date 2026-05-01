@@ -93,6 +93,7 @@ const STEP_GROUPS = {
     { id: 'cat-content', selector: '[data-tour="cat-content"]', title: 'Раздел: Контент', text: 'Создание и планирование контента.', placement: 'right', expand: 'content' },
     { id: 'content-nav', selector: '[data-tour="content"]', title: 'Публикации', text: 'Календарь постов с возможностью планирования.', placement: 'right', expand: 'content', navigate: '/content' },
     { id: 'content-day', selector: '[data-tour-page="content-day"]', title: 'Свободная дата', text: 'Нажмите на любую свободную дату — откроется форма создания поста с этой датой.', placement: 'bottom' },
+    { id: 'ai-content-tab', selector: '[data-tour-page="content-ai"]', title: 'ИИ Контент-план', text: 'ИИ создаст 15–60 постов на месяц под вашу нишу с распределением целей (продажи / прогрев / активность). Можно сгенерировать иллюстрации к каждому посту.', placement: 'bottom' },
 
     { id: 'giveaways-nav', selector: '[data-tour="giveaways"]', title: 'Розыгрыши', text: 'Конкурсы среди подписчиков с автоматическим выбором победителей.', placement: 'right', expand: 'content', navigate: '/giveaways' },
 
