@@ -57,11 +57,10 @@ export default function SubscribePage() {
   const goalFired = useRef(false);
   const handleChannelClick = useCallback(() => {
     setClicked(true);
-    if (goalFired.current) return;
-    goalFired.current = true;
     // Capture YM ClientID at click time and pass it to the server (used by
     // services/conversion_pixels.fire_server_goals as a fallback if all
-    // client-side beacons fail).
+    // client-side beacons fail). Цель НЕ стреляем здесь — она должна
+    // выстрелить только после подтверждения подписки через polling.
     if (visitId) {
       const cid = getYmClientIdSync();
       if (cid) {
@@ -69,11 +68,7 @@ export default function SubscribePage() {
           .catch(() => {});
       }
     }
-    // Fire YM/VK reachGoal immediately — `subscribe_channel` (or whatever the
-    // user configured). Двойной выстрел: JS API + image beacon, чтобы дойти
-    // до Метрики даже если tag.js упал по SSL.
-    reachGoals();
-  }, [visitId, getYmClientIdSync, reachGoals]);
+  }, [visitId, getYmClientIdSync]);
 
   // Surface the YM ClientID to the backend so the server-side fallback fire
   // (services/conversion_pixels.fire_server_goals) can attribute properly.
@@ -89,21 +84,31 @@ export default function SubscribePage() {
     return () => { cancelled = true; };
   }, [visitId, ymClientIdPromise]);
 
-  // Polling нужен только для UI (показать "Вы подписались!"). Цели уже
-  // выстрелены на клике через handleChannelClick — повторно не стреляем.
+  // Polling — детектирует подписку и стреляет цель (subscribe_channel).
+  // goalFired ref гарантирует что цель уйдёт ровно один раз.
   useEffect(() => {
     if (!visitId || subscribed) return;
     const interval = setInterval(async () => {
+      if (goalFired.current) return;
       try {
         const data = await api.get(`/track/check-subscription-by-visit?visit_id=${visitId}`);
-        if (data.subscribed) {
+        if (data.subscribed && !goalFired.current) {
+          goalFired.current = true;
           setSubscribed(true);
           clearInterval(interval);
+          // Сервер уже мог стрельнуть цель через Measurement API при
+          // детекте подписки в боте — пропускаем клиентский reachGoals,
+          // чтобы не задвоить.
+          if (!data.server_fired) {
+            reachGoals();
+          } else {
+            console.info('[track] skipping client reachGoals — server already fired');
+          }
         }
       } catch {}
     }, 5000);
     return () => clearInterval(interval);
-  }, [visitId, subscribed]);
+  }, [visitId, subscribed, reachGoals]);
 
   const getSubscribeUrl = () => {
     if (!info) return null;
