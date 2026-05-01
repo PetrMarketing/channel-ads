@@ -866,7 +866,7 @@ const MODE_OPTIONS = [
   { id: 'collage', emoji: '🖼️', label: 'Коллаж', sub: 'Из подборки фото' },
 ];
 
-function PostCard({ post, onEdit, onDelete, onPublishNow, onSchedule, busyId, onGenerateImage, onRegenerateImage, onDeleteImage, imageBusyId }) {
+function PostCard({ post, onEdit, onDelete, onPublishNow, onSchedule, busyId, onGenerateImage, onRegenerateImage, onDeleteImage, imageBusyId, selected, onToggleSelect, onOpenInPublications }) {
   const [expanded, setExpanded] = useState(false);
   const goalMeta = GOAL_META[post.goal_type] || GOAL_META.warmup;
   const isPublished = !!post.published_post_id;
@@ -878,12 +878,40 @@ function PostCard({ post, onEdit, onDelete, onPublishNow, onSchedule, busyId, on
     <div style={{
       ...cardBase, padding: 16, width: 320, flexShrink: 0,
       display: 'flex', flexDirection: 'column', gap: 10,
-      opacity: isPublished ? 0.6 : 1,
+      position: 'relative',
+      borderColor: selected ? ACCENT : (isPublished ? `${SUCCESS}55` : BORDER),
+      boxShadow: selected ? `0 0 0 2px ${ACCENT}40, 0 4px 12px ${ACCENT}25` : '0 1px 3px rgba(0,0,0,0.04)',
+      opacity: isPublished ? 0.85 : 1,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      {/* Checkbox в правом верхнем углу — только для непубликованных */}
+      {!isPublished && onToggleSelect && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggleSelect(post.id); }}
+          aria-label={selected ? 'Снять выбор' : 'Выбрать'}
+          style={{
+            position: 'absolute', top: 10, right: 10,
+            width: 24, height: 24, borderRadius: 7, padding: 0, cursor: 'pointer',
+            border: selected ? 'none' : `1.5px solid ${BORDER}`,
+            background: selected ? ACCENT : '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: selected ? `0 2px 8px ${ACCENT}55` : '0 1px 2px rgba(0,0,0,0.05)',
+            transition: 'all .15s ease',
+            zIndex: 2,
+          }}
+        >
+          {selected && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 6 9 17l-5-5"/>
+            </svg>
+          )}
+        </button>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', paddingRight: isPublished ? 0 : 30 }}>
         {post.rubric && <span style={pill(SOFT_BG, MUTED)}>{post.rubric}</span>}
         <span style={pill(goalMeta.bg, goalMeta.color)}>{goalMeta.label}</span>
-        {isPublished && <span style={pill(`${SUCCESS}10`, SUCCESS)}>В публикациях</span>}
+        {isPublished && <span style={pill(`${SUCCESS}15`, SUCCESS)}>✓ Опубликовано</span>}
       </div>
 
       {post.scheduled_at && (
@@ -975,37 +1003,62 @@ function PostCard({ post, onEdit, onDelete, onPublishNow, onSchedule, busyId, on
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginTop: 'auto', paddingTop: 10, borderTop: `1px solid ${BORDER}` }}>
-        <button
-          onClick={() => onEdit(post)}
-          disabled={isPublished}
-          style={{
-            ...ghostBtn, padding: '7px 10px', fontSize: '0.78rem', flex: 1, justifyContent: 'center',
-          }}
-          title="Редактировать"
-        >
-          ✎ Изменить
-        </button>
-        <button
-          onClick={() => onPublishNow(post)}
-          disabled={isPublished || isBusy}
-          style={{
-            ...primaryBtn, padding: '7px 10px', fontSize: '0.78rem', flex: 1,
-            opacity: isPublished ? 0.5 : 1,
-          }}
-          title="Опубликовать сейчас"
-        >
-          {isBusy ? '…' : '▶ Опубликовать'}
-        </button>
-        <button
-          onClick={() => onDelete(post)}
-          disabled={isPublished}
-          style={{
-            ...ghostBtn, padding: '7px 10px', fontSize: '0.78rem',
-            color: DANGER, borderColor: 'rgba(230,57,70,0.25)',
-            background: 'rgba(230,57,70,0.04)',
-          }}
-          title="Удалить"
-        >🗑</button>
+        {isPublished ? (
+          <>
+            <button
+              onClick={() => onEdit(post)}
+              disabled={isBusy}
+              style={{
+                ...ghostBtn, padding: '7px 10px', fontSize: '0.78rem', flex: 1, justifyContent: 'center',
+              }}
+              title="Редактировать опубликованный пост (изменит сообщение в канале)"
+            >
+              {isBusy ? '…' : '✎ Редактировать'}
+            </button>
+            <button
+              onClick={() => onOpenInPublications && onOpenInPublications(post)}
+              style={{
+                ...ghostBtn, padding: '7px 10px', fontSize: '0.78rem',
+                borderColor: `${SUCCESS}55`, color: SUCCESS,
+                background: `${SUCCESS}08`,
+              }}
+              title="Открыть в Публикациях"
+            >
+              ↗
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => onEdit(post)}
+              style={{
+                ...ghostBtn, padding: '7px 10px', fontSize: '0.78rem', flex: 1, justifyContent: 'center',
+              }}
+              title="Редактировать"
+            >
+              ✎ Изменить
+            </button>
+            <button
+              onClick={() => onPublishNow(post)}
+              disabled={isBusy}
+              style={{
+                ...primaryBtn, padding: '7px 10px', fontSize: '0.78rem', flex: 1,
+              }}
+              title="Опубликовать сейчас"
+            >
+              {isBusy ? '…' : '▶ Опубликовать'}
+            </button>
+            <button
+              onClick={() => onDelete(post)}
+              style={{
+                ...ghostBtn, padding: '7px 10px', fontSize: '0.78rem',
+                color: DANGER, borderColor: 'rgba(230,57,70,0.25)',
+                background: 'rgba(230,57,70,0.04)',
+              }}
+              title="Удалить"
+            >🗑</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1328,7 +1381,7 @@ function PhotoBankModal({ isOpen, onClose, tc, photos, onReload, selectMode = fa
 // =============================================================================
 // IMAGE GENERATION MODAL (per-post)
 // =============================================================================
-function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadPhotos, onGenerated }) {
+function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadPhotos, onGenerated, sessionPalette = [] }) {
   const { showToast } = useToast();
   const [mode, setMode] = useState('text');
   const [palette, setPalette] = useState([]);
@@ -1340,17 +1393,18 @@ function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadP
   const [genImageBusy, setGenImageBusy] = useState(false);
   const [showBank, setShowBank] = useState(false);
 
-  // Reset state when modal opens
+  // Reset state when modal opens. Палитра: сначала из поста, иначе — последняя из сессии.
   useEffect(() => {
     if (isOpen && post) {
       setMode(post.generated_image_mode || 'text');
-      setPalette(post.generated_image_palette || []);
+      const postPalette = post.generated_image_palette || [];
+      setPalette(postPalette.length > 0 ? postPalette : (sessionPalette || []));
       setFormat(post.generated_image_format || '1:1');
       setPrompt(post.generated_image_prompt || '');
       setRefPhotoId(null);
       setCollagePhotos([]);
     }
-  }, [isOpen, post]);
+  }, [isOpen, post, sessionPalette]);
 
   const handleGenPrompt = async () => {
     setGenPromptBusy(true);
@@ -1560,13 +1614,15 @@ function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadP
 // =============================================================================
 // BATCH IMAGE GENERATION MODAL
 // =============================================================================
-function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onComplete, photos = [], onOpenPhotoBank }) {
+function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onComplete, photos = [], onOpenPhotoBank, sessionPalette = [] }) {
   const { showToast } = useToast();
   const [palette, setPalette] = useState([]);
   const [format, setFormat] = useState('1:1');
   const [defaultMode, setDefaultMode] = useState('auto');
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
+  const [photoScope, setPhotoScope] = useState('all'); // 'all' | 'selected'
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState([]);
 
   const totalCost = postsToProcess.length * 10;
 
@@ -1574,11 +1630,20 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
     if (isOpen) {
       setProgress(null);
       setBusy(false);
+      // Подставляем палитру из сессии, если задана
+      setPalette(sessionPalette && sessionPalette.length > 0 ? sessionPalette : []);
+      setPhotoScope('all');
+      setSelectedPhotoIds([]);
     }
-  }, [isOpen]);
+  }, [isOpen, sessionPalette]);
 
   const modeNeedsPhotos = defaultMode === 'auto' || defaultMode === 'photo' || defaultMode === 'collage';
   const photoBankEmpty = modeNeedsPhotos && photos.length === 0;
+  const showPhotoPicker = modeNeedsPhotos && !photoBankEmpty;
+  const noPhotosSelected = photoScope === 'selected' && selectedPhotoIds.length === 0;
+  const togglePhoto = (id) => {
+    setSelectedPhotoIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
 
   const handleStart = async () => {
     if (postsToProcess.length === 0) {
@@ -1587,6 +1652,10 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
     }
     if (photoBankEmpty) {
       showToast('Сначала добавьте хотя бы 1 фото в фотобанк', 'error');
+      return;
+    }
+    if (showPhotoPicker && noPhotosSelected) {
+      showToast('Выберите хотя бы одно фото или переключитесь на «Все из фотобанка»', 'error');
       return;
     }
     setBusy(true);
@@ -1616,6 +1685,7 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
         format,
         palette,
         default_mode: defaultMode,
+        photo_ids: photoScope === 'selected' ? selectedPhotoIds : [],
       });
       if (res.success) {
         setProgress({
@@ -1702,6 +1772,76 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
               </div>
             )}
 
+            {showPhotoPicker && (
+              <div>
+                <label style={labelStyle}>Какие фото использовать</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'all', label: `Все из фотобанка (${photos.length})` },
+                    { id: 'selected', label: `Только выбранные${selectedPhotoIds.length > 0 ? ` (${selectedPhotoIds.length})` : ''}` },
+                  ].map(opt => {
+                    const active = photoScope === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setPhotoScope(opt.id)}
+                        style={{
+                          padding: '8px 14px', borderRadius: 10, cursor: 'pointer',
+                          fontSize: '0.82rem', fontWeight: 600,
+                          border: active ? `1.5px solid ${ACCENT}` : `1.5px solid ${BORDER}`,
+                          background: active ? `${ACCENT}10` : '#fff',
+                          color: active ? ACCENT : DARK,
+                          transition: 'all .15s ease',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {photoScope === 'selected' && (
+                  <>
+                    <div style={{
+                      display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+                      gap: 6, maxHeight: 220, overflowY: 'auto',
+                      padding: 8, border: `1px solid ${BORDER}`, borderRadius: 10, background: SOFT_BG,
+                    }}>
+                      {photos.map(p => {
+                        const picked = selectedPhotoIds.includes(p.id);
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => togglePhoto(p.id)}
+                            style={{
+                              position: 'relative', borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
+                              border: picked ? `2px solid ${ACCENT}` : `1px solid ${BORDER}`,
+                            }}
+                          >
+                            <img src={p.file_url} alt="" style={{ display: 'block', width: '100%', height: 70, objectFit: 'cover' }} />
+                            {picked && (
+                              <div style={{
+                                position: 'absolute', top: 3, right: 3,
+                                width: 18, height: 18, borderRadius: '50%',
+                                background: ACCENT, color: '#fff',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '0.65rem', fontWeight: 700,
+                              }}>✓</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {noPhotosSelected && (
+                      <div style={{ ...hintStyle, color: WARNING, fontWeight: 600, marginTop: 6 }}>
+                        ⚠️ Выберите хотя бы одно фото
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
             <div>
               <label style={labelStyle}>Цветовая палитра</label>
               <ColorPaletteSelector value={palette} onChange={setPalette} />
@@ -1784,18 +1924,24 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
               className="aic-primary"
               style={{
                 ...primaryBtn,
-                opacity: busy || postsToProcess.length === 0 || photoBankEmpty ? 0.5 : 1,
-                cursor: busy || postsToProcess.length === 0 || photoBankEmpty ? 'not-allowed' : 'pointer',
+                opacity: busy || postsToProcess.length === 0 || photoBankEmpty || noPhotosSelected ? 0.5 : 1,
+                cursor: busy || postsToProcess.length === 0 || photoBankEmpty || noPhotosSelected ? 'not-allowed' : 'pointer',
               }}
               onClick={handleStart}
-              disabled={busy || postsToProcess.length === 0 || photoBankEmpty}
-              title={photoBankEmpty ? 'Сначала добавьте хотя бы 1 фото в фотобанк' : ''}
+              disabled={busy || postsToProcess.length === 0 || photoBankEmpty || noPhotosSelected}
+              title={
+                photoBankEmpty ? 'Сначала добавьте хотя бы 1 фото в фотобанк'
+                  : noPhotosSelected ? 'Выберите хотя бы одно фото'
+                  : ''
+              }
             >
               {busy
                 ? 'Генерация…'
                 : photoBankEmpty
                   ? 'Нужно фото в банке'
-                  : `Запустить (${totalCost} токенов)`}
+                  : noPhotosSelected
+                    ? 'Выберите фото'
+                    : `Запустить (${totalCost} токенов)`}
             </button>
           )}
         </div>
@@ -1804,7 +1950,7 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
   );
 }
 
-function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDone, leadMagnets }) {
+function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDone, leadMagnets, sessionPalette, onSwitchView }) {
   const { showToast } = useToast();
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ title: '', message_text: '', scheduled_at: '', inline_buttons: '', attach_type: '' });
@@ -1812,6 +1958,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
   const [bulkBusy, setBulkBusy] = useState(false);
   const [postFile, setPostFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
 
   // Phase 2 — image generation state
   const [photos, setPhotos] = useState([]);
@@ -1823,6 +1970,19 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
   const remaining = posts.filter(p => !p.published_post_id).length;
   const postsWithoutImage = posts.filter(p => !p.published_post_id && !p.generated_image_url);
   const batchCost = postsWithoutImage.length * 10;
+  const unpublishedIds = posts.filter(p => !p.published_post_id).map(p => p.id);
+  const selectedCount = selectedIds.size;
+  const allUnpublishedSelected = unpublishedIds.length > 0 && unpublishedIds.every(id => selectedIds.has(id));
+
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const selectAllUnpublished = () => setSelectedIds(new Set(unpublishedIds));
+  const clearSelection = () => setSelectedIds(new Set());
 
   const loadPhotos = useCallback(async () => {
     try {
@@ -1874,20 +2034,49 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
         inline_buttons: parsedButtons,
         attach_type: form.attach_type || null,
       };
-      await api.put(`/ai-content/${tc}/session/${sessionId}/post/${editing.id}`, payload);
-      if (postFile) {
-        const fd = new FormData();
-        fd.append('file', postFile);
-        await api.upload(`/ai-content/${tc}/session/${sessionId}/post/${editing.id}/file`, fd);
+
+      const publishedId = editing.published_post_id;
+      if (publishedId) {
+        // Опубликованный пост: правим напрямую запись в content_posts
+        // и пере-публикуем (это обновит сообщение в канале).
+        if (postFile) {
+          const fd = new FormData();
+          if (payload.title != null) fd.append('title', payload.title || '');
+          fd.append('message_text', payload.message_text || '');
+          if (payload.scheduled_at) fd.append('scheduled_at', payload.scheduled_at);
+          if (payload.attach_type) fd.append('attach_type', payload.attach_type);
+          if (parsedButtons) fd.append('inline_buttons', JSON.stringify(parsedButtons));
+          fd.append('file', postFile);
+          await api.upload(`/content/${tc}/${publishedId}`, fd, 'PUT');
+        } else {
+          await api.put(`/content/${tc}/${publishedId}`, payload);
+        }
+        try {
+          await api.post(`/content/${tc}/${publishedId}/publish`);
+          showToast('Пост обновлён в канале', 'success');
+        } catch (pubErr) {
+          showToast(`Сохранено, но не удалось обновить канал: ${pubErr.message}`, 'error');
+        }
+      } else {
+        await api.put(`/ai-content/${tc}/session/${sessionId}/post/${editing.id}`, payload);
+        if (postFile) {
+          const fd = new FormData();
+          fd.append('file', postFile);
+          await api.upload(`/ai-content/${tc}/session/${sessionId}/post/${editing.id}/file`, fd);
+        }
+        showToast('Пост обновлён', 'success');
       }
       setEditing(null);
       onReload();
-      showToast('Пост обновлён', 'success');
     } catch (e) {
       showToast(e.message, 'error');
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleOpenInPublications = (p) => {
+    if (onSwitchView) onSwitchView('list');
   };
 
   const handleDelete = async (p) => {
@@ -1923,6 +2112,25 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
       }
     } catch (e) { showToast(e.message, 'error'); }
     finally { setBulkBusy(false); }
+  };
+
+  const handlePublishSelected = async () => {
+    const ids = unpublishedIds.filter(id => selectedIds.has(id));
+    if (ids.length === 0) { showToast('Не выбраны посты', 'info'); return; }
+    if (!window.confirm(`Запланировать ${ids.length} выбранных постов в Публикации?`)) return;
+    setBulkBusy(true);
+    let ok = 0, fail = 0;
+    for (const pid of ids) {
+      try {
+        const res = await api.post(`/ai-content/${tc}/session/${sessionId}/post/${pid}/publish`, { now: false });
+        if (res?.success) ok += 1; else fail += 1;
+      } catch { fail += 1; }
+    }
+    setBulkBusy(false);
+    clearSelection();
+    onReload();
+    if (fail === 0) showToast(`Запланировано ${ok} постов`, 'success');
+    else showToast(`Запланировано ${ok}, не удалось ${fail}`, fail === ids.length ? 'error' : 'info');
   };
 
   // ---- Phase 2: image generation handlers ----
@@ -1980,16 +2188,62 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
           >
             🪄 Сгенерировать фото ко всем ({postsWithoutImage.length}×10 = {batchCost} токенов)
           </button>
-          <button
-            className="aic-primary"
-            style={{ ...primaryBtn, opacity: bulkBusy || remaining === 0 ? 0.5 : 1 }}
-            onClick={handlePublishAll}
-            disabled={bulkBusy || remaining === 0}
-          >
-            {bulkBusy ? 'Планирование…' : `📤 Запланировать всё (${remaining})`}
-          </button>
+          {selectedCount > 0 ? (
+            <button
+              className="aic-primary"
+              style={{ ...primaryBtn, opacity: bulkBusy ? 0.5 : 1 }}
+              onClick={handlePublishSelected}
+              disabled={bulkBusy}
+            >
+              {bulkBusy ? 'Планирование…' : `📤 Запланировать выбранные (${selectedCount})`}
+            </button>
+          ) : (
+            <button
+              className="aic-primary"
+              style={{ ...primaryBtn, opacity: bulkBusy || remaining === 0 ? 0.5 : 1 }}
+              onClick={handlePublishAll}
+              disabled={bulkBusy || remaining === 0}
+            >
+              {bulkBusy ? 'Планирование…' : `📤 Запланировать всё (${remaining})`}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Toolbar для выбора */}
+      {unpublishedIds.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          padding: '8px 0 14px', fontSize: '0.82rem', color: MUTED,
+        }}>
+          <button
+            type="button"
+            onClick={allUnpublishedSelected ? clearSelection : selectAllUnpublished}
+            style={{
+              background: 'none', border: `1px solid ${BORDER}`,
+              padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+              fontSize: '0.78rem', color: DARK, fontWeight: 600,
+            }}
+          >
+            {allUnpublishedSelected ? '☐ Снять все' : `☑ Выбрать все (${unpublishedIds.length})`}
+          </button>
+          {selectedCount > 0 && (
+            <>
+              <span>Выбрано: <strong style={{ color: ACCENT }}>{selectedCount}</strong></span>
+              <button
+                type="button"
+                onClick={clearSelection}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: ACCENT, fontWeight: 600, fontSize: '0.82rem', padding: 0,
+                }}
+              >
+                Снять выбор
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <div style={{
         display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 16,
@@ -2007,6 +2261,9 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
               onRegenerateImage={handleRegenerateImage}
               onDeleteImage={handleDeleteImage}
               imageBusyId={imageBusyId}
+              selected={selectedIds.has(p.id)}
+              onToggleSelect={toggleSelect}
+              onOpenInPublications={handleOpenInPublications}
             />
           </div>
         ))}
@@ -2089,6 +2346,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
         photos={photos}
         onReloadPhotos={loadPhotos}
         onGenerated={handleImageGenerated}
+        sessionPalette={sessionPalette}
       />
       <PhotoBankModal
         isOpen={showPhotoBank}
@@ -2106,6 +2364,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
         onComplete={handleBatchComplete}
         photos={photos}
         onOpenPhotoBank={() => { setShowBatchModal(false); setShowPhotoBank(true); }}
+        sessionPalette={sessionPalette}
       />
     </div>
   );
@@ -2163,6 +2422,7 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
   const [posts, setPosts] = useState([]);
   const [doneCount, setDoneCount] = useState(0);
   const [postsAvailable, setPostsAvailable] = useState(0);
+  const [sessionPalette, setSessionPalette] = useState([]);
 
   const [brief, setBrief] = useState({
     topic: '',
@@ -2203,7 +2463,12 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
     if (!tc || !sessionId) return;
     try {
       const data = await api.get(`/ai-content/${tc}/session/${sessionId}`);
-      if (data.success) setPosts(data.posts || []);
+      if (data.success) {
+        setPosts(data.posts || []);
+        if (data.session && Array.isArray(data.session.last_image_palette)) {
+          setSessionPalette(data.session.last_image_palette);
+        }
+      }
     } catch { /* ignore */ }
   }, [tc, sessionId]);
 
@@ -2240,6 +2505,7 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
         });
         setProducts(sess.products || []);
         setPosts(data.posts || []);
+        setSessionPalette(Array.isArray(sess.last_image_palette) ? sess.last_image_palette : []);
         if ((data.posts || []).length > 0) setStep('review');
         else setStep('brief');
       }
@@ -2313,6 +2579,7 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
     setSchedule({ posts_count: 30, first_post_time: '10:00', second_post_time: '19:00', start_date: tomorrowIso() });
     setProducts([]);
     setDoneCount(0);
+    setSessionPalette([]);
   };
 
   const handleGoToList = () => {
@@ -2396,6 +2663,8 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
           onBack={() => setStep('brief')}
           onDone={() => setStep('done')}
           leadMagnets={leadMagnets}
+          sessionPalette={sessionPalette}
+          onSwitchView={onSwitchView}
         />
       )}
       {step === 'done' && (

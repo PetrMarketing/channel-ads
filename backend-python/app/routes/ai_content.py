@@ -11,7 +11,13 @@ import json as json_mod
 import os
 import secrets
 import time
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
+
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+    MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+except Exception:  # pragma: no cover — fallback на жёсткий +3
+    MOSCOW_TZ = timezone(timedelta(hours=3))
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from typing import Any, Dict, Optional, List
@@ -233,6 +239,7 @@ def _serialize_session(s: dict) -> dict:
         "status": s.get("status"),
         "tokens_charged": s.get("tokens_charged") or 0,
         "created_at": s["created_at"].isoformat() if s.get("created_at") else None,
+        "last_image_palette": _parse_json_field(s.get("last_image_palette")) or [],
     }
 
 
@@ -323,7 +330,7 @@ async def create_session(tc: str, user: Dict[str, Any] = Depends(get_current_use
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
-    tomorrow = (datetime.utcnow().date() + timedelta(days=1))
+    tomorrow = (datetime.now(timezone.utc).date() + timedelta(days=1))
     session_id = await execute_returning_id(
         """INSERT INTO ai_content_sessions
            (user_id, channel_id, posts_count, first_post_time, second_post_time, start_date, status)
@@ -681,13 +688,20 @@ def _parse_generated_posts(content: str) -> list:
 
 def _compute_scheduled_at(start_date: date, offset_days: int, slot_idx: int,
                           first_time: str, second_time: Optional[str]) -> Optional[datetime]:
+    """Возвращает offset-aware datetime в UTC.
+
+    Время `first_time` / `second_time` пользователь задаёт в МСК (Europe/Moscow).
+    asyncpg хранит TIMESTAMPTZ корректно только если datetime — aware. Раньше мы
+    отдавали naive — Postgres трактовал его как UTC, и фронт прибавлял +3 часа.
+    """
     if not start_date:
         return None
     try:
         ttxt = first_time if (slot_idx == 0 or not second_time) else second_time
         hh, mm = ttxt.split(":")
         d = start_date + timedelta(days=int(offset_days or 0))
-        return datetime(d.year, d.month, d.day, int(hh), int(mm))
+        local_dt = datetime(d.year, d.month, d.day, int(hh), int(mm), tzinfo=MOSCOW_TZ)
+        return local_dt.astimezone(timezone.utc)
     except Exception:
         return None
 
@@ -896,10 +910,19 @@ async def delete_session_post(
 # Конвертация в content_posts (планирование/публикация)
 # =============================================================================
 async def _convert_to_content_post(channel_id: int, p: dict, status: str) -> int:
-    """Создаёт строку в content_posts на основании поста сессии."""
+    """Создаёт строку в content_posts на основании поста сессии.
+
+    ai_content_session_posts.scheduled_at — TIMESTAMPTZ (offset-aware, в UTC),
+    content_posts.scheduled_at — TIMESTAMP без TZ (naive UTC, scheduler сравнивает
+    с NOW()). Поэтому приводим к naive-UTC: убираем tzinfo после astimezone(UTC).
+    """
     inline_buttons = p.get("inline_buttons")
     if inline_buttons is not None and not isinstance(inline_buttons, str):
         inline_buttons = json_mod.dumps(inline_buttons)
+
+    sched = p.get("scheduled_at")
+    if isinstance(sched, datetime) and sched.tzinfo is not None:
+        sched = sched.astimezone(timezone.utc).replace(tzinfo=None)
 
     new_post_id = await execute_returning_id(
         """INSERT INTO content_posts
@@ -909,7 +932,7 @@ async def _convert_to_content_post(channel_id: int, p: dict, status: str) -> int
         channel_id,
         p.get("title") or "Публикация",
         p.get("message_text") or "",
-        p.get("scheduled_at"),
+        sched,
         inline_buttons,
         status,
         p.get("file_path"),
@@ -1351,6 +1374,12 @@ async def generate_image_prompt(
         "UPDATE ai_content_session_posts SET generated_image_prompt=$1, updated_at=NOW() WHERE id=$2",
         prompt_text, pid,
     )
+    # Запоминаем палитру в сессии — подставится в следующие генерации
+    if palette:
+        await execute(
+            "UPDATE ai_content_sessions SET last_image_palette=$1, updated_at=NOW() WHERE id=$2",
+            json_mod.dumps(palette, ensure_ascii=False), sid,
+        )
     return {"success": True, "prompt": prompt_text, "tokens_charged": TOKENS_PROMPT_GEN}
 
 
@@ -1477,6 +1506,13 @@ async def generate_image_for_post(
         await _refund_tokens(user["id"], TOKENS_IMAGE_GEN, f"Ошибка генерации иллюстрации поста #{pid}")
         raise HTTPException(status_code=500, detail=f"Ошибка генерации изображения: {e}")
 
+    # Запоминаем палитру в сессии — подставится в следующие генерации
+    if palette:
+        await execute(
+            "UPDATE ai_content_sessions SET last_image_palette=$1, updated_at=NOW() WHERE id=$2",
+            json_mod.dumps(palette, ensure_ascii=False), sid,
+        )
+
     fresh = await fetch_one("SELECT * FROM ai_content_session_posts WHERE id=$1", pid)
     return {
         "success": True,
@@ -1508,6 +1544,13 @@ async def generate_images_all(
         image_format = "1:1"
     palette = body.get("palette") or []
     default_mode = (body.get("default_mode") or "auto").strip()
+    # Опционально: список ID фото из банка, которые разрешено использовать.
+    # Пустой список / отсутствие = использовать все.
+    raw_photo_ids = body.get("photo_ids") or []
+    try:
+        selected_photo_ids = {int(x) for x in raw_photo_ids if x is not None}
+    except Exception:
+        selected_photo_ids = set()
 
     if default_mode in ("auto", "photo", "collage"):
         bank_count = await fetch_one(
@@ -1541,8 +1584,11 @@ async def generate_images_all(
         "SELECT * FROM ai_content_photos WHERE user_id=$1 AND channel_id=$2 ORDER BY created_at DESC",
         user["id"], channel["id"],
     )
-    has_photos = len(photos) > 0
     photos_list = [dict(p) for p in photos]
+    # Если пользователь выбрал конкретные фото — фильтруем банк
+    if selected_photo_ids:
+        photos_list = [p for p in photos_list if p.get("id") in selected_photo_ids]
+    has_photos = len(photos_list) > 0
 
     results = []
     generated = 0
@@ -1637,6 +1683,13 @@ async def generate_images_all(
             bp["in_progress"] = False
             bp["generated"] = generated
             bp["failed"] = failed
+
+    # Запоминаем палитру в сессии — подставится в следующие генерации
+    if palette:
+        await execute(
+            "UPDATE ai_content_sessions SET last_image_palette=$1, updated_at=NOW() WHERE id=$2",
+            json_mod.dumps(palette, ensure_ascii=False), sid,
+        )
 
     return {
         "success": True,
