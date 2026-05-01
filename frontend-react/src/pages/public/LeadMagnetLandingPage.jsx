@@ -35,7 +35,7 @@ export default function LeadMagnetLandingPage() {
 
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  const { fireGoals } = useTrackingPixels(info);
+  const { reachGoals } = useTrackingPixels(info);
 
   // Poll for subscription
   useEffect(() => {
@@ -48,12 +48,12 @@ export default function LeadMagnetLandingPage() {
           goalFired.current = true;
           setSubscribed(true);
           clearInterval(interval);
-          fireGoals();
+          reachGoals();
         }
       } catch {}
     }, 5000);
     return () => clearInterval(interval);
-  }, [visitId, subscribed, fireGoals]);
+  }, [visitId, subscribed, reachGoals]);
 
   const getBotUrl = () => {
     if (!info) return null;
@@ -126,7 +126,7 @@ export default function LeadMagnetLandingPage() {
                     onClick={() => {
                       if (!goalFired.current) {
                         goalFired.current = true;
-                        try { fireGoals(); } catch {}
+                        try { reachGoals(); } catch {}
                       }
                     }}
                     style={{ display: 'block', padding: '16px 24px', background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', color: '#fff', borderRadius: 12, textDecoration: 'none', fontWeight: 700, fontSize: '1.05rem', textAlign: 'center', transition: 'transform 0.2s' }}>

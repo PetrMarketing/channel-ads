@@ -1,30 +1,22 @@
 /**
- * Yandex Metrika + VK Pixel — стандартная схема через очередь stub.
- * init и reachGoal попадают в очередь window.ym.a, скрипт проигрывает их при загрузке.
+ * Yandex Metrika + VK Pixel — двойная отправка для надёжности:
+ *   1. JS API (`ym(id,'reachGoal',name)` / `_tmr.push(...)`) — сработает когда
+ *      tag.js загрузится; до загрузки хранится в очереди window.ym.a.
+ *   2. Image beacon — прямой GET к `mc.yandex.ru/watch/...` и
+ *      `top-fwz1.mail.ru/counter?...`. Работает даже если tag.js упал
+ *      (SSL error, MAX in-app browser, AdBlock).
  *
- * IMPORTANT:
- * - YM stub (window.ym) MUST be created and ym(id, 'init', ...) MUST be called
- *   BEFORE the tag.js <script> is appended, so the queue is populated when the
- *   script loads.
- * - Link-level pixel ids (tl.vk_pixel_id / tl.ym_counter_id) take priority over
- *   channel-level defaults (channel_vk_pixel_id / channel_ym_id / yandex_metrika_id).
- *
- * Returns:
- *   - fireGoals(): client-side reachGoal for YM + VK
- *   - ymClientIdPromise: resolves with the YM ClientID once available, or null
- *     if YM is not configured / unavailable. Used by SubscribePage to attach
- *     ym_client_id to the visit so the server-side fallback fire can attribute.
+ * Метрика дедуплицирует события по ClientID — двойного счёта обычно нет,
+ * но если есть — лучше дубль чем тишина.
  */
 import { useEffect, useCallback, useMemo, useRef } from 'react';
 
 export function useTrackingPixels(info) {
-  // Prefer link-level override, fallback to channel-level default.
   const counterId = info?.ym_counter_id || info?.channel_ym_id || info?.yandex_metrika_id;
   const pixelId = info?.vk_pixel_id || info?.channel_vk_pixel_id;
+  const ymGoalName = info?.ym_goal_name || 'subscribe_channel';
+  const vkGoalName = info?.vk_goal_name || 'subscribe_channel';
 
-  // Stable promise for the YM ClientID. Resolves once tag.js loads and the
-  // 'getClientID' callback fires; falls back to null if YM not configured or
-  // the lookup times out.
   const clientIdResolverRef = useRef(null);
   const ymClientIdPromise = useMemo(() => {
     return new Promise((resolve) => {
@@ -35,12 +27,10 @@ export function useTrackingPixels(info) {
   useEffect(() => {
     if (!counterId) {
       if (info) console.info('[track] YM counter not set — skipping init');
-      // Resolve null so SubscribePage doesn't await forever.
       if (clientIdResolverRef.current) clientIdResolverRef.current(null);
       return;
     }
 
-    // 1) stub queue MUST be set up before tag.js loads
     window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
     window.ym.l = window.ym.l || Date.now();
 
@@ -51,7 +41,6 @@ export function useTrackingPixels(info) {
       console.info('[track] YM init failed', e);
     }
 
-    // Queue a getClientID call — stub queues it, real ym replays after tag.js loads.
     let resolved = false;
     const resolveOnce = (value) => {
       if (resolved) return;
@@ -67,13 +56,11 @@ export function useTrackingPixels(info) {
       console.info('[track] YM getClientID queue failed', e);
     }
 
-    // Safety timeout — don't keep the consumer waiting forever if tag.js fails.
     const timeoutId = setTimeout(() => {
       if (!resolved) console.info('[track] YM getClientID timeout — resolving null');
       resolveOnce(null);
     }, 8000);
 
-    // 2) inject tag.js once
     if (!document.querySelector('script[src*="mc.yandex.ru/metrika/tag.js"]')) {
       const script = document.createElement('script');
       script.src = 'https://mc.yandex.ru/metrika/tag.js';
@@ -93,7 +80,6 @@ export function useTrackingPixels(info) {
     }
 
     window._tmr = window._tmr || [];
-    // Avoid pushing a duplicate pageView if hook re-runs for the same pixel id.
     const alreadyPaged = window._tmr.some(
       (e) => e && e.id === pixelId && e.type === 'pageView'
     );
@@ -112,48 +98,8 @@ export function useTrackingPixels(info) {
     }
   }, [pixelId, info]);
 
-  const ymGoalName = info?.ym_goal_name || 'subscribe_channel';
-  const vkGoalName = info?.vk_goal_name || 'subscribe_channel';
-
-  const fireYM = useCallback((goal) => {
-    if (!counterId || !goal) return;
-    window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
-    try {
-      window.ym(Number(counterId), 'reachGoal', goal);
-      console.info('[track] YM reachGoal', counterId, goal);
-    } catch (e) {
-      console.info('[track] YM reachGoal failed', e);
-    }
-  }, [counterId]);
-
-  const fireVK = useCallback((goal) => {
-    if (!pixelId || !goal) return;
-    window._tmr = window._tmr || [];
-    try {
-      window._tmr.push({ id: pixelId, type: 'reachGoal', goal });
-      console.info('[track] VK reachGoal', pixelId, goal);
-    } catch (e) {
-      console.info('[track] VK reachGoal failed', e);
-    }
-  }, [pixelId]);
-
-  // Subscription goal — fires when subscription is actually confirmed (polling).
-  const fireGoals = useCallback(() => {
-    fireYM(ymGoalName);
-    fireVK(vkGoalName);
-  }, [fireYM, fireVK, ymGoalName, vkGoalName]);
-
-  // Click-intent goal — fires the moment user taps "Перейти в канал".
-  // Reliable signal for ad optimization (Yandex Direct / VK Реклама),
-  // works even if user closes the tab right after clicking.
-  const fireClickGoals = useCallback(() => {
-    fireYM('click_to_channel');
-    fireVK('click_to_channel');
-  }, [fireYM, fireVK]);
-
-  // Synchronous lookup for the YM ClientID — used at click time so we can
-  // POST it to the backend before the user leaves the page (mirrors what
-  // ParamsParser-style trackers do).
+  // Get YM ClientID synchronously if the global counter object exists.
+  // Used to enrich the image beacon with `cid` for proper attribution.
   const getYmClientIdSync = useCallback(() => {
     if (!counterId) return null;
     try {
@@ -165,5 +111,62 @@ export function useTrackingPixels(info) {
     return null;
   }, [counterId]);
 
-  return { fireGoals, fireClickGoals, ymClientIdPromise, getYmClientIdSync };
+  // Fire YM goal via BOTH JS API and image beacon.
+  const reachYmGoal = useCallback((goal) => {
+    if (!counterId || !goal) return;
+    // 1. JS API — works when tag.js loaded; otherwise queues in window.ym.a
+    window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
+    try {
+      window.ym(Number(counterId), 'reachGoal', goal);
+      console.info('[track] YM reachGoal (js)', counterId, goal);
+    } catch (e) {
+      console.info('[track] YM reachGoal (js) failed', e);
+    }
+    // 2. Image beacon — direct GET to mc.yandex.ru, works without tag.js.
+    try {
+      const cid = getYmClientIdSync();
+      const cidPart = cid ? `:cid:${encodeURIComponent(cid)}` : '';
+      const url = `https://mc.yandex.ru/watch/${encodeURIComponent(counterId)}` +
+        `?browser-info=ifr:0${cidPart}:ti:0:goal:${encodeURIComponent(goal)}` +
+        `&page-url=${encodeURIComponent(window.location.href)}` +
+        `&ut=noindex&t=${Date.now()}`;
+      const img = new Image(1, 1);
+      img.referrerPolicy = 'no-referrer-when-downgrade';
+      img.src = url;
+      console.info('[track] YM reachGoal (beacon)', counterId, goal);
+    } catch (e) {
+      console.info('[track] YM reachGoal (beacon) failed', e);
+    }
+  }, [counterId, getYmClientIdSync]);
+
+  // Fire VK Pixel goal via BOTH _tmr.push and image beacon.
+  const reachVkGoal = useCallback((goal) => {
+    if (!pixelId || !goal) return;
+    // 1. JS API — _tmr is a queue, push works whether code.js loaded or not.
+    window._tmr = window._tmr || [];
+    try {
+      window._tmr.push({ id: pixelId, type: 'reachGoal', goal });
+      console.info('[track] VK reachGoal (js)', pixelId, goal);
+    } catch (e) {
+      console.info('[track] VK reachGoal (js) failed', e);
+    }
+    // 2. Image beacon — Top.Mail.Ru noscript fallback URL.
+    try {
+      const url = `https://top-fwz1.mail.ru/counter?id=${encodeURIComponent(pixelId)}` +
+        `&type=reachGoal&goal=${encodeURIComponent(goal)}&js=na&t=${Date.now()}`;
+      const img = new Image(1, 1);
+      img.referrerPolicy = 'no-referrer-when-downgrade';
+      img.src = url;
+      console.info('[track] VK reachGoal (beacon)', pixelId, goal);
+    } catch (e) {
+      console.info('[track] VK reachGoal (beacon) failed', e);
+    }
+  }, [pixelId]);
+
+  const reachGoals = useCallback(() => {
+    reachYmGoal(ymGoalName);
+    reachVkGoal(vkGoalName);
+  }, [reachYmGoal, reachVkGoal, ymGoalName, vkGoalName]);
+
+  return { reachGoals, ymClientIdPromise, getYmClientIdSync };
 }

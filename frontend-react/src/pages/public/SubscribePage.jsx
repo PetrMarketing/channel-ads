@@ -52,17 +52,16 @@ export default function SubscribePage() {
 
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  const { fireGoals, fireClickGoals, ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
+  const { reachGoals, ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
 
-  const clickFiredRef = useRef(false);
+  const goalFired = useRef(false);
   const handleChannelClick = useCallback(() => {
     setClicked(true);
-    if (clickFiredRef.current) return;
-    clickFiredRef.current = true;
-    // Send the YM ClientID right at click time — by now tag.js has had max 5s
-    // to load and getClientID is most likely to return a real value. The server
-    // uses it later for attributed reachGoal via Measurement API in case the
-    // client tab closes before subscription is detected.
+    if (goalFired.current) return;
+    goalFired.current = true;
+    // Capture YM ClientID at click time and pass it to the server (used by
+    // services/conversion_pixels.fire_server_goals as a fallback if all
+    // client-side beacons fail).
     if (visitId) {
       const cid = getYmClientIdSync();
       if (cid) {
@@ -70,11 +69,11 @@ export default function SubscribePage() {
           .catch(() => {});
       }
     }
-    // Fire click-intent goal immediately — this is a reliable signal for
-    // ad-platform optimization even if YM tag.js hasn't fully initialized
-    // (the stub queues the call and replays once tag.js loads).
-    fireClickGoals();
-  }, [visitId, getYmClientIdSync, fireClickGoals]);
+    // Fire YM/VK reachGoal immediately — `subscribe_channel` (or whatever the
+    // user configured). Двойной выстрел: JS API + image beacon, чтобы дойти
+    // до Метрики даже если tag.js упал по SSL.
+    reachGoals();
+  }, [visitId, getYmClientIdSync, reachGoals]);
 
   // Surface the YM ClientID to the backend so the server-side fallback fire
   // (services/conversion_pixels.fire_server_goals) can attribute properly.
@@ -90,29 +89,21 @@ export default function SubscribePage() {
     return () => { cancelled = true; };
   }, [visitId, ymClientIdPromise]);
 
-  const goalFired = useRef(false);
+  // Polling нужен только для UI (показать "Вы подписались!"). Цели уже
+  // выстрелены на клике через handleChannelClick — повторно не стреляем.
   useEffect(() => {
     if (!visitId || subscribed) return;
     const interval = setInterval(async () => {
-      if (goalFired.current) return;
       try {
         const data = await api.get(`/track/check-subscription-by-visit?visit_id=${visitId}`);
-        if (data.subscribed && !goalFired.current) {
-          goalFired.current = true;
+        if (data.subscribed) {
           setSubscribed(true);
           clearInterval(interval);
-          // If server already fired the goal (race winner: bot/webhook path),
-          // skip client-side fireGoals to avoid double-counting the conversion.
-          if (!data.server_fired) {
-            fireGoals();
-          } else {
-            console.info('[track] skipping client fireGoals — server already fired');
-          }
         }
       } catch {}
     }, 5000);
     return () => clearInterval(interval);
-  }, [visitId, subscribed, fireGoals]);
+  }, [visitId, subscribed]);
 
   const getSubscribeUrl = () => {
     if (!info) return null;
