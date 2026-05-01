@@ -1,6 +1,8 @@
 import os
+import re
 import json
 import base64
+import html as _html
 from contextlib import asynccontextmanager
 from datetime import datetime, date
 
@@ -1844,6 +1846,135 @@ async def general_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"success": False, "error": str(exc) or "Internal server error"},
     )
+
+
+# ========================
+# SEO meta-tag injection for public link pages
+# ========================
+_SPA_INDEX_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "frontend-react", "dist", "index.html"
+)
+try:
+    with open(_SPA_INDEX_PATH, "r", encoding="utf-8") as _f:
+        _SPA_INDEX_HTML = _f.read()
+except Exception:
+    _SPA_INDEX_HTML = None
+
+
+def _inject_seo(html_str: str, *, title: str, description: str, url: str, image: str | None = None) -> str:
+    """Replace meta tags in the SPA index.html with link-specific values.
+    Safe: any failure returns original html."""
+    try:
+        title_e = _html.escape(title or "")
+        desc_e = _html.escape(description or "")
+        url_e = _html.escape(url or "")
+        image_e = _html.escape(image or "https://max.pkmarketing.ru/og-cover.png")
+
+        html_str = re.sub(r'<title>[^<]*</title>', f'<title>{title_e}</title>', html_str, count=1)
+        html_str = re.sub(r'(<meta\s+name="description"\s+content=)"[^"]*"', rf'\1"{desc_e}"', html_str, count=1)
+        html_str = re.sub(r'(<meta\s+property="og:title"\s+content=)"[^"]*"', rf'\1"{title_e}"', html_str, count=1)
+        html_str = re.sub(r'(<meta\s+property="og:description"\s+content=)"[^"]*"', rf'\1"{desc_e}"', html_str, count=1)
+        html_str = re.sub(r'(<meta\s+property="og:url"\s+content=)"[^"]*"', rf'\1"{url_e}"', html_str, count=1)
+        html_str = re.sub(r'(<meta\s+property="og:image"\s+content=)"[^"]*"', rf'\1"{image_e}"', html_str, count=1)
+        html_str = re.sub(r'(<meta\s+name="twitter:title"\s+content=)"[^"]*"', rf'\1"{title_e}"', html_str, count=1)
+        html_str = re.sub(r'(<meta\s+name="twitter:description"\s+content=)"[^"]*"', rf'\1"{desc_e}"', html_str, count=1)
+        html_str = re.sub(r'(<meta\s+name="twitter:image"\s+content=)"[^"]*"', rf'\1"{image_e}"', html_str, count=1)
+        html_str = re.sub(r'(<meta\s+itemprop="name"\s+content=)"[^"]*"', rf'\1"{title_e}"', html_str, count=1)
+        html_str = re.sub(r'(<meta\s+itemprop="description"\s+content=)"[^"]*"', rf'\1"{desc_e}"', html_str, count=1)
+        return html_str
+    except Exception:
+        return html_str
+
+
+def _default_spa_response() -> HTMLResponse | None:
+    """Return raw SPA HTML (no injection) — used when link not found / paused."""
+    if _SPA_INDEX_HTML is not None:
+        return HTMLResponse(content=_SPA_INDEX_HTML)
+    if os.path.isfile(_SPA_INDEX_PATH):
+        try:
+            with open(_SPA_INDEX_PATH, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+        except Exception:
+            return None
+    return None
+
+
+@app.get("/subscribe/{code}", include_in_schema=False)
+async def serve_subscribe_seo(code: str):
+    """Serve SPA index.html with channel-specific OG/Twitter/title meta tags."""
+    default_resp = _default_spa_response()
+    if _SPA_INDEX_HTML is None:
+        # Fall through to catch-all behavior if template missing
+        if default_resp is not None:
+            return default_resp
+        raise HTTPException(status_code=404, detail="SPA not built")
+
+    try:
+        link = await fetch_one(
+            "SELECT tl.is_paused, c.title AS channel_title, c.avatar_url AS channel_avatar "
+            "FROM tracking_links tl LEFT JOIN channels c ON c.id = tl.channel_id "
+            "WHERE tl.short_code = $1",
+            code,
+        )
+        if not link or (link.get("is_paused") and int(link.get("is_paused") or 0) == 1):
+            return default_resp
+
+        channel_title = (link.get("channel_title") or "").strip() or "Канал"
+        title = f"{channel_title} — подписка через МАКС Маркетинг"
+        description = f"Подпишитесь на канал «{channel_title}» в национальном мессенджере MAX."
+        url = f"https://max.pkmarketing.ru/subscribe/{code}"
+        image = link.get("channel_avatar")
+
+        return HTMLResponse(content=_inject_seo(
+            _SPA_INDEX_HTML, title=title, description=description, url=url, image=image,
+        ))
+    except Exception:
+        return default_resp
+
+
+@app.get("/lm/{code}", include_in_schema=False)
+async def serve_lm_seo(code: str):
+    """Serve SPA index.html with lead-magnet-specific OG/Twitter/title meta tags."""
+    default_resp = _default_spa_response()
+    if _SPA_INDEX_HTML is None:
+        if default_resp is not None:
+            return default_resp
+        raise HTTPException(status_code=404, detail="SPA not built")
+
+    try:
+        link = await fetch_one(
+            "SELECT tl.is_paused, tl.lm_title, tl.lm_description, tl.lm_image_url, "
+            "c.title AS channel_title, c.avatar_url AS channel_avatar "
+            "FROM tracking_links tl LEFT JOIN channels c ON c.id = tl.channel_id "
+            "WHERE tl.short_code = $1",
+            code,
+        )
+        if not link or (link.get("is_paused") and int(link.get("is_paused") or 0) == 1):
+            return default_resp
+
+        channel_title = (link.get("channel_title") or "").strip() or "Канал"
+        lm_title = (link.get("lm_title") or "").strip()
+        lm_description = (link.get("lm_description") or "").strip()
+
+        if lm_title:
+            title = f"{lm_title} — {channel_title}"
+        else:
+            title = f"Бесплатный материал — {channel_title}"
+
+        if lm_description:
+            description = lm_description[:160]
+        else:
+            description = f"Получите бесплатный материал от канала «{channel_title}»."
+
+        url = f"https://max.pkmarketing.ru/lm/{code}"
+        image = link.get("lm_image_url") or link.get("channel_avatar")
+
+        return HTMLResponse(content=_inject_seo(
+            _SPA_INDEX_HTML, title=title, description=description, url=url, image=image,
+        ))
+    except Exception:
+        return default_resp
 
 
 # ========================
