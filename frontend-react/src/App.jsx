@@ -30,6 +30,7 @@ import PaidChatPayPage from './pages/public/PaidChatPayPage';
 import StaffInvitePage from './pages/public/StaffInvitePage';
 import DocumentationPage from './pages/public/DocumentationPage';
 import LeadMagnetLandingPage from './pages/public/LeadMagnetLandingPage';
+import CheckListPage from './pages/CheckListPage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -71,6 +72,7 @@ export default function App() {
       <Route path="/payment-success" element={<PaymentSuccessPage />} />
       <Route path="/staff-invite/:token" element={<StaffInvitePage />} />
       <Route path="/documentation" element={<DocumentationPage />} />
+      <Route path="/check-list" element={<CheckListPage />} />
       {/* /go/:code handled by backend directly — instant 302 redirect */}
 
       {/* Admin panel */}
