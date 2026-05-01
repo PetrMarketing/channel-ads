@@ -11,6 +11,7 @@ import AttachmentPicker from '../components/AttachmentPicker';
 import MessagePreview from '../components/MessagePreview';
 import EridModal from '../components/EridModal';
 import { usePageOnboarding } from '../components/OnboardingTour';
+import AiContentTab from './content/AiContentTab';
 
 const ACCENT = '#4361ee';
 const ACCENT2 = '#7b68ee';
@@ -263,6 +264,14 @@ function PlusIcon({ size = 14, color = 'currentColor' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round">
       <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function AiIcon({ size = 14, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>
     </svg>
   );
 }
@@ -787,6 +796,14 @@ export default function ContentPage() {
           >
             <ListIcon /> Список
           </button>
+          <button
+            role="tab"
+            aria-selected={viewMode === 'ai-content'}
+            className={`cp-tab${viewMode === 'ai-content' ? ' active' : ''}`}
+            onClick={() => setViewMode('ai-content')}
+          >
+            <AiIcon /> ИИ Контент
+          </button>
         </div>
 
         {loading ? <Loading /> : (
@@ -919,6 +936,18 @@ export default function ContentPage() {
                   </div>
                 )}
               </section>
+            )}
+
+            {viewMode === 'ai-content' && (
+              <AiContentTab
+                tc={tc}
+                channelId={currentChannel?.id}
+                leadMagnets={leadMagnets}
+                onSwitchView={(mode) => {
+                  setViewMode(mode);
+                  loadPosts();
+                }}
+              />
             )}
           </>
         )}
