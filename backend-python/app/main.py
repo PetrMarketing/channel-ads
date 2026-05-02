@@ -1762,17 +1762,18 @@ async def redirect_tracking_link(code: str, request: Request):
     if link_type == "lm_landing":
         return RedirectResponse(f"/lm/{code}", status_code=302)
 
-    # Direct-type → ALWAYS route through MAX miniapp deep-link to gain full
-    # attribution (visit gets max_user_id from MAX SDK init data on the
-    # /m page → server-side YM/VK pixel firing). The miniapp /m page
-    # creates the visit itself, so we DON'T insert a visit here.
-    if link_type == "direct":
+    # MAX-канал: ВСЕ direct + landing идут через miniapp deep-link →
+    # GoMiniAppPage с авторитетной атрибуцией (max_user_id из SDK init_data).
+    # Старые ссылки автоматически переключаются на новую механику без
+    # необходимости пересоздания.
+    is_max_channel = (link.get("platform") or "").lower() == "max"
+    if link_type in ("direct", "landing") and is_max_channel:
         bot = settings.MAX_BOT_USERNAME or "id575307462228_bot"
         miniapp_url = f"https://max.ru/{bot}?startapp=go_{code}"
-        print(f"[direct-link] code={code} → miniapp deep-link: {miniapp_url}")
+        print(f"[track] {link_type} code={code} → miniapp deep-link: {miniapp_url}")
         return RedirectResponse(url=miniapp_url, status_code=302)
 
-    # Landing type: redirect to subscribe page
+    # TG-канал landing или fallback — обычная /subscribe страница
     subscribe_url = f"{settings.APP_URL}/subscribe/{code}"
     return RedirectResponse(url=subscribe_url, status_code=302)
 
