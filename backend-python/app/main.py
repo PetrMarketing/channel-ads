@@ -1762,66 +1762,15 @@ async def redirect_tracking_link(code: str, request: Request):
     if link_type == "lm_landing":
         return RedirectResponse(f"/lm/{code}", status_code=302)
 
-    # Also record a visit for direct links (no landing page to do it)
+    # Direct-type → ALWAYS route through MAX miniapp deep-link to gain full
+    # attribution (visit gets max_user_id from MAX SDK init data on the
+    # /m page → server-side YM/VK pixel firing). The miniapp /m page
+    # creates the visit itself, so we DON'T insert a visit here.
     if link_type == "direct":
-        await execute_returning_id(
-            """INSERT INTO visits (tracking_link_id, channel_id, ip_address, user_agent,
-                utm_source, utm_medium, utm_campaign, utm_content, utm_term, platform)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
-            link["id"], link["channel_id"], ip, ua,
-            link.get("utm_source"), link.get("utm_medium"), link.get("utm_campaign"),
-            link.get("utm_content"), link.get("utm_term"), link.get("platform", "telegram"),
-        )
-        # Redirect directly to channel
-        platform = link.get("platform", "telegram")
-        channel_username = link.get("channel_username")
-        max_chat_id = link.get("max_chat_id")
-        join_link = link.get("join_link")
-        # Auto-fetch invite link if missing
-        if not join_link:
-            try:
-                from app.routes.channels import _fetch_invite_link_for_channel
-                ch_row = await fetch_one("SELECT * FROM channels WHERE id = $1", link["channel_id"])
-                if ch_row:
-                    fetched = await _fetch_invite_link_for_channel(ch_row)
-                    if fetched:
-                        join_link = fetched
-                        await execute("UPDATE channels SET join_link = $1 WHERE id = $2", fetched, link["channel_id"])
-                        print(f"[direct-link] Auto-fetched invite link: {fetched}")
-            except Exception as e:
-                print(f"[direct-link] Auto-fetch invite link failed: {e}")
-
-        print(f"[direct-link] code={code} platform={platform} username={channel_username} max_chat_id={max_chat_id} join_link={join_link}")
-        if join_link:
-            # Prefer explicit join link (works for both Telegram and MAX)
-            channel_url = join_link
-        elif platform == "max" and max_chat_id:
-            if max_chat_id.startswith("http"):
-                channel_url = max_chat_id
-            else:
-                channel_url = f"https://max.ru/chats/{max_chat_id}"
-        elif platform == "max" and channel_username:
-            channel_url = f"https://max.ru/chats/{channel_username}"
-        elif channel_username:
-            channel_url = f"https://t.me/{channel_username}"
-        else:
-            print(f"[direct-link] No channel URL available for code={code}, falling back to landing")
-            channel_url = f"{settings.APP_URL}/subscribe/{code}"
-        print(f"[direct-link] Redirecting to: {channel_url}")
-
-        # For MAX links opened in MAX internal browser — use instant JS redirect
-        # This ensures max.ru links are handled natively by the MAX app
-        if "max.ru" in channel_url:
-            return HTMLResponse(f"""<!DOCTYPE html><html><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="0;url={channel_url}">
-<style>body{{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;background:#f5f5f5}}
-.c{{text-align:center;padding:20px}}.s{{width:32px;height:32px;border:3px solid #7B68EE;border-top-color:transparent;border-radius:50%;animation:s .8s linear infinite;margin:0 auto 16px}}
-@keyframes s{{to{{transform:rotate(360deg)}}}}</style>
-</head><body><div class="c"><div class="s"></div><p>Переход в канал...</p></div>
-<script>window.location.replace("{channel_url}");</script></body></html>""")
-
-        return RedirectResponse(url=channel_url, status_code=302)
+        bot = settings.MAX_BOT_USERNAME or "id575307462228_bot"
+        miniapp_url = f"https://max.ru/{bot}?startapp=go_{code}"
+        print(f"[direct-link] code={code} → miniapp deep-link: {miniapp_url}")
+        return RedirectResponse(url=miniapp_url, status_code=302)
 
     # Landing type: redirect to subscribe page
     subscribe_url = f"{settings.APP_URL}/subscribe/{code}"

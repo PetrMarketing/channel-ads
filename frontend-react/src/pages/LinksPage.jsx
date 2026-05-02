@@ -414,7 +414,14 @@ export default function LinksPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {links.map((link, i) => {
                     const meta = TYPE_META[link.link_type] || TYPE_META.landing;
-                    const url = `${APP_URL}/go/${link.short_code}`;
+                    const isDirectMax = link.link_type === 'direct' && currentChannel?.platform === 'max';
+                    const botName = import.meta.env.VITE_MAX_BOT_USERNAME || MAX_BOT_FALLBACK;
+                    const goUrl = `${APP_URL}/go/${link.short_code}`;
+                    const startappUrl = `https://max.ru/${botName}?startapp=go_${link.short_code}`;
+                    // For direct MAX links use the deep-link as the primary
+                    // displayed URL — gives full attribution. Otherwise keep
+                    // the /go/ URL (used by /subscribe and /lm flows).
+                    const url = isDirectMax ? startappUrl : goUrl;
                     const isExpanded = !!expandedStats[link.id];
                     return (
                       <div
@@ -463,30 +470,35 @@ export default function LinksPage() {
 
                             <code
                               className="lp-code"
-                              onClick={() => copyLink(link.short_code)}
+                              onClick={() => {
+                                navigator.clipboard.writeText(url).then(
+                                  () => showToast('Ссылка скопирована'),
+                                  () => showToast('Не удалось скопировать', 'error'),
+                                );
+                              }}
                               title="Нажмите чтобы скопировать"
                               style={codePillStyle(ACCENT)}
                             >
                               {url}
                             </code>
 
-                            {link.link_type === 'direct' && currentChannel?.platform === 'max' && (
+                            {isDirectMax && (
                               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 <code
                                   className="lp-code-alt"
-                                  onClick={() => { navigator.clipboard.writeText(`https://max.ru/${import.meta.env.VITE_MAX_BOT_USERNAME || MAX_BOT_FALLBACK}?startapp=go_${link.short_code}`); showToast('Ссылка для ПК скопирована'); }}
-                                  title="MiniApp ссылка (ПК)"
+                                  onClick={() => { navigator.clipboard.writeText(goUrl); showToast('Универсальная ссылка скопирована'); }}
+                                  title="Универсальная короткая ссылка (вне MAX)"
                                   style={smallCodePillStyle}
                                 >
-                                  ПК · max.ru/{import.meta.env.VITE_MAX_BOT_USERNAME || MAX_BOT_FALLBACK}?startapp=go_{link.short_code}
+                                  Универсальная · {goUrl}
                                 </code>
                                 <code
                                   className="lp-code-alt"
-                                  onClick={() => { navigator.clipboard.writeText(`https://max.ru/${import.meta.env.VITE_MAX_BOT_USERNAME || MAX_BOT_FALLBACK}?start=go_${link.short_code}`); showToast('Ссылка для мобильного скопирована'); }}
-                                  title="Бот-ссылка (мобильное)"
+                                  onClick={() => { navigator.clipboard.writeText(`https://max.ru/${botName}?start=go_${link.short_code}`); showToast('Бот-ссылка скопирована'); }}
+                                  title="Бот-ссылка (старый формат)"
                                   style={smallCodePillStyle}
                                 >
-                                  Моб · max.ru/{import.meta.env.VITE_MAX_BOT_USERNAME || MAX_BOT_FALLBACK}?start=go_{link.short_code}
+                                  Бот · max.ru/{botName}?start=go_{link.short_code}
                                 </code>
                               </div>
                             )}

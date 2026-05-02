@@ -21,34 +21,65 @@ def _new_visit_token() -> str:
 
 @router.post("/miniapp-visit")
 async def miniapp_visit(request: Request):
-    """Record visit from MAX Mini App and return channel URL."""
-    body = await request.json()
+    """Record visit from MAX Mini App and return channel info + URL.
+
+    Accepts max_user_id, init_data, ym_client_id and stores them on the visit
+    so the resulting subscription can be properly attributed (full miniapp
+    deep-link flow → server-side pixel firing).
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
     code = body.get("code", "")
+    max_user_id = body.get("max_user_id")
+    ym_client_id = body.get("ym_client_id")
+    init_data = body.get("init_data")  # raw MAX SDK init data (not yet verified)
+    page_url = body.get("page_url") or ""
 
     link = await fetch_one("""
         SELECT tl.*, c.platform, c.username as channel_username,
-               c.max_chat_id, c.join_link, c.title as channel_title
+               c.max_chat_id, c.join_link, c.title as channel_title,
+               c.avatar_url as channel_avatar_url
         FROM tracking_links tl JOIN channels c ON c.id = tl.channel_id
         WHERE tl.short_code = $1
     """, code)
 
     if not link:
         return {"success": False, "channel_url": None}
+    if link.get("is_paused"):
+        return {"success": False, "error": "Link paused"}
 
-    # Record click + visit
+    # Record click
     await execute("UPDATE tracking_links SET clicks = clicks + 1 WHERE id = $1", link["id"])
     ip = request.client.host if request.client else ""
     ua = request.headers.get("user-agent", "")
     await execute("INSERT INTO clicks (link_id, ip_address, user_agent) VALUES ($1,$2,$3)", link["id"], ip, ua)
 
-    await execute_returning_id(
-        """INSERT INTO visits (tracking_link_id, channel_id, ip_address, user_agent,
-            utm_source, utm_medium, utm_campaign, utm_content, utm_term, platform)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
-        link["id"], link["channel_id"], ip, ua,
-        link.get("utm_source"), link.get("utm_medium"), link.get("utm_campaign"),
-        link.get("utm_content"), link.get("utm_term"), link.get("platform", "max"),
-    )
+    # Issue a per-visit token so the bot can attribute the resulting subscription
+    visit_token = _new_visit_token()
+    visit_id = None
+    for _attempt in range(3):
+        try:
+            visit_id = await execute_returning_id(
+                """INSERT INTO visits (tracking_link_id, channel_id, ip_address, user_agent,
+                    utm_source, utm_medium, utm_campaign, utm_content, utm_term, platform,
+                    max_user_id, ym_client_id, visit_token)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id""",
+                link["id"], link["channel_id"], ip, ua,
+                link.get("utm_source"), link.get("utm_medium"), link.get("utm_campaign"),
+                link.get("utm_content"), link.get("utm_term"), link.get("platform", "max"),
+                str(max_user_id) if max_user_id else None,
+                str(ym_client_id) if ym_client_id else None,
+                visit_token,
+            )
+            break
+        except Exception as e:
+            if "visit_token" in str(e).lower() and "unique" in str(e).lower():
+                visit_token = _new_visit_token()
+                continue
+            print(f"[miniapp-visit] insert failed code={code}: {type(e).__name__}: {e}")
+            raise
 
     # Build channel URL
     join_link = link.get("join_link")
@@ -64,7 +95,17 @@ async def miniapp_visit(request: Request):
     else:
         channel_url = None
 
-    return {"success": True, "channel_url": channel_url}
+    print(f"[miniapp-visit] code={code} visit={visit_id} max_user={max_user_id} cid={ym_client_id} url={channel_url}")
+
+    return {
+        "success": True,
+        "visit_id": visit_id,
+        "visit_token": visit_token,
+        "channel_url": channel_url,
+        "channel_title": link.get("channel_title"),
+        "channel_avatar_url": link.get("channel_avatar_url"),
+        "platform": link.get("platform", "max"),
+    }
 
 
 @router.post("/click/{short_code}")
