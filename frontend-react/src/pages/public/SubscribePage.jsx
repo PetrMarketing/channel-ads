@@ -54,13 +54,8 @@ export default function SubscribePage() {
 
   const { reachGoals, ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
 
-  const goalFired = useRef(false);
   const handleChannelClick = useCallback(() => {
     setClicked(true);
-    // Capture YM ClientID at click time and pass it to the server (used by
-    // services/conversion_pixels.fire_server_goals as a fallback if all
-    // client-side beacons fail). Цель НЕ стреляем здесь — она должна
-    // выстрелить только после подтверждения подписки через polling.
     if (visitId) {
       const cid = getYmClientIdSync();
       if (cid) {
@@ -68,7 +63,10 @@ export default function SubscribePage() {
           .catch(() => {});
       }
     }
-  }, [visitId, getYmClientIdSync]);
+    // Fire goal immediately on click — простая и надёжная механика.
+    // Лучше дубли в Метрике чем тишина. Дедуп выключен сознательно.
+    reachGoals();
+  }, [visitId, getYmClientIdSync, reachGoals]);
 
   // Surface the YM ClientID to the backend so the server-side fallback fire
   // (services/conversion_pixels.fire_server_goals) can attribute properly.
@@ -84,25 +82,20 @@ export default function SubscribePage() {
     return () => { cancelled = true; };
   }, [visitId, ymClientIdPromise]);
 
-  // Polling — детектирует подписку и стреляет цель (subscribe_channel).
-  // goalFired ref гарантирует что цель уйдёт ровно один раз.
+  // Polling — детектирует подписку. Цель повторно НЕ стреляем (уже стрельнули
+  // на клике) — но если по какой-то причине клик-выстрел упал, fallback здесь.
   useEffect(() => {
     if (!visitId || subscribed) return;
     const interval = setInterval(async () => {
-      if (goalFired.current) return;
       try {
         const data = await api.get(`/track/check-subscription-by-visit?visit_id=${visitId}`);
-        if (data.subscribed && !goalFired.current) {
-          goalFired.current = true;
+        if (data.subscribed) {
           setSubscribed(true);
           clearInterval(interval);
-          // Сервер уже мог стрельнуть цель через Measurement API при
-          // детекте подписки в боте — пропускаем клиентский reachGoals,
-          // чтобы не задвоить.
+          // Bonus shot — на случай если кликовый выстрел не дошёл (Метрика
+          // дедуплицирует по ClientID, дублей в реальности почти не будет).
           if (!data.server_fired) {
             reachGoals();
-          } else {
-            console.info('[track] skipping client reachGoals — server already fired');
           }
         }
       } catch {}
