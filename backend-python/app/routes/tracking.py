@@ -334,24 +334,20 @@ async def check_subscription_by_visit(visit_id: int = Query(...)):
             ),
         )
 
-    claimed_via_heuristic = False
+    # Старая (рабочая) механика: ЛЮБАЯ подписка в канале после открытия лендинга
+    # триггерит конверсию на ВСЕХ открытых лендингах того же канала. Без
+    # атомарного claim'а — несколько вкладок могут "увидеть" одну и ту же
+    # подписку и стрельнуть цель. Метрика дедуплицирует по ClientID.
     if not sub:
-        sub = await _safe_query("heuristic claim", _heuristic_claim(visit))
-        if sub:
-            claimed_via_heuristic = True
-            print(f"[track] heuristic claim: visit {visit_id} <- subscription {sub.get('id')}")
-
-    if claimed_via_heuristic and sub:
-        try:
-            await fire_server_goals_safe(sub["id"])
-            refreshed = await _safe_query(
-                "post-claim refresh",
-                fetch_one("SELECT * FROM subscriptions WHERE id = $1", sub["id"]),
-            )
-            if refreshed:
-                sub = refreshed
-        except Exception as e:
-            print(f"[track] server-fire after claim failed: {type(e).__name__}: {e}")
+        sub = await _safe_query(
+            "any subscription in channel after visit",
+            fetch_one(
+                """SELECT * FROM subscriptions
+                   WHERE channel_id = $1 AND created_at >= $2
+                   ORDER BY created_at ASC LIMIT 1""",
+                visit["channel_id"], visit["created_at"],
+            ),
+        )
 
     server_fired = bool(sub and sub.get("goal_fired_at") is not None)
     return {

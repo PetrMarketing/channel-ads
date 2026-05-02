@@ -82,21 +82,17 @@ export default function SubscribePage() {
     return () => { cancelled = true; };
   }, [visitId, ymClientIdPromise]);
 
-  // Polling — детектирует подписку. Цель повторно НЕ стреляем (уже стрельнули
-  // на клике) — но если по какой-то причине клик-выстрел упал, fallback здесь.
+  // Polling — любая подписка в канале после открытия лендинга триггерит цель.
+  // Стреляем без дедупа: Метрика сама дедуплицирует по ClientID, а нам важно
+  // не пропустить событие. UI меняется на "Вы подписались!" после первого hit.
   useEffect(() => {
-    if (!visitId || subscribed) return;
+    if (!visitId) return;
     const interval = setInterval(async () => {
       try {
         const data = await api.get(`/track/check-subscription-by-visit?visit_id=${visitId}`);
         if (data.subscribed) {
-          setSubscribed(true);
-          clearInterval(interval);
-          // Bonus shot — на случай если кликовый выстрел не дошёл (Метрика
-          // дедуплицирует по ClientID, дублей в реальности почти не будет).
-          if (!data.server_fired) {
-            reachGoals();
-          }
+          if (!subscribed) setSubscribed(true);
+          reachGoals();
         }
       } catch {}
     }, 5000);
