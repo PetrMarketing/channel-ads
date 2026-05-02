@@ -78,6 +78,22 @@ async def _http_get(url: str, user_agent: Optional[str]) -> None:
         print(f"[track] server-fire HTTP error: {e} url={url[:200]}")
 
 
+async def _http_get_status(url: str, user_agent: Optional[str]) -> tuple[Optional[int], Optional[str]]:
+    """GET that returns (status_code, error_message). Used by the per-pending
+    pixel-firing flow so we can persist outcome to DB. status is None on
+    network failure; error is None on success."""
+    headers = {}
+    if user_agent:
+        headers["User-Agent"] = user_agent
+    try:
+        async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
+            async with session.get(url, headers=headers, allow_redirects=False) as resp:
+                await resp.read()
+                return resp.status, None
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"[:500]
+
+
 async def fire_server_goals(subscription_id: int) -> None:
     """Idempotently fire YM + VK conversion goals for a subscription.
 
@@ -201,10 +217,21 @@ async def _fire_goals_for_link(
     page_url_stored: Optional[str],
     user_agent: Optional[str],
     log_prefix: str,
-) -> None:
+) -> dict:
     """Resolve YM/VK config for a link (link-level overrides channel-level)
-    and fire reachGoal via the measurement protocol. Used by both pending-claim
-    and orphan-claim flows."""
+    and fire reachGoal via the measurement protocol.
+
+    Returns a dict with per-pixel outcome:
+      {
+        "ym_fired": bool, "ym_code": int|None, "ym_error": str|None,
+        "vk_fired": bool, "vk_code": int|None, "vk_error": str|None,
+      }
+    Used by both pending-claim and orphan-claim flows so they can persist the
+    per-pixel HTTP outcome on the pending_conversions row."""
+    out = {
+        "ym_fired": False, "ym_code": None, "ym_error": None,
+        "vk_fired": False, "vk_code": None, "vk_error": None,
+    }
     link = await fetch_one(
         """
         SELECT tl.short_code,
@@ -220,7 +247,7 @@ async def _fire_goals_for_link(
     )
     if not link:
         print(f"[track] {log_prefix} link {link_id} missing — skipping fire")
-        return
+        return out
 
     counter_id = (link.get("ym_counter_id") or link.get("channel_ym_id") or "")
     counter_id = str(counter_id).strip() if counter_id else ""
@@ -237,24 +264,67 @@ async def _fire_goals_for_link(
 
     if not counter_id and not pixel_id:
         print(f"[track] {log_prefix} no pixel configured for link {link_id}")
-        return
+        return out
 
-    tasks = []
+    # Fire concurrently and collect per-pixel outcomes.
+    ym_task = None
+    vk_task = None
     if counter_id:
-        tasks.append(_http_get(
+        ym_task = asyncio.create_task(_http_get_status(
             _build_ym_url(counter_id, ym_goal, page_url, ym_client_id),
             user_agent,
         ))
     if pixel_id:
-        tasks.append(_http_get(_build_vk_url(pixel_id, vk_goal), user_agent))
+        vk_task = asyncio.create_task(_http_get_status(
+            _build_vk_url(pixel_id, vk_goal), user_agent,
+        ))
 
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+    if ym_task is not None:
+        try:
+            out["ym_code"], out["ym_error"] = await ym_task
+            out["ym_fired"] = True
+        except Exception as e:
+            out["ym_error"] = f"{type(e).__name__}: {e}"[:500]
+            out["ym_fired"] = True
+    if vk_task is not None:
+        try:
+            out["vk_code"], out["vk_error"] = await vk_task
+            out["vk_fired"] = True
+        except Exception as e:
+            out["vk_error"] = f"{type(e).__name__}: {e}"[:500]
+            out["vk_fired"] = True
 
     print(
-        f"[track] {log_prefix} fired ym={counter_id or '-'} vk={pixel_id or '-'} "
-        f"cid={'y' if ym_client_id else 'n'}"
+        f"[track] {log_prefix} fired ym={counter_id or '-'}({out['ym_code']}) "
+        f"vk={pixel_id or '-'}({out['vk_code']}) cid={'y' if ym_client_id else 'n'}"
     )
+    return out
+
+
+async def _persist_pending_pixel_status(pending_id: int, outcome: dict) -> None:
+    """Write per-pixel HTTP outcome onto the pending_conversions row so the
+    user can audit every step (subscribed_at | ym_fired_at/code/error |
+    vk_fired_at/code/error). Best-effort; logs but never raises."""
+    if not pending_id:
+        return
+    try:
+        await execute(
+            """
+            UPDATE pending_conversions
+               SET ym_fired_at      = CASE WHEN $2::bool THEN NOW() ELSE ym_fired_at END,
+                   ym_response_code = COALESCE($3, ym_response_code),
+                   ym_error         = COALESCE($4, ym_error),
+                   vk_fired_at      = CASE WHEN $5::bool THEN NOW() ELSE vk_fired_at END,
+                   vk_response_code = COALESCE($6, vk_response_code),
+                   vk_error         = COALESCE($7, vk_error)
+             WHERE id = $1
+            """,
+            pending_id,
+            bool(outcome.get("ym_fired")), outcome.get("ym_code"), outcome.get("ym_error"),
+            bool(outcome.get("vk_fired")), outcome.get("vk_code"), outcome.get("vk_error"),
+        )
+    except Exception as e:
+        print(f"[track] persist pixel status failed pending={pending_id}: {e}")
 
 
 async def _record_orphan_subscription(
@@ -303,7 +373,9 @@ async def claim_and_fire_pending_for_channel(
                 claimed = await conn.fetchrow(
                     """
                     UPDATE pending_conversions
-                    SET fired_at = NOW(), subscription_id = $1
+                    SET fired_at = NOW(),
+                        subscribed_at = NOW(),
+                        subscription_id = $1
                     WHERE id = (
                         SELECT id FROM pending_conversions
                         WHERE channel_id = $2
@@ -334,10 +406,11 @@ async def claim_and_fire_pending_for_channel(
     page_url_stored = claimed.get("page_url") or ""
     user_agent = claimed.get("user_agent") or None
 
-    await _fire_goals_for_link(
+    outcome = await _fire_goals_for_link(
         link_id, ym_client_id, page_url_stored, user_agent,
         log_prefix=f"pending {pending_id} → (sub={subscription_id})",
     )
+    await _persist_pending_pixel_status(pending_id, outcome)
 
 
 async def claim_orphan_for_pending(
@@ -385,7 +458,9 @@ async def claim_orphan_for_pending(
                     # Mark the pending as fired too — we just attributed it to this orphan.
                     await conn.execute(
                         """UPDATE pending_conversions
-                           SET fired_at = NOW(), subscription_id = $1
+                           SET fired_at = NOW(),
+                               subscribed_at = NOW(),
+                               subscription_id = $1
                            WHERE id = $2 AND fired_at IS NULL""",
                         claimed["subscription_id"], pending_id,
                     )
@@ -399,10 +474,11 @@ async def claim_orphan_for_pending(
     orphan_id = claimed["id"]
     sub_id = claimed["subscription_id"]
 
-    await _fire_goals_for_link(
+    outcome = await _fire_goals_for_link(
         link_id, ym_client_id, page_url, user_agent,
         log_prefix=f"orphan {orphan_id} → (sub={sub_id}, pending={pending_id})",
     )
+    await _persist_pending_pixel_status(pending_id, outcome)
 
 
 async def claim_orphan_for_pending_safe(

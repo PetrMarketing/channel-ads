@@ -128,6 +128,7 @@ async def get_link_info(short_code: str):
     link = await fetch_one("""
         SELECT tl.*, c.tracking_code, c.channel_id, c.title as channel_title, c.platform,
             c.username as channel_username, c.max_chat_id,
+            c.avatar_url AS channel_avatar_url,
             c.yandex_metrika_id AS channel_ym_id,
             c.vk_pixel_id AS channel_vk_pixel_id,
             c.join_link, lm.code as lm_code

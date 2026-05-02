@@ -2220,6 +2220,7 @@ async def process_max_update(body: dict):
             user_id = str(body.get("user", {}).get("user_id") or "")
             username = body.get("user", {}).get("username") or ""
             first_name = body.get("user", {}).get("name") or body.get("user", {}).get("first_name", "")
+            print(f"[MAX Bot] user_added: chat_id={max_chat_id}, user_id={user_id}, name={first_name!r}")
 
             # Check if this is a paid chat — kick unauthorized users
             paid_chat = await fetch_one(
@@ -2250,7 +2251,9 @@ async def process_max_update(body: dict):
                 max_chat_id,
             )
             if not channel:
+                print(f"[MAX Bot] user_added: NO channel for max_chat_id={max_chat_id} — skipping")
                 return
+            print(f"[MAX Bot] user_added: matched channel id={channel['id']}")
 
             # Find matching visit
             visit = None
@@ -2265,36 +2268,48 @@ async def process_max_update(body: dict):
                     AND visited_at > NOW() - INTERVAL '1 hour' ORDER BY visited_at DESC LIMIT 1
                 """, channel["id"])
 
+            sub_id = None
             try:
                 sub_id = await execute_returning_id("""
                     INSERT INTO subscriptions (channel_id, telegram_id, max_user_id, username, first_name, visit_id, platform)
                     VALUES ($1, NULL, $2, $3, $4, $5, 'max')
                     RETURNING id
                 """, channel["id"], user_id, username, first_name, visit["id"] if visit else None)
-                print(f"[MAX Bot] Subscription: user={username or user_id}, channel={channel['id']}")
+                print(f"[MAX Bot] Subscription: user={username or user_id}, channel={channel['id']}, sub_id={sub_id}")
                 if sub_id and visit:
                     print(f"[track] subscription {sub_id} linked to visit {visit['id']}")
-                    # Fire server-side YM/VK goals as fallback (idempotent).
                     try:
                         from ..services.conversion_pixels import fire_server_goals_safe
                         await fire_server_goals_safe(sub_id)
                     except Exception as fire_err:
                         print(f"[track] server-fire dispatch failed: {fire_err}")
-                # New flow: atomic FIFO claim of oldest unfired pending_conversion
-                # in this channel (60s window). 1 sub = 1 fire (or 0 if none pending).
-                # Fire-and-forget so we don't block the bot ack.
-                if sub_id and channel.get("id"):
-                    try:
-                        import asyncio as _asyncio
-                        from ..services.conversion_pixels import claim_pending_and_fire_safe
-                        _asyncio.create_task(
-                            claim_pending_and_fire_safe(channel["id"], sub_id)
-                        )
-                    except Exception as claim_err:
-                        print(f"[track] pending claim dispatch failed: {claim_err}")
             except Exception as e:
-                if "duplicate" not in str(e).lower() and "unique" not in str(e).lower():
+                if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+                    # Юзер уже был в subscriptions — найдём существующую запись
+                    # чтобы всё равно стрельнуть pending (юзер же отписался и
+                    # снова подписался — это валидный конверсионный event).
+                    existing = await fetch_one(
+                        "SELECT id FROM subscriptions WHERE channel_id=$1 AND max_user_id=$2 LIMIT 1",
+                        channel["id"], user_id,
+                    )
+                    if existing:
+                        sub_id = existing["id"]
+                        print(f"[MAX Bot] Subscription duplicate: user={user_id}, reusing existing sub_id={sub_id}")
+                else:
                     print(f"[MAX Bot] Subscription error: {e}")
+
+            # Atomic FIFO claim of oldest unfired pending_conversion in this
+            # channel (60s window). 1 sub = 1 fire (or 0 if no pending).
+            if sub_id and channel.get("id"):
+                try:
+                    import asyncio as _asyncio
+                    from ..services.conversion_pixels import claim_pending_and_fire_safe
+                    _asyncio.create_task(
+                        claim_pending_and_fire_safe(channel["id"], sub_id)
+                    )
+                    print(f"[track] dispatched claim_pending channel={channel['id']} sub={sub_id}")
+                except Exception as claim_err:
+                    print(f"[track] pending claim dispatch failed: {claim_err}")
 
             # Notify owner
             try:

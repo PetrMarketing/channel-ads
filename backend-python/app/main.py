@@ -1762,13 +1762,14 @@ async def redirect_tracking_link(code: str, request: Request):
     if link_type == "lm_landing":
         return RedirectResponse(f"/lm/{code}", status_code=302)
 
-    # MAX-канал: direct + landing → ВСЕГДА через max.ru/{bot}?startapp=go_X.
-    # MAX откроет наш miniapp по configured Mini App URL бота.
+    # MAX-канал: direct + landing → SPA лендинг /click/{code}, который грузит
+    # tag.js (set _ym_uid + capture ClientID), создаёт pending_conversion на
+    # клик и затем редиректит в max.ru/{bot}?startapp=v_{visit_token}.
+    # Это даёт точный per-click pixel attribution через bot DM-flow.
     is_max_channel = (link.get("platform") or "").lower() == "max"
     if link_type in ("direct", "landing") and is_max_channel:
-        bot = settings.MAX_BOT_USERNAME or "id575307462228_bot"
-        target = f"https://max.ru/{bot}?startapp=go_{code}"
-        print(f"[track] {link_type} code={code} → MAX deep-link: {target}")
+        target = f"/click/{code}"
+        print(f"[track] {link_type} code={code} → SPA click landing: {target}")
         return RedirectResponse(url=target, status_code=302)
 
     # TG-канал landing или fallback — обычная /subscribe страница

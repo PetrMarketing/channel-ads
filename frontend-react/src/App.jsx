@@ -32,6 +32,7 @@ import StaffInvitePage from './pages/public/StaffInvitePage';
 import DocumentationPage from './pages/public/DocumentationPage';
 import LeadMagnetLandingPage from './pages/public/LeadMagnetLandingPage';
 import GoMiniAppPage from './pages/public/GoMiniAppPage';
+import ClickLandingPage from './pages/public/ClickLandingPage';
 import CheckListPage from './pages/CheckListPage';
 
 // Admin pages
@@ -310,6 +311,7 @@ export default function App() {
       {/* Public pages */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/subscribe/:shortCode" element={<SubscribePage />} />
+      <Route path="/click/:shortCode" element={<ClickLandingPage />} />
       <Route path="/lm/:shortCode" element={<LeadMagnetLandingPage />} />
       <Route path="/pay/:tc" element={<PaidChatPayPage />} />
       <Route path="/paid-chat-pay/success/:orderId" element={<PaymentSuccessPage />} />
