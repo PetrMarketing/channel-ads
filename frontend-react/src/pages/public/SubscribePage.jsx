@@ -54,6 +54,13 @@ export default function SubscribePage() {
 
   const { reachGoals, ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
 
+  const goalFired = useRef(false);
+  const fireOnce = useCallback(() => {
+    if (goalFired.current) return;
+    goalFired.current = true;
+    reachGoals();
+  }, [reachGoals]);
+
   const handleChannelClick = useCallback(() => {
     setClicked(true);
     if (visitId) {
@@ -63,10 +70,10 @@ export default function SubscribePage() {
           .catch(() => {});
       }
     }
-    // Fire goal immediately on click — простая и надёжная механика.
-    // Лучше дубли в Метрике чем тишина. Дедуп выключен сознательно.
-    reachGoals();
-  }, [visitId, getYmClientIdSync, reachGoals]);
+    // Стреляем цель один раз за открытие страницы (на клике или на детекте,
+    // что наступит раньше). Несколько открытых вкладок = несколько выстрелов.
+    fireOnce();
+  }, [visitId, getYmClientIdSync, fireOnce]);
 
   // Surface the YM ClientID to the backend so the server-side fallback fire
   // (services/conversion_pixels.fire_server_goals) can attribute properly.
@@ -82,22 +89,22 @@ export default function SubscribePage() {
     return () => { cancelled = true; };
   }, [visitId, ymClientIdPromise]);
 
-  // Polling — любая подписка в канале после открытия лендинга триггерит цель.
-  // Стреляем без дедупа: Метрика сама дедуплицирует по ClientID, а нам важно
-  // не пропустить событие. UI меняется на "Вы подписались!" после первого hit.
+  // Polling — детектирует подписку и стреляет цель ровно один раз за сессию
+  // страницы (через fireOnce). Останавливается после первого hit'а.
   useEffect(() => {
-    if (!visitId) return;
+    if (!visitId || subscribed) return;
     const interval = setInterval(async () => {
       try {
         const data = await api.get(`/track/check-subscription-by-visit?visit_id=${visitId}`);
         if (data.subscribed) {
-          if (!subscribed) setSubscribed(true);
-          reachGoals();
+          setSubscribed(true);
+          clearInterval(interval);
+          fireOnce();
         }
       } catch {}
     }, 5000);
     return () => clearInterval(interval);
-  }, [visitId, subscribed, reachGoals]);
+  }, [visitId, subscribed, fireOnce]);
 
   const getSubscribeUrl = () => {
     if (!info) return null;
