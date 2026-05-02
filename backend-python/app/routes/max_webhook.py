@@ -2280,6 +2280,18 @@ async def process_max_update(body: dict):
                         await fire_server_goals_safe(sub_id)
                     except Exception as fire_err:
                         print(f"[track] server-fire dispatch failed: {fire_err}")
+                # New flow: atomic FIFO claim of oldest unfired pending_conversion
+                # in this channel (60s window). 1 sub = 1 fire (or 0 if none pending).
+                # Fire-and-forget so we don't block the bot ack.
+                if sub_id and channel.get("id"):
+                    try:
+                        import asyncio as _asyncio
+                        from ..services.conversion_pixels import claim_pending_and_fire_safe
+                        _asyncio.create_task(
+                            claim_pending_and_fire_safe(channel["id"], sub_id)
+                        )
+                    except Exception as claim_err:
+                        print(f"[track] pending claim dispatch failed: {claim_err}")
             except Exception as e:
                 if "duplicate" not in str(e).lower() and "unique" not in str(e).lower():
                     print(f"[MAX Bot] Subscription error: {e}")

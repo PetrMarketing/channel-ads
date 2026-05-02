@@ -193,3 +193,122 @@ async def fire_server_goals_safe(subscription_id: Optional[int]) -> None:
         await fire_server_goals(subscription_id)
     except Exception as e:
         print(f"[track] fire_server_goals_safe error sub={subscription_id}: {e}")
+
+
+async def claim_and_fire_pending_for_channel(
+    channel_id: int, subscription_id: int
+) -> None:
+    """Atomically claim the OLDEST unfired pending_conversion in this channel
+    (within its 60s window) and fire YM/VK reachGoals via the measurement API.
+
+    Guarantees:
+      - 1 subscription = at most 1 fire (via FOR UPDATE SKIP LOCKED)
+      - If no pending in window → no fire (subscription happened out of band)
+      - Excess clicks (more clicks than subs in window) → expire silently
+    """
+    if not channel_id or not subscription_id:
+        return
+
+    try:
+        from ..database import get_pool
+        pool = await get_pool()
+
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                claimed = await conn.fetchrow(
+                    """
+                    UPDATE pending_conversions
+                    SET fired_at = NOW(), subscription_id = $1
+                    WHERE id = (
+                        SELECT id FROM pending_conversions
+                        WHERE channel_id = $2
+                          AND fired_at IS NULL
+                          AND expires_at > NOW()
+                        ORDER BY created_at ASC
+                        LIMIT 1
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    RETURNING id, link_id, ym_client_id, page_url, user_agent
+                    """,
+                    subscription_id, channel_id,
+                )
+    except Exception as e:
+        print(f"[track] claim pending failed channel={channel_id}: {type(e).__name__}: {e}")
+        return
+
+    if not claimed:
+        print(f"[track] no pending in channel {channel_id} — nothing to fire (sub={subscription_id})")
+        return
+
+    pending_id = claimed["id"]
+    link_id = claimed["link_id"]
+    ym_client_id = claimed.get("ym_client_id")
+    page_url_stored = claimed.get("page_url") or ""
+    user_agent = claimed.get("user_agent") or None
+
+    # Resolve goal config from link + channel — link-level overrides channel-level.
+    link = await fetch_one(
+        """
+        SELECT tl.short_code,
+               tl.ym_counter_id, tl.ym_goal_name,
+               tl.vk_pixel_id,   tl.vk_goal_name,
+               c.yandex_metrika_id AS channel_ym_id,
+               c.vk_pixel_id       AS channel_vk_pixel_id
+        FROM tracking_links tl
+        JOIN channels c ON c.id = tl.channel_id
+        WHERE tl.id = $1
+        """,
+        link_id,
+    )
+    if not link:
+        print(f"[track] pending {pending_id} claim ok but link {link_id} missing — skipping fire")
+        return
+
+    counter_id = (link.get("ym_counter_id") or link.get("channel_ym_id") or "")
+    counter_id = str(counter_id).strip() if counter_id else ""
+    pixel_id = (link.get("vk_pixel_id") or link.get("channel_vk_pixel_id") or "")
+    pixel_id = str(pixel_id).strip() if pixel_id else ""
+    ym_goal = link.get("ym_goal_name") or _DEFAULT_GOAL
+    vk_goal = link.get("vk_goal_name") or _DEFAULT_GOAL
+
+    short_code = link.get("short_code") or ""
+    page_url = page_url_stored or (
+        f"{settings.APP_URL.rstrip('/')}/subscribe/{short_code}"
+        if short_code else settings.APP_URL
+    )
+
+    if not counter_id and not pixel_id:
+        print(f"[track] pending {pending_id} claim ok but no pixel configured for link {link_id}")
+        return
+
+    tasks = []
+    if counter_id:
+        tasks.append(_http_get(
+            _build_ym_url(counter_id, ym_goal, page_url, ym_client_id),
+            user_agent,
+        ))
+    if pixel_id:
+        tasks.append(_http_get(_build_vk_url(pixel_id, vk_goal), user_agent))
+
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    print(
+        f"[track] pending {pending_id} → fired (sub={subscription_id}) "
+        f"ym={counter_id or '-'} vk={pixel_id or '-'} cid={'y' if ym_client_id else 'n'}"
+    )
+
+
+async def claim_pending_and_fire_safe(
+    channel_id: Optional[int], subscription_id: Optional[int]
+) -> None:
+    """Wrapper that swallows None / errors — convenient for bot INSERT call sites."""
+    if not channel_id or not subscription_id:
+        return
+    try:
+        await claim_and_fire_pending_for_channel(channel_id, subscription_id)
+    except Exception as e:
+        print(
+            f"[track] claim_pending_and_fire_safe error "
+            f"channel={channel_id} sub={subscription_id}: {e}"
+        )

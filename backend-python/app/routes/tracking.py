@@ -1,10 +1,11 @@
 import secrets
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Request, HTTPException, Query
 from typing import Optional
 
 from ..middleware.auth import verify_telegram_webapp
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
-from ..services.conversion_pixels import fire_server_goals_safe
+from ..services.conversion_pixels import fire_server_goals_safe, claim_pending_and_fire_safe
 
 router = APIRouter()
 
@@ -267,6 +268,40 @@ async def _heuristic_claim(visit: dict) -> Optional[dict]:
         """,
         visit["id"], visit["channel_id"], visit["created_at"],
     )
+
+
+@router.post("/visit/{visit_id}/await-subscription")
+async def await_subscription(visit_id: int, request: Request):
+    """Called from SubscribePage on click 'Перейти в канал'.
+    Creates a pending_conversion that will fire YM/VK goals if a real
+    subscription arrives within 60 seconds."""
+    try:
+        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    except Exception:
+        body = {}
+    ym_client_id = (body or {}).get("ym_client_id") or None
+    page_url = (body or {}).get("page_url") or ""
+
+    visit = await fetch_one("SELECT * FROM visits WHERE id=$1", visit_id)
+    if not visit:
+        return {"success": False}
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=60)
+    try:
+        await execute(
+            """INSERT INTO pending_conversions
+               (link_id, channel_id, visit_id, ym_client_id, page_url, user_agent, expires_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+            visit["tracking_link_id"], visit["channel_id"], visit_id,
+            ym_client_id, page_url,
+            request.headers.get("user-agent", ""),
+            expires_at,
+        )
+    except Exception as e:
+        print(f"[pending] insert failed visit={visit_id}: {type(e).__name__}: {e}")
+        return {"success": False}
+    print(f"[pending] visit={visit_id} channel={visit['channel_id']} cid={ym_client_id} expires=60s")
+    return {"success": True, "expires_at": expires_at.isoformat()}
 
 
 @router.post("/visit/{visit_id}/ym-client-id")

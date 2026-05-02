@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../../services/api';
 import Loading from '../../components/Loading';
@@ -52,32 +52,27 @@ export default function SubscribePage() {
 
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  const { reachGoals, ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
-
-  const goalFired = useRef(false);
-  const fireOnce = useCallback(() => {
-    if (goalFired.current) return;
-    goalFired.current = true;
-    reachGoals();
-  }, [reachGoals]);
+  // YM tag.js still loaded so getClientID works — but reachGoals() is no
+  // longer called from here. Server fires goals after atomic claim of the
+  // oldest pending_conversion when the bot detects subscription.
+  const { ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
 
   const handleChannelClick = useCallback(() => {
     setClicked(true);
-    if (visitId) {
-      const cid = getYmClientIdSync();
-      if (cid) {
-        api.post(`/track/visit/${visitId}/ym-client-id`, { ym_client_id: String(cid) })
-          .catch(() => {});
-      }
-    }
-    // Стреляем цель один раз за открытие страницы (на клике или на детекте,
-    // что наступит раньше). Несколько открытых вкладок = несколько выстрелов.
-    fireOnce();
-  }, [visitId, getYmClientIdSync, fireOnce]);
+    if (!visitId) return;
+    // Capture YM ClientID at click time (if tag.js loaded) and create a
+    // pending_conversion on the server. Server fires the goal via Measurement
+    // API when the bot detects subscription within the 60s window.
+    const cid = getYmClientIdSync();
+    api.post(`/track/visit/${visitId}/await-subscription`, {
+      ym_client_id: cid ? String(cid) : null,
+      page_url: typeof window !== 'undefined' ? window.location.href : '',
+    }).catch(() => {});
+  }, [visitId, getYmClientIdSync]);
 
-  // Surface the YM ClientID to the backend so the server-side fallback fire
-  // (services/conversion_pixels.fire_server_goals) can attribute properly.
-  // Fire-and-forget — never block the UI on this.
+  // Surface the YM ClientID to the backend (separate from pending) so the
+  // legacy server-side fire path (fire_server_goals) can also attribute.
+  // Fire-and-forget — never block the UI.
   useEffect(() => {
     if (!visitId || !ymClientIdPromise) return;
     let cancelled = false;
@@ -89,8 +84,8 @@ export default function SubscribePage() {
     return () => { cancelled = true; };
   }, [visitId, ymClientIdPromise]);
 
-  // Polling — детектирует подписку и стреляет цель ровно один раз за сессию
-  // страницы (через fireOnce). Останавливается после первого hit'а.
+  // Polling now ONLY updates UI state. Server handles all goal firing via the
+  // pending_conversions claim path. Stops after first detection.
   useEffect(() => {
     if (!visitId || subscribed) return;
     const interval = setInterval(async () => {
@@ -99,12 +94,11 @@ export default function SubscribePage() {
         if (data.subscribed) {
           setSubscribed(true);
           clearInterval(interval);
-          fireOnce();
         }
       } catch {}
     }, 5000);
     return () => clearInterval(interval);
-  }, [visitId, subscribed, fireOnce]);
+  }, [visitId, subscribed]);
 
   const getSubscribeUrl = () => {
     if (!info) return null;
