@@ -1762,9 +1762,8 @@ async def redirect_tracking_link(code: str, request: Request):
     if link_type == "lm_landing":
         return RedirectResponse(f"/lm/{code}", status_code=302)
 
-    # MAX-канал: direct + landing → ВСЕГДА через MAX miniapp deep-link.
-    # MAX откроет наш мини-апп (по configured Mini App URL бота), там
-    # GoMiniAppPage отрисует карточку с аватаром/названием/кнопкой.
+    # MAX-канал: direct + landing → ВСЕГДА через max.ru/{bot}?startapp=go_X.
+    # MAX откроет наш miniapp по configured Mini App URL бота.
     is_max_channel = (link.get("platform") or "").lower() == "max"
     if link_type in ("direct", "landing") and is_max_channel:
         bot = settings.MAX_BOT_USERNAME or "id575307462228_bot"

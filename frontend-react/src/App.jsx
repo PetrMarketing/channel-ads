@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import { useAdminAuth } from './contexts/AdminAuthContext';
@@ -61,48 +62,247 @@ function AdminPrivateRoute({ children }) {
 }
 
 /**
- * Read MAX miniapp start_param from any source the runtime exposes.
- * MAX bot's Mini App URL is set to the SPA root (https://max.pkmarketing.ru/),
- * so every startapp deep-link (shop_, book_, comments_, go_) lands here.
- * We only intercept go_* — the rest fall through to existing flows.
+ * Aggressive scan: MAX SDK exposes init_data on multiple possible globals.
+ * The actual MAX bridge (https://st.max.ru/js/max-web-app.js) lives at
+ * `window.WebApp` with `initDataUnsafe.start_param` — same shape as Telegram.
+ * We also try every other plausible global in case the SDK changes.
  */
-function readStartParam() {
+export function readStartParam() {
   if (typeof window === 'undefined') return null;
-  // 1. MAX SDK init data (most reliable when running inside MAX)
+  // 1. MAX/Telegram SDK init data — try every known global + property path.
   try {
-    const sdk = window.maxApp || window.MaxApp;
-    const init = sdk?.initDataUnsafe || sdk?.initData;
-    if (init && typeof init === 'object') {
-      if (init.start_param) return String(init.start_param);
-      if (init.startParam) return String(init.startParam);
+    const sdks = [
+      window.WebApp, window.webapp,
+      window.maxApp, window.MaxApp, window.maxsdk, window.MaxSDK,
+      window.MaxJsSdk, window.maxJsSdk, window.MAX, window.max,
+      window.Telegram?.WebApp,
+    ];
+    for (const sdk of sdks) {
+      if (!sdk) continue;
+      const inits = [
+        sdk.initDataUnsafe, sdk.initData, sdk.launchParams,
+        sdk.startParams, sdk.initParams,
+      ];
+      for (const init of inits) {
+        if (!init || typeof init !== 'object') continue;
+        const v = init.start_param || init.startParam || init.startapp
+          || init.tgWebAppStartParam || init.payload;
+        if (v) return String(v);
+      }
+      if (sdk.startParam) return String(sdk.startParam);
+      if (sdk.start_param) return String(sdk.start_param);
     }
-    const tg = window.Telegram?.WebApp;
-    if (tg?.initDataUnsafe?.start_param) return String(tg.initDataUnsafe.start_param);
   } catch {}
-  // 2. Query string ?startapp=...
+  // 2. Query string ?startapp=... (also WebAppStartParam used by MAX deep-links)
   try {
     const qp = new URLSearchParams(window.location.search);
-    const v = qp.get('startapp') || qp.get('start_param') || qp.get('start');
+    const v = qp.get('startapp') || qp.get('start_param') || qp.get('start')
+      || qp.get('tgWebAppStartParam') || qp.get('WebAppStartParam');
     if (v) return v;
   } catch {}
   // 3. Hash #tgWebAppStartParam=... / #startapp=...
   try {
     const hash = window.location.hash.replace(/^#/, '');
     const hp = new URLSearchParams(hash);
-    const v = hp.get('tgWebAppStartParam') || hp.get('startapp') || hp.get('start_param');
+    const v = hp.get('tgWebAppStartParam') || hp.get('startapp')
+      || hp.get('start_param') || hp.get('start') || hp.get('WebAppStartParam');
     if (v) return v;
   } catch {}
   return null;
 }
 
+/** Render a screenshot-friendly diagnostic when start_param refuses to surface. */
+function MaxDiagPanel() {
+  const dump = (() => {
+    const out = { url: '', search: '', hash: '', cookies: '', sdk: {}, windowKeys: [] };
+    try { out.url = window.location.href; } catch {}
+    try { out.search = window.location.search; } catch {}
+    try { out.hash = window.location.hash; } catch {}
+    try { out.cookies = document.cookie || '(none)'; } catch {}
+    const sdkNames = [
+      'WebApp', 'webapp', 'maxApp', 'MaxApp', 'maxsdk', 'MaxSDK',
+      'MaxJsSdk', 'maxJsSdk', 'MAX', 'max',
+    ];
+    for (const n of sdkNames) {
+      try {
+        const v = window[n];
+        if (!v) continue;
+        let initDump = '(no init)';
+        try {
+          const init = v.initDataUnsafe || v.initData || v.launchParams || v.startParams;
+          if (init) initDump = JSON.stringify(init, null, 2);
+        } catch (e) { initDump = '(init read failed: ' + e.message + ')'; }
+        out.sdk[n] = {
+          type: typeof v,
+          methods: Object.keys(v || {}).slice(0, 30),
+          init: initDump,
+        };
+      } catch {}
+    }
+    try {
+      out.windowKeys = Object.keys(window)
+        .filter((k) => /max|tg|start|init|webapp|app/i.test(k))
+        .slice(0, 50);
+    } catch {}
+    return out;
+  })();
+  return (
+    <div style={{
+      minHeight: '100vh', padding: 16, fontFamily: 'monospace', fontSize: 11,
+      background: '#fff', color: '#1a1a2e',
+    }}>
+      <h2 style={{ fontSize: 16, marginTop: 0 }}>MAX Mini App — диагностика</h2>
+      <p style={{ fontSize: 12 }}>
+        Не удалось определить start_param. Сделайте скриншот и пришлите в поддержку.
+      </p>
+      <div style={{ marginTop: 12 }}>
+        <strong>SDK ready:</strong> {String(!!window.__maxSdkReady)}
+      </div>
+      <div><strong>URL:</strong> {dump.url}</div>
+      <div><strong>search:</strong> {dump.search || '(empty)'}</div>
+      <div><strong>hash:</strong> {dump.hash || '(empty)'}</div>
+      <div><strong>cookies:</strong> {dump.cookies}</div>
+      <div style={{ marginTop: 12 }}>
+        <strong>matching window keys:</strong>
+        <pre style={{ background: '#f5f5f5', padding: 8, marginTop: 4 }}>
+          {dump.windowKeys.length ? dump.windowKeys.join('\n') : '(none)'}
+        </pre>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <strong>SDK objects:</strong>
+        <pre style={{ background: '#f5f5f5', padding: 8, marginTop: 4 }}>
+          {Object.keys(dump.sdk).length
+            ? JSON.stringify(dump.sdk, null, 2)
+            : '(none of [WebApp, MaxApp, MAX, ...] were found)'}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  // Top-level miniapp deep-link dispatcher.
-  // MAX bot's Mini App URL is root, so all startapp params land here.
-  // 'go_X' is OUR new tracking-link flow; other prefixes (shop_/book_/comments_)
-  // are handled by their existing routes/messages — don't intercept those.
-  const startParam = readStartParam();
+  // Initial sync read — picks up URL fallbacks / SDK if already loaded.
+  const [startParam, setStartParam] = useState(() => readStartParam());
+  // Wait until MAX SDK loads (or 4s deadline) before falling through to auth
+  // routing. Otherwise unauthenticated users land on /login and see "только
+  // кнопка" instead of GoMiniAppPage. Marker `window.__maxSdkReady` is set by
+  // the bootstrap script in index.html — both onload and a 4s timeout flip it.
+  const [sdkReady, setSdkReady] = useState(() =>
+    typeof window !== 'undefined' && (!!window.__maxSdkReady || !!startParam),
+  );
+
+  useEffect(() => {
+    if (sdkReady) return;
+    if (typeof window === 'undefined') return;
+
+    let cancelled = false;
+    function check() {
+      if (cancelled) return;
+      const sp = readStartParam();
+      if (sp) {
+        console.info('[startapp] detected:', sp);
+        setStartParam(sp);
+        setSdkReady(true);
+        return true;
+      }
+      if (window.__maxSdkReady) {
+        setSdkReady(true);
+        return true;
+      }
+      return false;
+    }
+
+    if (check()) return;
+    const onReady = () => {
+      console.info('[startapp] sdk-ready event fired');
+      check();
+    };
+    window.addEventListener('max-sdk-ready', onReady);
+    // Belt-and-suspenders: poll every 200ms up to 5 sec in case the event
+    // was dispatched before this effect attached. Cheap, bounded.
+    let attempts = 0;
+    const handle = setInterval(() => {
+      attempts += 1;
+      if (check() || attempts >= 25) {
+        clearInterval(handle);
+        if (!cancelled) {
+          // Force fall-through after 5s even if SDK never resolved — better
+          // to render the diagnostic than spin forever.
+          setSdkReady(true);
+        }
+      }
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('max-sdk-ready', onReady);
+      clearInterval(handle);
+    };
+  }, [sdkReady]);
+
+  // Once SDK is ready, do a final read in case start_param appeared via SDK.
+  useEffect(() => {
+    if (!sdkReady || startParam) return;
+    const sp = readStartParam();
+    if (sp) {
+      console.info('[startapp] detected after sdkReady:', sp);
+      setStartParam(sp);
+    } else {
+      try {
+        console.info('[startapp] not found after sdkReady; window keys:',
+          Object.keys(window).filter((k) => /max|tg|init|app|start|webapp/i.test(k)));
+      } catch {}
+    }
+  }, [sdkReady, startParam]);
+
+  // Top-level miniapp deep-link short-circuit — render channel card before
+  // touching React Router (avoids the unauth /login redirect flicker).
   if (startParam && startParam.startsWith('go_')) {
     return <GoMiniAppPage />;
+  }
+
+  // SDK still loading → render a neutral splash instead of letting Routes
+  // navigate to /login (which is the "только кнопка" bug from the brief).
+  if (!sdkReady && typeof window !== 'undefined' && window.location.pathname === '/') {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', background: '#f8f9fc',
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+      }}>
+        <div style={{ textAlign: 'center', color: '#6b7280' }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: '50%',
+            border: '3px solid #e5e7eb', borderTopColor: '#7B68EE',
+            margin: '0 auto 12px', animation: 'spin .7s linear infinite',
+          }} />
+          <p style={{ fontSize: 14, margin: 0 }}>Загрузка…</p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+
+  // SDK is ready, no start_param at all, AND we're at root → diagnostic panel.
+  // (Anywhere else, just render Routes normally — it's a regular SPA visit.)
+  if (sdkReady && !startParam
+      && typeof window !== 'undefined' && window.location.pathname === '/'
+      && !localStorage.getItem('token')) {
+    // Only show diag if MAX SDK was actually expected (URL has bot/miniapp markers
+    // OR document.referrer is from max.ru) — otherwise it's a regular browser
+    // visit and we should serve the normal landing/login.
+    const looksLikeMaxMiniapp = (() => {
+      try {
+        if (window.__maxSdkReady && window.WebApp) return true; // SDK loaded → we're inside MAX
+        const ref = document.referrer || '';
+        if (/max\.ru/i.test(ref)) return true;
+        const ua = navigator.userAgent || '';
+        if (/MAX|MaxClient|MaxApp/i.test(ua)) return true;
+      } catch {}
+      return false;
+    })();
+    if (looksLikeMaxMiniapp) return <MaxDiagPanel />;
+    // Otherwise fall through to normal Routes (browser visit to root).
   }
 
   return (

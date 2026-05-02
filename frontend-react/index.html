@@ -66,6 +66,46 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!--
+      MAX Mini App bridge: exposes window.WebApp with initDataUnsafe.start_param.
+      MUST load before main.jsx so App.jsx::readStartParam() finds it on first
+      render. Marker `__maxSdkReady` is set on load/error so React effects can
+      re-poll once instead of busy-waiting 2 seconds.
+    -->
+    <script>
+      (function () {
+        window.__maxSdkReady = false;
+        var s = document.createElement('script');
+        s.src = 'https://st.max.ru/js/max-web-app.js';
+        s.async = true;
+        s.onload = function () {
+          window.__maxSdkReady = true;
+          try { if (window.WebApp && window.WebApp.ready) window.WebApp.ready(); } catch (e) {}
+          try {
+            window.dispatchEvent(new CustomEvent('max-sdk-ready', {
+              detail: { ok: true, hasInit: !!(window.WebApp && window.WebApp.initDataUnsafe) },
+            }));
+          } catch (e) {}
+        };
+        s.onerror = function () {
+          window.__maxSdkReady = true;
+          try {
+            window.dispatchEvent(new CustomEvent('max-sdk-ready', { detail: { ok: false } }));
+          } catch (e) {}
+        };
+        document.head.appendChild(s);
+        // Hard 4s deadline — if SDK never loads, still let the app proceed.
+        setTimeout(function () {
+          if (!window.__maxSdkReady) {
+            window.__maxSdkReady = true;
+            try {
+              window.dispatchEvent(new CustomEvent('max-sdk-ready', { detail: { ok: false, timeout: true } }));
+            } catch (e) {}
+          }
+        }, 4000);
+      })();
+    </script>
 </head>
 <body>
     <div id="root"></div>
