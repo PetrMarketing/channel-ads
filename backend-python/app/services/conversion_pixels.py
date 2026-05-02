@@ -195,6 +195,90 @@ async def fire_server_goals_safe(subscription_id: Optional[int]) -> None:
         print(f"[track] fire_server_goals_safe error sub={subscription_id}: {e}")
 
 
+async def _fire_goals_for_link(
+    link_id: int,
+    ym_client_id: Optional[str],
+    page_url_stored: Optional[str],
+    user_agent: Optional[str],
+    log_prefix: str,
+) -> None:
+    """Resolve YM/VK config for a link (link-level overrides channel-level)
+    and fire reachGoal via the measurement protocol. Used by both pending-claim
+    and orphan-claim flows."""
+    link = await fetch_one(
+        """
+        SELECT tl.short_code,
+               tl.ym_counter_id, tl.ym_goal_name,
+               tl.vk_pixel_id,   tl.vk_goal_name,
+               c.yandex_metrika_id AS channel_ym_id,
+               c.vk_pixel_id       AS channel_vk_pixel_id
+        FROM tracking_links tl
+        JOIN channels c ON c.id = tl.channel_id
+        WHERE tl.id = $1
+        """,
+        link_id,
+    )
+    if not link:
+        print(f"[track] {log_prefix} link {link_id} missing — skipping fire")
+        return
+
+    counter_id = (link.get("ym_counter_id") or link.get("channel_ym_id") or "")
+    counter_id = str(counter_id).strip() if counter_id else ""
+    pixel_id = (link.get("vk_pixel_id") or link.get("channel_vk_pixel_id") or "")
+    pixel_id = str(pixel_id).strip() if pixel_id else ""
+    ym_goal = link.get("ym_goal_name") or _DEFAULT_GOAL
+    vk_goal = link.get("vk_goal_name") or _DEFAULT_GOAL
+
+    short_code = link.get("short_code") or ""
+    page_url = page_url_stored or (
+        f"{settings.APP_URL.rstrip('/')}/subscribe/{short_code}"
+        if short_code else settings.APP_URL
+    )
+
+    if not counter_id and not pixel_id:
+        print(f"[track] {log_prefix} no pixel configured for link {link_id}")
+        return
+
+    tasks = []
+    if counter_id:
+        tasks.append(_http_get(
+            _build_ym_url(counter_id, ym_goal, page_url, ym_client_id),
+            user_agent,
+        ))
+    if pixel_id:
+        tasks.append(_http_get(_build_vk_url(pixel_id, vk_goal), user_agent))
+
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    print(
+        f"[track] {log_prefix} fired ym={counter_id or '-'} vk={pixel_id or '-'} "
+        f"cid={'y' if ym_client_id else 'n'}"
+    )
+
+
+async def _record_orphan_subscription(
+    channel_id: int, subscription_id: int
+) -> None:
+    """Insert an orphan_subscription with a 60s window. Called when a subscription
+    arrives but no pending_conversion is waiting (race where sub came before click)."""
+    from datetime import datetime, timedelta, timezone
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=60)
+    try:
+        await execute(
+            """INSERT INTO orphan_subscriptions
+               (channel_id, subscription_id, expires_at)
+               VALUES ($1, $2, $3)""",
+            channel_id, subscription_id, expires_at,
+        )
+        print(
+            f"[track] orphan recorded sub={subscription_id} channel={channel_id} "
+            f"expires=60s"
+        )
+    except Exception as e:
+        print(f"[track] orphan insert failed channel={channel_id} sub={subscription_id}: {e}")
+
+
 async def claim_and_fire_pending_for_channel(
     channel_id: int, subscription_id: int
 ) -> None:
@@ -203,7 +287,8 @@ async def claim_and_fire_pending_for_channel(
 
     Guarantees:
       - 1 subscription = at most 1 fire (via FOR UPDATE SKIP LOCKED)
-      - If no pending in window → no fire (subscription happened out of band)
+      - If no pending in window → records orphan_subscription (60s window) so a
+        click that arrives shortly after can still attribute this subscription.
       - Excess clicks (more clicks than subs in window) → expire silently
     """
     if not channel_id or not subscription_id:
@@ -237,7 +322,10 @@ async def claim_and_fire_pending_for_channel(
         return
 
     if not claimed:
-        print(f"[track] no pending in channel {channel_id} — nothing to fire (sub={subscription_id})")
+        # Symmetric pending: record orphan_subscription so a future click within
+        # 60s can claim and fire goals retroactively.
+        print(f"[track] no pending in channel {channel_id} — recording orphan (sub={subscription_id})")
+        await _record_orphan_subscription(channel_id, subscription_id)
         return
 
     pending_id = claimed["id"]
@@ -246,57 +334,96 @@ async def claim_and_fire_pending_for_channel(
     page_url_stored = claimed.get("page_url") or ""
     user_agent = claimed.get("user_agent") or None
 
-    # Resolve goal config from link + channel — link-level overrides channel-level.
-    link = await fetch_one(
-        """
-        SELECT tl.short_code,
-               tl.ym_counter_id, tl.ym_goal_name,
-               tl.vk_pixel_id,   tl.vk_goal_name,
-               c.yandex_metrika_id AS channel_ym_id,
-               c.vk_pixel_id       AS channel_vk_pixel_id
-        FROM tracking_links tl
-        JOIN channels c ON c.id = tl.channel_id
-        WHERE tl.id = $1
-        """,
-        link_id,
+    await _fire_goals_for_link(
+        link_id, ym_client_id, page_url_stored, user_agent,
+        log_prefix=f"pending {pending_id} → (sub={subscription_id})",
     )
-    if not link:
-        print(f"[track] pending {pending_id} claim ok but link {link_id} missing — skipping fire")
+
+
+async def claim_orphan_for_pending(
+    pending_id: int, channel_id: int, link_id: int,
+    ym_client_id: Optional[str] = None,
+    page_url: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> None:
+    """Reverse-flow claim: a click just created pending_id; check if any
+    orphan_subscription is waiting in this channel and, if so, atomically claim
+    the oldest unfired one and fire YM/VK goals attributed to this link.
+
+    Guarantees:
+      - 1 orphan = 1 fire (via FOR UPDATE SKIP LOCKED)
+      - Marks both orphan.fired_at and pending.fired_at to keep them paired and
+        prevent the bot's later sub-arrival from double-firing this pending.
+    """
+    if not pending_id or not channel_id or not link_id:
         return
 
-    counter_id = (link.get("ym_counter_id") or link.get("channel_ym_id") or "")
-    counter_id = str(counter_id).strip() if counter_id else ""
-    pixel_id = (link.get("vk_pixel_id") or link.get("channel_vk_pixel_id") or "")
-    pixel_id = str(pixel_id).strip() if pixel_id else ""
-    ym_goal = link.get("ym_goal_name") or _DEFAULT_GOAL
-    vk_goal = link.get("vk_goal_name") or _DEFAULT_GOAL
+    try:
+        from ..database import get_pool
+        pool = await get_pool()
 
-    short_code = link.get("short_code") or ""
-    page_url = page_url_stored or (
-        f"{settings.APP_URL.rstrip('/')}/subscribe/{short_code}"
-        if short_code else settings.APP_URL
-    )
-
-    if not counter_id and not pixel_id:
-        print(f"[track] pending {pending_id} claim ok but no pixel configured for link {link_id}")
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                claimed = await conn.fetchrow(
+                    """
+                    UPDATE orphan_subscriptions
+                    SET fired_at = NOW(), pending_id = $1
+                    WHERE id = (
+                        SELECT id FROM orphan_subscriptions
+                        WHERE channel_id = $2
+                          AND fired_at IS NULL
+                          AND expires_at > NOW()
+                        ORDER BY created_at ASC
+                        LIMIT 1
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    RETURNING id, subscription_id
+                    """,
+                    pending_id, channel_id,
+                )
+                if claimed:
+                    # Mark the pending as fired too — we just attributed it to this orphan.
+                    await conn.execute(
+                        """UPDATE pending_conversions
+                           SET fired_at = NOW(), subscription_id = $1
+                           WHERE id = $2 AND fired_at IS NULL""",
+                        claimed["subscription_id"], pending_id,
+                    )
+    except Exception as e:
+        print(f"[track] claim orphan failed channel={channel_id} pending={pending_id}: {type(e).__name__}: {e}")
         return
 
-    tasks = []
-    if counter_id:
-        tasks.append(_http_get(
-            _build_ym_url(counter_id, ym_goal, page_url, ym_client_id),
-            user_agent,
-        ))
-    if pixel_id:
-        tasks.append(_http_get(_build_vk_url(pixel_id, vk_goal), user_agent))
+    if not claimed:
+        return  # No orphan waiting — normal case, pending stays open for sub.
 
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+    orphan_id = claimed["id"]
+    sub_id = claimed["subscription_id"]
 
-    print(
-        f"[track] pending {pending_id} → fired (sub={subscription_id}) "
-        f"ym={counter_id or '-'} vk={pixel_id or '-'} cid={'y' if ym_client_id else 'n'}"
+    await _fire_goals_for_link(
+        link_id, ym_client_id, page_url, user_agent,
+        log_prefix=f"orphan {orphan_id} → (sub={sub_id}, pending={pending_id})",
     )
+
+
+async def claim_orphan_for_pending_safe(
+    pending_id: Optional[int], channel_id: Optional[int], link_id: Optional[int],
+    ym_client_id: Optional[str] = None,
+    page_url: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> None:
+    """Wrapper that swallows None / errors — convenient for click-flow call sites."""
+    if not pending_id or not channel_id or not link_id:
+        return
+    try:
+        await claim_orphan_for_pending(
+            pending_id, channel_id, link_id,
+            ym_client_id=ym_client_id, page_url=page_url, user_agent=user_agent,
+        )
+    except Exception as e:
+        print(
+            f"[track] claim_orphan_for_pending_safe error "
+            f"channel={channel_id} pending={pending_id}: {e}"
+        )
 
 
 async def claim_pending_and_fire_safe(

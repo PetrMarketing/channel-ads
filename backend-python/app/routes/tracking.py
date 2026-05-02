@@ -5,7 +5,11 @@ from typing import Optional
 
 from ..middleware.auth import verify_telegram_webapp
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
-from ..services.conversion_pixels import fire_server_goals_safe, claim_pending_and_fire_safe
+from ..services.conversion_pixels import (
+    fire_server_goals_safe,
+    claim_pending_and_fire_safe,
+    claim_orphan_for_pending_safe,
+)
 
 router = APIRouter()
 
@@ -287,20 +291,37 @@ async def await_subscription(visit_id: int, request: Request):
         return {"success": False}
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=60)
+    user_agent_hdr = request.headers.get("user-agent", "")
     try:
-        await execute(
+        from ..database import execute_returning_id
+        new_pending_id = await execute_returning_id(
             """INSERT INTO pending_conversions
                (link_id, channel_id, visit_id, ym_client_id, page_url, user_agent, expires_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+               VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id""",
             visit["tracking_link_id"], visit["channel_id"], visit_id,
             ym_client_id, page_url,
-            request.headers.get("user-agent", ""),
+            user_agent_hdr,
             expires_at,
         )
     except Exception as e:
         print(f"[pending] insert failed visit={visit_id}: {type(e).__name__}: {e}")
         return {"success": False}
-    print(f"[pending] visit={visit_id} channel={visit['channel_id']} cid={ym_client_id} expires=60s")
+    print(f"[pending] visit={visit_id} channel={visit['channel_id']} cid={ym_client_id} expires=60s pending={new_pending_id}")
+
+    # Symmetric pending: try to claim an orphan_subscription that arrived
+    # before this click. Fire-and-forget — must not block the click response.
+    if new_pending_id and visit.get("channel_id") and visit.get("tracking_link_id"):
+        try:
+            import asyncio as _asyncio
+            _asyncio.create_task(claim_orphan_for_pending_safe(
+                new_pending_id, visit["channel_id"], visit["tracking_link_id"],
+                ym_client_id=ym_client_id,
+                page_url=page_url,
+                user_agent=user_agent_hdr,
+            ))
+        except Exception as orphan_err:
+            print(f"[track] orphan claim dispatch failed: {orphan_err}")
+
     return {"success": True, "expires_at": expires_at.isoformat()}
 
 

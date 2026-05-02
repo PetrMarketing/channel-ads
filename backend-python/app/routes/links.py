@@ -197,7 +197,8 @@ async def link_daily_stats(tracking_code: str, link_id: int, user: Dict[str, Any
     if not link:
         raise HTTPException(status_code=404, detail="Ссылка не найдена")
 
-    # Визиты по ссылке + подписки по каналу за те же дни
+    # Визиты + подписки именно ПО ЭТОЙ ССЫЛКЕ (subscriptions.visit_id → visits.tracking_link_id).
+    # Раньше подписки агрегировались по channel_id и засоряли все ссылки канала.
     days = await fetch_all("""
         WITH v AS (
             SELECT DATE(visited_at) AS day, COUNT(*) AS visits
@@ -205,15 +206,16 @@ async def link_daily_stats(tracking_code: str, link_id: int, user: Dict[str, Any
             GROUP BY DATE(visited_at)
         ),
         s AS (
-            SELECT DATE(subscribed_at) AS day, COUNT(*) AS subs
-            FROM subscriptions
-            WHERE channel_id = $2
-            GROUP BY DATE(subscribed_at)
+            SELECT DATE(s.subscribed_at) AS day, COUNT(*) AS subs
+            FROM subscriptions s
+            JOIN visits v ON v.id = s.visit_id
+            WHERE v.tracking_link_id = $1
+            GROUP BY DATE(s.subscribed_at)
         )
         SELECT COALESCE(v.day, s.day) AS day,
                COALESCE(v.visits, 0) AS visits,
                COALESCE(s.subs, 0) AS subs
         FROM v FULL OUTER JOIN s ON v.day = s.day
         ORDER BY day DESC LIMIT 60
-    """, link_id, channel["id"])
+    """, link_id)
     return {"success": True, "days": days}
