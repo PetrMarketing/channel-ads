@@ -1762,23 +1762,14 @@ async def redirect_tracking_link(code: str, request: Request):
     if link_type == "lm_landing":
         return RedirectResponse(f"/lm/{code}", status_code=302)
 
-    # MAX-канал: direct + landing — определяем куда редиректить по UA:
-    # - Из MAX in-app browser → deep-link на max.ru (откроется в miniapp с SDK init_data)
-    # - Из обычного браузера (Chrome/Safari/etc) → наша SPA на root с ?startapp=go_X
-    #   (там GoMiniAppPage сам отрисует карточку — для веба и для случая когда
-    #   у бота не настроен Mini App URL)
+    # MAX-канал: direct + landing → ВСЕГДА через MAX miniapp deep-link.
+    # MAX откроет наш мини-апп (по configured Mini App URL бота), там
+    # GoMiniAppPage отрисует карточку с аватаром/названием/кнопкой.
     is_max_channel = (link.get("platform") or "").lower() == "max"
     if link_type in ("direct", "landing") and is_max_channel:
-        ua_lower = ua.lower()
-        is_max_inapp = ("maxapp" in ua_lower or "max/" in ua_lower
-                        or ("max " in ua_lower and ("android" in ua_lower or "iphone" in ua_lower or "ios" in ua_lower)))
-        if is_max_inapp:
-            bot = settings.MAX_BOT_USERNAME or "id575307462228_bot"
-            target = f"https://max.ru/{bot}?startapp=go_{code}"
-            print(f"[track] {link_type} code={code} → MAX deep-link (in-app UA): {target}")
-        else:
-            target = f"{settings.APP_URL}/?startapp=go_{code}"
-            print(f"[track] {link_type} code={code} → SPA root (browser UA): {target}")
+        bot = settings.MAX_BOT_USERNAME or "id575307462228_bot"
+        target = f"https://max.ru/{bot}?startapp=go_{code}"
+        print(f"[track] {link_type} code={code} → MAX deep-link: {target}")
         return RedirectResponse(url=target, status_code=302)
 
     # TG-канал landing или fallback — обычная /subscribe страница
