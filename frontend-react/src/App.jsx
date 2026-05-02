@@ -60,14 +60,57 @@ function AdminPrivateRoute({ children }) {
   return adminToken ? children : <Navigate to="/admin/login" replace />;
 }
 
+/**
+ * Read MAX miniapp start_param from any source the runtime exposes.
+ * MAX bot's Mini App URL is set to the SPA root (https://max.pkmarketing.ru/),
+ * so every startapp deep-link (shop_, book_, comments_, go_) lands here.
+ * We only intercept go_* — the rest fall through to existing flows.
+ */
+function readStartParam() {
+  if (typeof window === 'undefined') return null;
+  // 1. MAX SDK init data (most reliable when running inside MAX)
+  try {
+    const sdk = window.maxApp || window.MaxApp;
+    const init = sdk?.initDataUnsafe || sdk?.initData;
+    if (init && typeof init === 'object') {
+      if (init.start_param) return String(init.start_param);
+      if (init.startParam) return String(init.startParam);
+    }
+    const tg = window.Telegram?.WebApp;
+    if (tg?.initDataUnsafe?.start_param) return String(tg.initDataUnsafe.start_param);
+  } catch {}
+  // 2. Query string ?startapp=...
+  try {
+    const qp = new URLSearchParams(window.location.search);
+    const v = qp.get('startapp') || qp.get('start_param') || qp.get('start');
+    if (v) return v;
+  } catch {}
+  // 3. Hash #tgWebAppStartParam=... / #startapp=...
+  try {
+    const hash = window.location.hash.replace(/^#/, '');
+    const hp = new URLSearchParams(hash);
+    const v = hp.get('tgWebAppStartParam') || hp.get('startapp') || hp.get('start_param');
+    if (v) return v;
+  } catch {}
+  return null;
+}
+
 export default function App() {
+  // Top-level miniapp deep-link dispatcher.
+  // MAX bot's Mini App URL is root, so all startapp params land here.
+  // 'go_X' is OUR new tracking-link flow; other prefixes (shop_/book_/comments_)
+  // are handled by their existing routes/messages — don't intercept those.
+  const startParam = readStartParam();
+  if (startParam && startParam.startsWith('go_')) {
+    return <GoMiniAppPage />;
+  }
+
   return (
     <Routes>
       {/* Public pages */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/subscribe/:shortCode" element={<SubscribePage />} />
       <Route path="/lm/:shortCode" element={<LeadMagnetLandingPage />} />
-      <Route path="/m" element={<GoMiniAppPage />} />
       <Route path="/pay/:tc" element={<PaidChatPayPage />} />
       <Route path="/paid-chat-pay/success/:orderId" element={<PaymentSuccessPage />} />
       <Route path="/paid-chat-pay/fail/:orderId" element={<PaidChatPayPage />} />
