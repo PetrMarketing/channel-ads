@@ -112,75 +112,6 @@ export function readStartParam() {
   return null;
 }
 
-/** Render a screenshot-friendly diagnostic when start_param refuses to surface. */
-function MaxDiagPanel() {
-  const dump = (() => {
-    const out = { url: '', search: '', hash: '', cookies: '', sdk: {}, windowKeys: [] };
-    try { out.url = window.location.href; } catch {}
-    try { out.search = window.location.search; } catch {}
-    try { out.hash = window.location.hash; } catch {}
-    try { out.cookies = document.cookie || '(none)'; } catch {}
-    const sdkNames = [
-      'WebApp', 'webapp', 'maxApp', 'MaxApp', 'maxsdk', 'MaxSDK',
-      'MaxJsSdk', 'maxJsSdk', 'MAX', 'max',
-    ];
-    for (const n of sdkNames) {
-      try {
-        const v = window[n];
-        if (!v) continue;
-        let initDump = '(no init)';
-        try {
-          const init = v.initDataUnsafe || v.initData || v.launchParams || v.startParams;
-          if (init) initDump = JSON.stringify(init, null, 2);
-        } catch (e) { initDump = '(init read failed: ' + e.message + ')'; }
-        out.sdk[n] = {
-          type: typeof v,
-          methods: Object.keys(v || {}).slice(0, 30),
-          init: initDump,
-        };
-      } catch {}
-    }
-    try {
-      out.windowKeys = Object.keys(window)
-        .filter((k) => /max|tg|start|init|webapp|app/i.test(k))
-        .slice(0, 50);
-    } catch {}
-    return out;
-  })();
-  return (
-    <div style={{
-      minHeight: '100vh', padding: 16, fontFamily: 'monospace', fontSize: 11,
-      background: '#fff', color: '#1a1a2e',
-    }}>
-      <h2 style={{ fontSize: 16, marginTop: 0 }}>MAX Mini App — диагностика</h2>
-      <p style={{ fontSize: 12 }}>
-        Не удалось определить start_param. Сделайте скриншот и пришлите в поддержку.
-      </p>
-      <div style={{ marginTop: 12 }}>
-        <strong>SDK ready:</strong> {String(!!window.__maxSdkReady)}
-      </div>
-      <div><strong>URL:</strong> {dump.url}</div>
-      <div><strong>search:</strong> {dump.search || '(empty)'}</div>
-      <div><strong>hash:</strong> {dump.hash || '(empty)'}</div>
-      <div><strong>cookies:</strong> {dump.cookies}</div>
-      <div style={{ marginTop: 12 }}>
-        <strong>matching window keys:</strong>
-        <pre style={{ background: '#f5f5f5', padding: 8, marginTop: 4 }}>
-          {dump.windowKeys.length ? dump.windowKeys.join('\n') : '(none)'}
-        </pre>
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <strong>SDK objects:</strong>
-        <pre style={{ background: '#f5f5f5', padding: 8, marginTop: 4 }}>
-          {Object.keys(dump.sdk).length
-            ? JSON.stringify(dump.sdk, null, 2)
-            : '(none of [WebApp, MaxApp, MAX, ...] were found)'}
-        </pre>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   // Initial sync read — picks up URL fallbacks / SDK if already loaded.
   const [startParam, setStartParam] = useState(() => readStartParam());
@@ -282,28 +213,6 @@ export default function App() {
         </div>
       </div>
     );
-  }
-
-  // SDK is ready, no start_param at all, AND we're at root → diagnostic panel.
-  // (Anywhere else, just render Routes normally — it's a regular SPA visit.)
-  if (sdkReady && !startParam
-      && typeof window !== 'undefined' && window.location.pathname === '/'
-      && !localStorage.getItem('token')) {
-    // Only show diag if MAX SDK was actually expected (URL has bot/miniapp markers
-    // OR document.referrer is from max.ru) — otherwise it's a regular browser
-    // visit and we should serve the normal landing/login.
-    const looksLikeMaxMiniapp = (() => {
-      try {
-        if (window.__maxSdkReady && window.WebApp) return true; // SDK loaded → we're inside MAX
-        const ref = document.referrer || '';
-        if (/max\.ru/i.test(ref)) return true;
-        const ua = navigator.userAgent || '';
-        if (/MAX|MaxClient|MaxApp/i.test(ua)) return true;
-      } catch {}
-      return false;
-    })();
-    if (looksLikeMaxMiniapp) return <MaxDiagPanel />;
-    // Otherwise fall through to normal Routes (browser visit to root).
   }
 
   return (
