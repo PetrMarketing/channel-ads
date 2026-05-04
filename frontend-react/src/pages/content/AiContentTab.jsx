@@ -759,28 +759,14 @@ function ScheduleStep({ schedule, setSchedule, onGenerate, onBack, busy }) {
 // =============================================================================
 // GENERATING STEP
 // =============================================================================
-function GeneratingStep({ targetPostCount = 30 }) {
-  // Анимированный прогресс: от 0% до 90% за ~45s, дальше держится 90% до резолва.
-  // Когда родитель переключит шаг на 'review' — компонент размонтируется автоматически.
-  const [pct, setPct] = useState(0);
-  const startedAtRef = useRef(Date.now());
-
-  useEffect(() => {
-    startedAtRef.current = Date.now();
-    setPct(0);
-    const TARGET_MS = 45000; // 45 секунд до 90%
-    const id = setInterval(() => {
-      const elapsed = Date.now() - startedAtRef.current;
-      // ease-out: быстрее в начале, медленнее к 90%
-      const t = Math.min(1, elapsed / TARGET_MS);
-      const eased = 1 - Math.pow(1 - t, 2.5);
-      const next = Math.min(90, eased * 90);
-      setPct(next);
-    }, 500);
-    return () => clearInterval(id);
-  }, []);
-
-  const generated = Math.round((pct / 100) * targetPostCount);
+function GeneratingStep({ targetPostCount = 30, progress = null, posts = [] }) {
+  // Реальный прогресс из родителя (per-post fire-and-forget). Если progress
+  // ещё не пришёл (первый тик не успел) — показываем «инициализация».
+  const total = progress?.total || targetPostCount;
+  const generated = progress?.generated || 0;
+  const failed = progress?.failed || 0;
+  const done = generated + failed;
+  const pct = total > 0 ? Math.min(100, (done / total) * 100) : 0;
 
   return (
     <div style={{
@@ -842,11 +828,46 @@ function GeneratingStep({ targetPostCount = 30 }) {
       </div>
 
       <div style={{ fontSize: '1rem', color: DARK, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 6 }}>
-        Сгенерировано <strong>{generated}/{targetPostCount}</strong> постов
+        Сгенерировано <strong>{generated}/{total}</strong> постов
+        {failed > 0 && (
+          <span style={{ color: '#e63946', fontWeight: 700, marginLeft: 8 }}>· {failed} с ошибкой</span>
+        )}
       </div>
-      <p style={{ margin: '6px 0 0', fontSize: '0.84rem', color: MUTED, lineHeight: 1.55 }}>
-        Это занимает 30–60 секунд. Не закрывайте страницу.
+      <p style={{ margin: '6px 0 14px', fontSize: '0.84rem', color: MUTED, lineHeight: 1.55 }}>
+        Каждый пост генерируется отдельно — появляются по мере готовности.
       </p>
+
+      {posts.length > 0 && (
+        <div style={{
+          marginTop: 8, padding: 12, borderRadius: 12,
+          background: SOFT_BG, border: `1px solid ${BORDER}`,
+          maxHeight: 240, overflowY: 'auto', textAlign: 'left',
+        }}>
+          {posts.slice().reverse().map((p, i) => (
+            <div key={p.id} style={{
+              padding: '8px 10px', borderRadius: 8,
+              background: i === 0 ? `${ACCENT}10` : 'transparent',
+              fontSize: '0.85rem', color: DARK,
+              animation: i === 0 ? 'aicFade 0.3s ease both' : undefined,
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{
+                fontSize: '0.7rem', fontWeight: 700, color: MUTED,
+                minWidth: 26, textAlign: 'right',
+              }}>#{p.sort_order + 1}</span>
+              <span style={{
+                fontSize: '0.7rem', padding: '2px 8px', borderRadius: 999,
+                background: '#fff', border: `1px solid ${BORDER}`,
+                color: MUTED, fontWeight: 600,
+              }}>{p.rubric || '—'}</span>
+              <span style={{
+                flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                fontWeight: 600,
+              }}>{p.title || (p.message_text || '').slice(0, 60)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2439,6 +2460,7 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
   const [pastSessions, setPastSessions] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [posts, setPosts] = useState([]);
+  const [genProgress, setGenProgress] = useState(null);
   const [doneCount, setDoneCount] = useState(0);
   const [postsAvailable, setPostsAvailable] = useState(0);
   const [sessionPalette, setSessionPalette] = useState([]);
@@ -2573,15 +2595,57 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
         start_date: schedule.start_date,
       });
       setStep('generating');
-      const data = await api.post(`/ai-content/${tc}/session/${sessionId}/generate`);
-      if (data.success) {
-        setPosts(data.posts || []);
-        setStep('review');
-      }
+      // Fire-and-forget: бэк сразу отдаёт {success, in_progress, total},
+      // посты появляются по мере готовности. Ждём через polling.
+      const startRes = await api.post(`/ai-content/${tc}/session/${sessionId}/generate`);
+      if (!startRes?.success) throw new Error(startRes?.error || 'Не удалось запустить генерацию');
+
+      const totalExpected = startRes.total || 0;
+      setPosts([]);
+      setGenProgress({ generated: 0, failed: 0, total: totalExpected });
+
+      let lastSeenDone = 0;
+      let pollTimer = setInterval(async () => {
+        try {
+          const p = await api.get(`/ai-content/${tc}/session/${sessionId}/text-progress`);
+          if (!p?.success) return;
+          setGenProgress({
+            generated: p.generated || 0,
+            failed: p.failed || 0,
+            total: p.total || totalExpected,
+          });
+          const done = (p.generated || 0) + (p.failed || 0);
+          // Подтянем посты только когда количество выросло — иначе пустой запрос
+          if (done > lastSeenDone) {
+            lastSeenDone = done;
+            try {
+              const sd = await api.get(`/ai-content/${tc}/session/${sessionId}`);
+              if (sd?.success) setPosts(sd.posts || []);
+            } catch { /* ignore */ }
+          }
+          if (!p.in_progress) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            try {
+              const sd = await api.get(`/ai-content/${tc}/session/${sessionId}`);
+              if (sd?.success) setPosts(sd.posts || []);
+            } catch { /* ignore */ }
+            setLoading(false);
+            setStep('review');
+            if ((p.failed || 0) > 0) {
+              showToast(`Готово: ${p.generated || 0}/${p.total || totalExpected} постов (${p.failed} с ошибкой)`, 'success');
+            } else {
+              showToast(`Сгенерировано ${p.generated || 0} постов (-${p.tokens_charged || 0} токенов)`, 'success');
+            }
+          }
+        } catch { /* ignore poll errors */ }
+      }, 1500);
+      return; // setLoading(false) уже произойдёт когда polling закончит
     } catch (e) {
       showToast(e.message, 'error');
       setStep('schedule');
-    } finally { setLoading(false); }
+      setLoading(false);
+    }
   };
 
   const handlePublishAll = async () => {
@@ -2671,7 +2735,13 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
           busy={loading}
         />
       )}
-      {step === 'generating' && <GeneratingStep targetPostCount={schedule.posts_count || 30} />}
+      {step === 'generating' && (
+        <GeneratingStep
+          targetPostCount={schedule.posts_count || 30}
+          progress={genProgress}
+          posts={posts}
+        />
+      )}
       {step === 'review' && (
         <ReviewStep
           tc={tc}

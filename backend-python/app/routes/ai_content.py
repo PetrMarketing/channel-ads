@@ -41,6 +41,10 @@ TOKENS_IMAGE_GEN = 10
 # Прогресс батчевой генерации картинок (in-memory, per-process)
 # =============================================================================
 _BATCH_PROGRESS: Dict[int, Dict[str, Any]] = {}
+# Прогресс per-post text generation. Frontend опрашивает /text-progress, при
+# каждом инкременте generated подтягивает GET /session/{id} → новые посты
+# проявляются в UI один за другим.
+_TEXT_PROGRESS: Dict[int, Dict[str, Any]] = {}
 
 
 # =============================================================================
@@ -664,6 +668,94 @@ def _build_system_prompt() -> str:
 """
 
 
+def _build_user_prompt_single(
+    session: dict, post_index: int, total: int,
+    prior_outlines: list, day_offset: int, slot_idx: int, posts_per_day: int,
+) -> str:
+    """Промпт для генерации ОДНОГО поста с контекстом уже созданных. Используется
+    в стримовой per-post генерации — каждый пост строится отдельно, чтобы
+    модель не упиралась в context window и фронт мог показать его сразу."""
+    products = _parse_json_field(session.get("products")) or []
+    if products:
+        products_block = "\n".join(
+            f"- {p.get('name', '')} — {p.get('description', '')} (цена: {p.get('price', 'не указана')})"
+            for p in products
+        )
+    else:
+        products_block = "нет"
+
+    style_text = (session.get("style_text") or "")[:8000]
+
+    if prior_outlines:
+        prior_block = "\n".join(
+            f"#{i+1}. [{(p.get('goal_type') or '?').upper()}] {p.get('rubric') or '-'}: {p.get('title') or '(без названия)'}"
+            for i, p in enumerate(prior_outlines)
+        )
+    else:
+        prior_block = "(пока ничего не сгенерировано — это самый первый пост)"
+
+    return f"""\
+Сгенерируй ОДИН пост для контент-плана канала в национальном мессенджере MAX.
+
+ТЕМАТИКА КАНАЛА: {session.get('topic') or ''}
+
+РАСПРЕДЕЛЕНИЕ ЦЕЛЕЙ КОНТЕНТА (общий план):
+- Продажи: {session.get('goal_sales') or 0}%
+- Прогрев: {session.get('goal_warmup') or 0}%
+- Активность: {session.get('goal_activity') or 0}%
+
+СТИЛЬ ПОСТОВ:
+---
+{style_text}
+---
+
+ПРОДУКТЫ/УСЛУГИ:
+{products_block}
+
+ВСЕГО В ПЛАНЕ: {total} постов. Этот — №{post_index + 1}.
+ДЕНЬ: +{day_offset} от старта. Слот в дне: {slot_idx + 1} из {posts_per_day}.
+
+УЖЕ СОЗДАНЫ ПОСТЫ В ЭТОМ ПЛАНЕ:
+{prior_block}
+
+Не повторяй темы и формулировки уже созданных постов — вноси разнообразие
+рубрик и подходов. Соблюдай заданное распределение целей в общем плане
+(посмотри уже созданные и подбери goal_type так, чтобы общий баланс
+выдерживался).
+
+Верни СТРОГО ОДИН JSON-объект (БЕЗ массива, БЕЗ markdown-обёрток):
+{{
+  "title": "Краткий заголовок для админки (не для публикации)",
+  "message_text": "Полный текст поста, 200-1500 символов, HTML разрешён (<b>, <i>, <br>, эмодзи). С CTA в конце.",
+  "goal_type": "sales | warmup | activity",
+  "rubric": "Название рубрики (Кейс, Лайфхак, Опрос, Личное и т.п.)",
+  "cta": "Что сделать в конце (1 фраза)"
+}}
+"""
+
+
+def _parse_one_post(content: str) -> Optional[dict]:
+    """Извлекает одиночный JSON-объект из ответа модели."""
+    if not content:
+        return None
+    text = content.strip()
+    if text.startswith("```"):
+        text = text.split("```", 2)
+        text = text[1] if len(text) > 1 else ""
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip("` \n")
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        v = json_mod.loads(text[start : end + 1])
+        return v if isinstance(v, dict) else None
+    except Exception:
+        return None
+
+
 def _parse_generated_posts(content: str) -> list:
     """Извлекает JSON-массив из ответа модели."""
     if not content:
@@ -708,6 +800,9 @@ def _compute_scheduled_at(start_date: date, offset_days: int, slot_idx: int,
 
 @router.post("/{tc}/session/{session_id}/generate")
 async def generate_posts(tc: str, session_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    """Per-post fire-and-forget генерация. Возвращается за <1с со стартовым
+    статусом, реальные посты появляются по мере готовности — фронт опрашивает
+    /text-progress и подгружает session при инкременте."""
     channel = await _get_owned_channel(tc, user["id"])
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
@@ -723,99 +818,143 @@ async def generate_posts(tc: str, session_id: int, user: Dict[str, Any] = Depend
         raise HTTPException(status_code=400, detail="Загрузите образец стиля постов")
 
     posts_count = int(session.get("posts_count") or 30)
-    cost = calc_session_cost(posts_count)
+    total_cost = calc_session_cost(posts_count)
+    cost_per_post = max(1, (total_cost + posts_count - 1) // posts_count)
 
-    # Списываем токены (как в ai_design)
+    # Pre-check баланса на полную стоимость, но списание per-success в раннере.
     u = await fetch_one("SELECT ai_tokens FROM users WHERE id=$1", user["id"])
-    if not u or (u["ai_tokens"] or 0) < cost:
+    if not u or (u["ai_tokens"] or 0) < total_cost:
         raise HTTPException(
             status_code=402,
-            detail=f"Недостаточно ИИ токенов. Нужно {cost}, у вас {u['ai_tokens'] if u else 0}",
+            detail=f"Недостаточно ИИ токенов. Нужно {total_cost}, у вас {u['ai_tokens'] if u else 0}",
         )
-    await execute("UPDATE users SET ai_tokens = ai_tokens - $1 WHERE id=$2", cost, user["id"])
-    await execute(
-        "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1,$2,$3,$4)",
-        user["id"], cost, "ai_content_generation",
-        f"Контент-план для канала {channel.get('title') or channel.get('id')} ({posts_count} постов)",
-    )
 
     await execute(
-        "UPDATE ai_content_sessions SET status='generating', tokens_charged=$1, updated_at=NOW() WHERE id=$2",
-        cost, session_id,
+        "UPDATE ai_content_sessions SET status='generating', tokens_charged=0, updated_at=NOW() WHERE id=$1",
+        session_id,
     )
 
     # Чистим старые посты (если повторная генерация)
     await execute("DELETE FROM ai_content_session_posts WHERE session_id=$1", session_id)
 
-    # Готовим промпт и просим Claude
-    system_prompt = _build_system_prompt()
-    user_prompt = _build_user_prompt(session)
-    full_prompt = system_prompt + "\n\n" + user_prompt
-
-    try:
-        content = await openrouter_chat(full_prompt, model="anthropic/claude-sonnet-4")
-    except HTTPException:
-        await _refund_tokens(user["id"], cost, f"Ошибка генерации контент-плана сессии {session_id}")
-        await execute(
-            "UPDATE ai_content_sessions SET status='draft', tokens_charged=0 WHERE id=$1",
-            session_id,
-        )
-        raise
-    except Exception as e:
-        await _refund_tokens(user["id"], cost, f"Ошибка обращения к ИИ для сессии {session_id}")
-        await execute(
-            "UPDATE ai_content_sessions SET status='draft', tokens_charged=0 WHERE id=$1",
-            session_id,
-        )
-        raise HTTPException(status_code=500, detail=f"Ошибка обращения к ИИ: {e}")
-
-    items = _parse_generated_posts(content)
-    if not items:
-        await _refund_tokens(user["id"], cost, f"Невалидный ответ ИИ для сессии {session_id}")
-        await execute(
-            "UPDATE ai_content_sessions SET status='draft', tokens_charged=0 WHERE id=$1",
-            session_id,
-        )
-        raise HTTPException(status_code=500, detail="ИИ вернул некорректный ответ. Попробуйте ещё раз.")
-
-    # Сохраняем посты
+    # Распределение по дням (как в старом коде, но детерминированно).
+    posts_per_day = max(1, (posts_count + 29) // 30)
     start_date = session.get("start_date")
     first_time = session.get("first_post_time") or "10:00"
     second_time = session.get("second_post_time") or None
 
-    saved = []
-    # Считаем slot для каждой даты — чтобы чередовать первое/второе время
-    slot_per_day: Dict[int, int] = {}
-    for idx, it in enumerate(items[:posts_count]):
-        offset = int(it.get("scheduled_offset_days") or 0)
-        slot_idx = slot_per_day.get(offset, 0)
-        slot_per_day[offset] = slot_idx + 1
-        sched_at = _compute_scheduled_at(start_date, offset, slot_idx, first_time, second_time)
+    system_prompt = _build_system_prompt()
+    channel_label = channel.get("title") or channel.get("id")
 
-        post_id = await execute_returning_id(
-            """INSERT INTO ai_content_session_posts
-               (session_id, sort_order, title, message_text, cta, goal_type, rubric, scheduled_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id""",
-            session_id, idx,
-            (it.get("title") or "")[:300],
-            it.get("message_text") or "",
-            (it.get("cta") or "")[:300],
-            (it.get("goal_type") or "")[:20],
-            (it.get("rubric") or "")[:100],
-            sched_at,
-        )
-        saved.append(post_id)
+    _TEXT_PROGRESS[session_id] = {
+        "total": posts_count,
+        "generated": 0,
+        "failed": 0,
+        "tokens_charged": 0,
+        "in_progress": True,
+        "started_at": time.time(),
+    }
 
-    await execute(
-        "UPDATE ai_content_sessions SET status='generated', updated_at=NOW() WHERE id=$1",
-        session_id,
-    )
+    async def _runner():
+        prior_outlines: list = []
+        gen_count = 0
+        fail_count = 0
+        charged_total = 0
+        try:
+            for i in range(posts_count):
+                day_offset = min(29, i // posts_per_day)
+                slot_idx = i % posts_per_day
+                user_prompt = _build_user_prompt_single(
+                    session, i, posts_count, prior_outlines,
+                    day_offset, slot_idx, posts_per_day,
+                )
+                full_prompt = system_prompt + "\n\n" + user_prompt
+                try:
+                    content = await openrouter_chat(full_prompt, model="anthropic/claude-sonnet-4")
+                    item = _parse_one_post(content)
+                    if not item or not (item.get("message_text") or "").strip():
+                        raise RuntimeError("Невалидный или пустой ответ модели")
+                    sched_at = _compute_scheduled_at(start_date, day_offset, slot_idx, first_time, second_time)
+                    await execute_returning_id(
+                        """INSERT INTO ai_content_session_posts
+                           (session_id, sort_order, title, message_text, cta, goal_type, rubric, scheduled_at)
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id""",
+                        session_id, i,
+                        (item.get("title") or "")[:300],
+                        item.get("message_text") or "",
+                        (item.get("cta") or "")[:300],
+                        (item.get("goal_type") or "")[:20],
+                        (item.get("rubric") or "")[:100],
+                        sched_at,
+                    )
+                    await _charge_tokens(
+                        user["id"], cost_per_post, "ai_content_post",
+                        f"Пост #{i+1}/{posts_count} для канала {channel_label}",
+                    )
+                    charged_total += cost_per_post
+                    gen_count += 1
+                    prior_outlines.append({
+                        "title": item.get("title"),
+                        "rubric": item.get("rubric"),
+                        "goal_type": item.get("goal_type"),
+                    })
+                except Exception as e:
+                    fail_count += 1
+                    print(f"[ai-content] post {i+1}/{posts_count} failed sid={session_id}: {type(e).__name__}: {e}")
+                # Обновляем прогресс после каждого поста (успех/неудача)
+                bp = _TEXT_PROGRESS.get(session_id)
+                if bp is not None:
+                    bp["generated"] = gen_count
+                    bp["failed"] = fail_count
+                    bp["tokens_charged"] = charged_total
+        except Exception as e:
+            print(f"[ai-content] text runner exception sid={session_id}: {type(e).__name__}: {e}")
+        finally:
+            try:
+                final_status = "generated" if gen_count > 0 else "draft"
+                await execute(
+                    "UPDATE ai_content_sessions SET status=$1, tokens_charged=$2, updated_at=NOW() WHERE id=$3",
+                    final_status, charged_total, session_id,
+                )
+            except Exception as e:
+                print(f"[ai-content] final status save failed sid={session_id}: {e}")
+            bp = _TEXT_PROGRESS.get(session_id)
+            if bp is not None:
+                bp["in_progress"] = False
+                bp["generated"] = gen_count
+                bp["failed"] = fail_count
+                bp["tokens_charged"] = charged_total
 
-    posts = await fetch_all(
-        "SELECT * FROM ai_content_session_posts WHERE session_id=$1 ORDER BY sort_order, id",
-        session_id,
-    )
-    return {"success": True, "posts": [_serialize_post(p) for p in posts], "tokens_charged": cost}
+    asyncio.create_task(_runner())
+
+    return {
+        "success": True,
+        "in_progress": True,
+        "total": posts_count,
+    }
+
+
+@router.get("/{tc}/session/{session_id}/text-progress")
+async def get_text_progress(
+    tc: str, session_id: int,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Опрос прогресса per-post text generation. Frontend читает каждые 1.5с
+    и при инкременте generated подтягивает GET /session/{id} для рендера."""
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    progress = _TEXT_PROGRESS.get(session_id)
+    if not progress:
+        return {
+            "success": True,
+            "in_progress": False,
+            "total": 0,
+            "generated": 0,
+            "failed": 0,
+            "tokens_charged": 0,
+        }
+    return {"success": True, **progress}
 
 
 # =============================================================================
