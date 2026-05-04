@@ -1760,20 +1760,24 @@ async def redirect_tracking_link(code: str, request: Request):
     # Lead magnet landing — redirect to /lm/ page
     link_type = link.get("link_type", "landing")
     if link_type == "lm_landing":
-        return RedirectResponse(f"/lm/{code}", status_code=302)
+        qs_lm = request.url.query
+        return RedirectResponse(f"/lm/{code}{('?' + qs_lm) if qs_lm else ''}", status_code=302)
 
     # MAX-канал: direct + landing → SPA лендинг /click/{code}, который грузит
     # tag.js (set _ym_uid + capture ClientID), создаёт pending_conversion на
     # клик и затем редиректит в max.ru/{bot}?startapp=v_{visit_token}.
     # Это даёт точный per-click pixel attribution через bot DM-flow.
+    qs = request.url.query
+    qs_suffix = f"?{qs}" if qs else ""
+
     is_max_channel = (link.get("platform") or "").lower() == "max"
     if link_type in ("direct", "landing") and is_max_channel:
-        target = f"/click/{code}"
+        target = f"/click/{code}{qs_suffix}"
         print(f"[track] {link_type} code={code} → SPA click landing: {target}")
         return RedirectResponse(url=target, status_code=302)
 
     # TG-канал landing или fallback — обычная /subscribe страница
-    subscribe_url = f"{settings.APP_URL}/subscribe/{code}"
+    subscribe_url = f"{settings.APP_URL}/subscribe/{code}{qs_suffix}"
     return RedirectResponse(url=subscribe_url, status_code=302)
 
 

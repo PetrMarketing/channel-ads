@@ -70,6 +70,25 @@ export function useTrackingPixels(info) {
       console.info('[track] YM tag.js injected');
     }
 
+    // Image-beacon visit registration. Fires in parallel with tag.js so the
+    // visit is recorded even when tag.js fails (SSL error in MAX in-app
+    // browser, AdBlock, network filter). YM accepts the GET, sets _ym_uid
+    // cookie and registers the hit. Subsequent reads of `_ym_uid` give us
+    // a stable cid even if tag.js never loads.
+    try {
+      const url = `https://mc.yandex.ru/watch/${encodeURIComponent(counterId)}` +
+        `?page-url=${encodeURIComponent(window.location.href)}` +
+        `&page-ref=${encodeURIComponent(document.referrer || '')}` +
+        `&browser-info=ifr:0:ti:0` +
+        `&ut=noindex&t=${Date.now()}`;
+      const img = new Image(1, 1);
+      img.referrerPolicy = 'no-referrer-when-downgrade';
+      img.src = url;
+      console.info('[track] YM init beacon fired', counterId);
+    } catch (e) {
+      console.info('[track] YM init beacon failed', e);
+    }
+
     return () => clearTimeout(timeoutId);
   }, [counterId, info, ymClientIdPromise]);
 
@@ -98,15 +117,22 @@ export function useTrackingPixels(info) {
     }
   }, [pixelId, info]);
 
-  // Get YM ClientID synchronously if the global counter object exists.
-  // Used to enrich the image beacon with `cid` for proper attribution.
+  // Get YM ClientID — try tag.js global first, fall back to _ym_uid cookie
+  // (which is the same value YM uses internally). Cookie fallback is critical
+  // for MAX in-app browser where tag.js fails SSL but image beacons still set
+  // the cookie.
   const getYmClientIdSync = useCallback(() => {
     if (!counterId) return null;
     try {
       const counter = window[`yaCounter${counterId}`];
       if (counter && typeof counter.getClientID === 'function') {
-        return counter.getClientID() || null;
+        const v = counter.getClientID();
+        if (v) return v;
       }
+    } catch {}
+    try {
+      const m = document.cookie.match(/(?:^|;\s*)_ym_uid=([^;]+)/);
+      if (m && m[1]) return decodeURIComponent(m[1]);
     } catch {}
     return null;
   }, [counterId]);

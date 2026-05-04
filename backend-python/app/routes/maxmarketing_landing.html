@@ -3,202 +3,242 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>MAXМаркетинг — Маркетинг для каналов MAX</title>
-<meta name="description" content="SaaS платформа для управления каналами в MAX. Привлекайте, удерживайте, монетизируйте подписчиков. ИИ Лендинги, воронки, рассылки, магазин.">
+<title>МАКС Маркетинг — Маркетинг для каналов МАКС</title>
+<meta name="description" content="SaaS-платформа для управления каналами в MAX. Привлекайте, удерживайте, монетизируйте подписчиков. ИИ-лендинги, воронки, рассылки, магазин. Первые 2 дня бесплатно.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
   :root{
-    --bg:#0a0a0a; --fg:#fafafa; --bg-inv:#fafafa; --fg-inv:#0a0a0a;
-    --accent:#FF3D00; --muted:#666; --border:#222; --border-inv:#e0e0e0;
-    --grid: rgba(255,255,255,0.03);
-    --display:'Archivo Black',sans-serif;
-    --mono:'JetBrains Mono',ui-monospace,monospace;
-    --body:'Inter Tight',-apple-system,sans-serif;
+    --accent:#4361ee;
+    --accent2:#7b68ee;
+    --success:#10b981;
+    --danger:#e63946;
+    --warning:#f59e0b;
+    --dark:#1a1a2e;
+    --muted:#6b7280;
+    --border:#f0f0f0;
+    --soft-bg:#f8f9fc;
+    --white:#fff;
+    --gradient:linear-gradient(135deg,#4361ee 0%,#7b68ee 100%);
+    --shadow-card:0 1px 3px rgba(0,0,0,0.04);
+    --shadow-card-hover:0 12px 32px rgba(67,97,238,0.12);
+    --shadow-cta:0 8px 24px rgba(67,97,238,0.4);
+    --font:'DM Sans',-apple-system,BlinkMacSystemFont,sans-serif;
   }
   html{scroll-behavior:smooth}
-  body{font-family:var(--body);background:var(--bg);color:var(--fg);line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden;font-feature-settings:'ss01','cv11'}
-  ::selection{background:var(--accent);color:var(--fg-inv)}
+  body{font-family:var(--font);background:var(--soft-bg);color:var(--dark);line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  ::selection{background:rgba(67,97,238,0.2);color:var(--dark)}
   a{color:inherit;text-decoration:none}
+  img{max-width:100%;display:block}
 
   /* ─── Layout ─── */
-  .container{max-width:1320px;margin:0 auto;padding:0 32px}
+  .container{max-width:1200px;margin:0 auto;padding:0 32px}
   @media(max-width:640px){.container{padding:0 20px}}
 
   /* ─── Header ─── */
-  header{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,10,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
-  .nav{display:flex;align-items:center;justify-content:space-between;padding:18px 32px;max-width:1320px;margin:0 auto}
-  .logo{font-family:var(--display);font-size:1.1rem;letter-spacing:-0.02em;display:flex;align-items:center;gap:8px}
-  .logo-dot{width:10px;height:10px;background:var(--accent);border-radius:50%;display:inline-block}
-  .nav-links{display:flex;gap:32px;font-family:var(--mono);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.08em}
-  .nav-links a{opacity:0.6;transition:opacity 0.2s}
-  .nav-links a:hover{opacity:1}
+  header{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(248,249,252,0.85);backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--border)}
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:18px 32px;max-width:1200px;margin:0 auto}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.05rem;letter-spacing:-0.02em;color:var(--dark)}
+  .logo-mark{width:30px;height:30px;border-radius:8px;background:var(--gradient);display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:0.95rem;letter-spacing:-0.04em;box-shadow:0 4px 12px rgba(67,97,238,0.3)}
+  .nav-links{display:flex;gap:32px;font-size:0.92rem;font-weight:500}
+  .nav-links a{color:var(--muted);transition:color 0.2s}
+  .nav-links a:hover{color:var(--accent)}
   @media(max-width:880px){.nav-links{display:none}}
-  .btn{display:inline-flex;align-items:center;gap:10px;padding:12px 22px;font-family:var(--mono);font-size:0.78rem;font-weight:500;text-transform:uppercase;letter-spacing:0.08em;background:var(--fg);color:var(--bg);border:none;cursor:pointer;transition:all 0.2s;position:relative;overflow:hidden}
-  .btn::after{content:'→';display:inline-block;transition:transform 0.2s}
-  .btn:hover::after{transform:translateX(4px)}
-  .btn-accent{background:var(--accent);color:#fff}
-  .btn-ghost{background:transparent;color:var(--fg);border:1px solid var(--border)}
-  .btn-ghost:hover{background:var(--fg);color:var(--bg)}
-  @media(max-width:880px){.nav .btn{padding:10px 16px;font-size:0.7rem}}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 22px;font-family:var(--font);font-size:0.92rem;font-weight:600;border:none;cursor:pointer;border-radius:10px;transition:all 0.25s ease;letter-spacing:-0.01em}
+  .btn-primary{background:var(--gradient);color:#fff;box-shadow:var(--shadow-cta)}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(67,97,238,0.5)}
+  .btn-ghost{background:transparent;color:var(--dark);border:1px solid var(--border);background:#fff}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-2px)}
+  .btn-dark{background:var(--dark);color:#fff}
+  .btn-dark:hover{background:#000;transform:translateY(-2px)}
+  .btn-arrow::after{content:'→';display:inline-block;transition:transform 0.2s}
+  .btn-arrow:hover::after{transform:translateX(3px)}
+  @media(max-width:880px){.nav .btn{padding:9px 16px;font-size:0.85rem}}
 
   /* ─── Section Anatomy ─── */
-  section{position:relative;padding:120px 0;border-bottom:1px solid var(--border)}
+  section{position:relative;padding:120px 0}
   @media(max-width:768px){section{padding:80px 0}}
-  .sec-num{font-family:var(--mono);font-size:0.72rem;letter-spacing:0.15em;color:var(--accent);margin-bottom:24px;display:flex;align-items:center;gap:12px}
-  .sec-num::before{content:'';width:32px;height:1px;background:var(--accent)}
-  .sec-title{font-family:var(--display);font-size:clamp(2.5rem,6vw,4.8rem);line-height:0.92;letter-spacing:-0.03em;margin-bottom:16px;text-transform:uppercase}
-  .sec-sub{font-family:var(--mono);font-size:0.85rem;color:var(--muted);max-width:520px;line-height:1.5}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:0.78rem;font-weight:600;letter-spacing:0.04em;color:var(--accent);background:rgba(67,97,238,0.08);padding:6px 14px;border-radius:999px;margin-bottom:20px}
+  .eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .sec-title{font-size:clamp(2rem,4.5vw,3.4rem);line-height:1.05;letter-spacing:-0.035em;font-weight:700;color:var(--dark);margin-bottom:18px;max-width:760px}
+  .sec-sub{font-size:1.05rem;color:var(--muted);max-width:580px;line-height:1.6;font-weight:400}
+  .gradient-text{background:var(--gradient);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
 
   /* ─── Hero ─── */
-  .hero{padding:140px 0 100px;min-height:100vh;display:flex;align-items:center;position:relative;overflow:hidden}
-  .hero-grid{position:absolute;inset:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:80px 80px;mask-image:radial-gradient(circle at 50% 50%,#000 0%,transparent 80%);pointer-events:none}
-  .hero-meta{font-family:var(--mono);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.18em;color:var(--accent);margin-bottom:40px;display:flex;gap:24px;flex-wrap:wrap}
-  .hero-meta span{display:flex;align-items:center;gap:8px}
-  .hero-meta span::before{content:'●';color:var(--accent);font-size:0.5rem}
-  .hero h1{font-family:var(--display);font-size:clamp(3rem,9vw,8.5rem);line-height:0.85;letter-spacing:-0.04em;text-transform:uppercase;margin-bottom:32px;position:relative}
-  .hero h1 .accent{color:var(--accent)}
-  .hero h1 .slash{color:var(--muted);font-weight:300}
-  .hero p{font-family:var(--body);font-size:clamp(1.05rem,1.6vw,1.4rem);max-width:620px;margin-bottom:48px;color:#aaa;line-height:1.5}
-  .hero-cta{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
-  .hero-tag{font-family:var(--mono);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted)}
-  .hero-tag b{color:var(--accent)}
-
-  /* hero scroll cue */
-  .scroll-cue{position:absolute;bottom:32px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:8px}
-  .scroll-cue::after{content:'';width:1px;height:32px;background:linear-gradient(to bottom,var(--accent),transparent);animation:scrollCue 2s ease-in-out infinite}
-  @keyframes scrollCue{0%,100%{transform:scaleY(0.3);opacity:0.3}50%{transform:scaleY(1);opacity:1}}
+  .hero{padding:160px 0 100px;position:relative;overflow:hidden}
+  .hero::before{content:'';position:absolute;top:-200px;right:-200px;width:700px;height:700px;background:radial-gradient(circle,rgba(123,104,238,0.18) 0%,transparent 70%);pointer-events:none}
+  .hero::after{content:'';position:absolute;top:100px;left:-150px;width:500px;height:500px;background:radial-gradient(circle,rgba(67,97,238,0.12) 0%,transparent 70%);pointer-events:none}
+  .hero-inner{position:relative;z-index:2;text-align:center;max-width:880px;margin:0 auto}
+  .hero-pill{display:inline-flex;align-items:center;gap:10px;padding:8px 16px;background:#fff;border:1px solid var(--border);border-radius:999px;font-size:0.85rem;color:var(--dark);font-weight:500;margin-bottom:32px;box-shadow:var(--shadow-card)}
+  .hero-pill b{color:var(--accent);font-weight:700}
+  .hero-pill::before{content:'→';color:var(--accent);font-weight:700}
+  .hero h1{font-size:clamp(2.5rem,6.5vw,5rem);line-height:1.02;letter-spacing:-0.045em;font-weight:800;margin-bottom:24px;color:var(--dark)}
+  .hero h1 .gradient-text{display:inline-block}
+  .hero-sub{font-size:clamp(1.05rem,1.5vw,1.25rem);color:var(--muted);max-width:680px;margin:0 auto 40px;line-height:1.55;font-weight:400}
+  .hero-cta{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;align-items:center}
+  .hero-cta .btn{padding:14px 26px;font-size:1rem}
 
   /* ─── Metrics ─── */
-  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg)}
-  @media(max-width:768px){.metrics{grid-template-columns:repeat(2,1fr)}}
-  .metric{padding:48px 32px;border-right:1px solid var(--border);position:relative;overflow:hidden;transition:background 0.3s}
-  .metric:last-child{border-right:none}
-  .metric:hover{background:#111}
-  .metric:hover .metric-num{color:var(--accent)}
-  @media(max-width:768px){
-    .metric:nth-child(2){border-right:none}
-    .metric:nth-child(-n+2){border-bottom:1px solid var(--border)}
-  }
-  .metric-num{font-family:var(--display);font-size:clamp(2.8rem,6vw,4.5rem);line-height:1;letter-spacing:-0.04em;margin-bottom:12px;transition:color 0.3s}
-  .metric-label{font-family:var(--mono);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted)}
+  .metrics-wrap{padding:0 0 100px}
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;max-width:1100px;margin:0 auto;padding:0 32px;position:relative;z-index:3}
+  @media(max-width:880px){.metrics{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:640px){.metrics{padding:0 20px}}
+  .metric{background:#fff;border:1px solid var(--border);border-radius:16px;padding:28px 24px;box-shadow:var(--shadow-card);transition:all 0.3s ease;text-align:left}
+  .metric:hover{transform:translateY(-4px);box-shadow:var(--shadow-card-hover)}
+  .metric-num{font-size:clamp(2rem,4vw,2.6rem);font-weight:800;letter-spacing:-0.04em;line-height:1;margin-bottom:10px;background:var(--gradient);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .metric-label{font-size:0.88rem;color:var(--muted);font-weight:500}
 
   /* ─── Demo screenshot ─── */
-  .demo-wrap{position:relative;margin-top:80px;border:1px solid var(--border);background:#111;border-radius:0;overflow:hidden}
-  .demo-bar{padding:14px 20px;display:flex;align-items:center;gap:8px;background:#0e0e0e;border-bottom:1px solid var(--border)}
-  .demo-dot{width:11px;height:11px;border-radius:50%;background:#333}
-  .demo-bar-url{margin-left:16px;font-family:var(--mono);font-size:0.74rem;color:var(--muted)}
-  .demo-grid{display:grid;grid-template-columns:200px 1fr;min-height:380px}
-  @media(max-width:640px){.demo-grid{grid-template-columns:1fr;min-height:auto}}
-  .demo-side{padding:24px 18px;border-right:1px solid var(--border);font-family:var(--mono);font-size:0.72rem}
-  .demo-side div{padding:8px 12px;color:var(--muted);transition:color 0.2s}
-  .demo-side .active{background:var(--accent);color:#fff}
+  .demo-section{padding:60px 0 120px}
+  .demo-head{text-align:center;margin-bottom:56px;max-width:720px;margin-left:auto;margin-right:auto}
+  .demo-head .sec-title{margin-left:auto;margin-right:auto}
+  .demo-head .sec-sub{margin-left:auto;margin-right:auto}
+  .demo-wrap{max-width:1100px;margin:0 auto;background:#fff;border:1px solid var(--border);border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(67,97,238,0.12),0 8px 20px rgba(0,0,0,0.04);position:relative}
+  .demo-bar{padding:14px 20px;display:flex;align-items:center;gap:8px;background:#fafafa;border-bottom:1px solid var(--border)}
+  .demo-dot{width:11px;height:11px;border-radius:50%}
+  .demo-dot:nth-child(1){background:#ff5f57}
+  .demo-dot:nth-child(2){background:#ffbd2e}
+  .demo-dot:nth-child(3){background:#28c840}
+  .demo-bar-url{margin-left:18px;font-size:0.78rem;color:var(--muted);font-weight:500;background:#fff;padding:5px 12px;border-radius:6px;border:1px solid var(--border)}
+  .demo-grid{display:grid;grid-template-columns:220px 1fr;min-height:420px}
+  @media(max-width:768px){.demo-grid{grid-template-columns:1fr}}
+  .demo-side{padding:24px 16px;background:#fafbfc;border-right:1px solid var(--border);font-size:0.88rem;font-weight:500}
+  .demo-side div{padding:10px 14px;color:var(--muted);transition:all 0.2s;border-radius:8px;margin-bottom:4px;display:flex;align-items:center;gap:10px}
+  .demo-side div::before{content:'';width:6px;height:6px;border-radius:50%;background:#d1d5db}
+  .demo-side .active{background:var(--gradient);color:#fff;box-shadow:0 4px 12px rgba(67,97,238,0.3)}
+  .demo-side .active::before{background:#fff}
   .demo-main{padding:32px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-content:start}
   @media(max-width:640px){.demo-main{grid-template-columns:repeat(2,1fr);padding:20px}}
-  .demo-card{padding:18px;border:1px solid var(--border);background:#0c0c0c;font-family:var(--mono);font-size:0.7rem}
-  .demo-card .num{font-family:var(--display);font-size:1.6rem;color:var(--fg);margin-bottom:6px;letter-spacing:-0.02em}
-  .demo-card.acc .num{color:var(--accent)}
-  .demo-card .lbl{color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-size:0.6rem}
+  .demo-card{padding:20px;border:1px solid var(--border);background:#fff;border-radius:12px;transition:all 0.25s}
+  .demo-card:hover{transform:translateY(-2px);border-color:rgba(67,97,238,0.2)}
+  .demo-card .num{font-size:1.5rem;color:var(--dark);margin-bottom:6px;font-weight:800;letter-spacing:-0.04em;line-height:1}
+  .demo-card.acc{background:var(--gradient);border-color:transparent;color:#fff;box-shadow:0 8px 20px rgba(67,97,238,0.25)}
+  .demo-card.acc .num{color:#fff}
+  .demo-card.acc .lbl{color:rgba(255,255,255,0.85)}
+  .demo-card .lbl{color:var(--muted);font-size:0.75rem;font-weight:500}
 
-  /* ─── Features (9 stamps) ─── */
-  .features-head{display:grid;grid-template-columns:1fr auto;gap:40px;align-items:end;margin-bottom:64px}
-  @media(max-width:768px){.features-head{grid-template-columns:1fr}}
-  .features-head p{font-family:var(--body);font-size:1rem;color:var(--muted);max-width:380px;line-height:1.5}
-  .stamps{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid var(--border);border-left:1px solid var(--border)}
+  /* ─── Features ─── */
+  .features-head{text-align:center;margin-bottom:56px;max-width:720px;margin-left:auto;margin-right:auto}
+  .features-head .sec-title{margin-left:auto;margin-right:auto}
+  .features-head .sec-sub{margin-left:auto;margin-right:auto}
+  .stamps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
   @media(max-width:880px){.stamps{grid-template-columns:repeat(2,1fr)}}
-  @media(max-width:480px){.stamps{grid-template-columns:1fr}}
-  .stamp{padding:36px 28px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);position:relative;transition:background 0.25s;min-height:240px;display:flex;flex-direction:column;cursor:default}
-  .stamp:hover{background:#111}
-  .stamp:hover .stamp-arrow{transform:translate(4px,-4px);color:var(--accent)}
-  .stamp:hover .stamp-num{color:var(--accent)}
-  .stamp-num{position:absolute;top:18px;right:24px;font-family:var(--mono);font-size:0.68rem;color:var(--muted);letter-spacing:0.1em;transition:color 0.2s}
-  .stamp-arrow{position:absolute;bottom:24px;right:28px;font-size:1.2rem;color:var(--muted);transition:all 0.25s}
-  .stamp h3{font-family:var(--display);font-size:1.6rem;line-height:0.95;letter-spacing:-0.02em;text-transform:uppercase;margin-bottom:14px;margin-top:36px}
-  .stamp p{font-family:var(--mono);font-size:0.78rem;line-height:1.55;color:#999;flex:1}
+  @media(max-width:560px){.stamps{grid-template-columns:1fr}}
+  .stamp{background:#fff;border:1px solid var(--border);border-radius:16px;padding:28px;position:relative;transition:all 0.3s ease;box-shadow:var(--shadow-card);overflow:hidden}
+  .stamp:hover{transform:translateY(-4px);box-shadow:var(--shadow-card-hover);border-color:rgba(67,97,238,0.15)}
+  .stamp-num{position:absolute;top:18px;right:20px;font-size:0.72rem;color:var(--accent);font-weight:700;background:rgba(67,97,238,0.08);padding:4px 10px;border-radius:999px;letter-spacing:0.02em}
+  .stamp-icon{width:52px;height:52px;border-radius:14px;background:var(--gradient);display:flex;align-items:center;justify-content:center;margin-bottom:20px;box-shadow:0 6px 16px rgba(67,97,238,0.25);font-size:1.4rem}
+  .stamp h3{font-size:1.18rem;font-weight:700;letter-spacing:-0.02em;color:var(--dark);margin-bottom:10px;line-height:1.25}
+  .stamp p{font-size:0.92rem;color:var(--muted);line-height:1.55;font-weight:400}
+
+  /* ─── Marquee strip ─── */
+  .strip{padding:20px 0;background:var(--gradient);color:#fff;overflow:hidden;position:relative}
+  .strip-inner{display:flex;gap:48px;animation:marquee 35s linear infinite;white-space:nowrap;font-size:1.05rem;font-weight:700;letter-spacing:-0.01em}
+  .strip-inner span{display:inline-flex;align-items:center;gap:48px}
+  .strip-inner span::after{content:'●';color:rgba(255,255,255,0.5);font-size:0.6rem;display:inline-block}
+  @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
   /* ─── Comparison ─── */
-  .compare-block{margin-top:64px;border:1px solid var(--border)}
-  .compare-head{display:grid;grid-template-columns:1.3fr 1fr 1fr;background:#111;border-bottom:1px solid var(--border)}
-  .compare-head>div{padding:20px 24px;font-family:var(--mono);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.1em;border-right:1px solid var(--border)}
-  .compare-head>div:last-child{border-right:none;background:var(--accent);color:#fff}
-  .compare-row{display:grid;grid-template-columns:1.3fr 1fr 1fr;border-bottom:1px solid var(--border);transition:background 0.2s}
+  .compare-section{background:#fff}
+  .compare-head-wrap{text-align:center;margin-bottom:56px;max-width:720px;margin-left:auto;margin-right:auto}
+  .compare-head-wrap .sec-title{margin-left:auto;margin-right:auto}
+  .compare-head-wrap .sec-sub{margin-left:auto;margin-right:auto}
+  .compare-block{max-width:980px;margin:0 auto;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:var(--shadow-card)}
+  .compare-head{display:grid;grid-template-columns:1.4fr 1fr 1fr;background:#fafbfc;border-bottom:1px solid var(--border)}
+  .compare-head>div{padding:20px 24px;font-size:0.88rem;font-weight:600;color:var(--muted);letter-spacing:-0.01em}
+  .compare-head>div:last-child{background:var(--gradient);color:#fff;font-weight:700}
+  .compare-row{display:grid;grid-template-columns:1.4fr 1fr 1fr;border-bottom:1px solid var(--border);transition:background 0.2s}
   .compare-row:last-child{border-bottom:none}
-  .compare-row:hover{background:#0e0e0e}
-  .compare-row>div{padding:22px 24px;font-family:var(--mono);font-size:0.85rem;border-right:1px solid var(--border);display:flex;align-items:center;gap:10px}
-  .compare-row>div:last-child{border-right:none}
-  .compare-row .y{color:#00E676}
-  .compare-row .n{color:#666}
-  .compare-row .y::before{content:'+';font-weight:bold;color:#00E676}
-  .compare-row .n::before{content:'×';color:#444}
+  .compare-row:hover{background:var(--soft-bg)}
+  .compare-row>div{padding:22px 24px;font-size:0.95rem;font-weight:500;display:flex;align-items:center;gap:10px}
+  .compare-row .y{color:var(--success);font-weight:600}
+  .compare-row .n{color:var(--muted)}
+  .compare-row .y::before{content:'✓';display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:rgba(16,185,129,0.12);color:var(--success);font-size:0.78rem;font-weight:700}
+  .compare-row .n::before{content:'×';display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:rgba(230,57,70,0.08);color:var(--danger);font-size:0.95rem;font-weight:700}
   @media(max-width:640px){
-    .compare-head,.compare-row{grid-template-columns:1.6fr 0.7fr 0.7fr}
-    .compare-head>div,.compare-row>div{padding:14px 12px;font-size:0.7rem}
+    .compare-head,.compare-row{grid-template-columns:1.6fr 0.7fr 0.9fr}
+    .compare-head>div,.compare-row>div{padding:14px 12px;font-size:0.78rem}
   }
 
   /* ─── Cases ─── */
-  .cases{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:64px}
+  .cases-head{text-align:center;margin-bottom:56px;max-width:720px;margin-left:auto;margin-right:auto}
+  .cases-head .sec-title{margin-left:auto;margin-right:auto}
+  .cases-head .sec-sub{margin-left:auto;margin-right:auto}
+  .cases{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
   @media(max-width:880px){.cases{grid-template-columns:1fr}}
-  .case{padding:36px 28px;border:1px solid var(--border);background:#0c0c0c;display:flex;flex-direction:column;gap:24px;transition:all 0.25s;position:relative;overflow:hidden}
-  .case:hover{background:#111;border-color:var(--accent)}
-  .case-tag{font-family:var(--mono);font-size:0.68rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--accent);padding:6px 10px;border:1px solid var(--accent);align-self:flex-start}
-  .case-num{font-family:var(--display);font-size:clamp(3rem,5vw,4.5rem);line-height:1;letter-spacing:-0.04em;color:var(--fg)}
-  .case-num small{font-size:0.4em;color:var(--muted);font-family:var(--mono);letter-spacing:0.05em;display:block;margin-top:4px;text-transform:uppercase}
-  .case h3{font-family:var(--display);font-size:1.2rem;text-transform:uppercase;line-height:1.1;letter-spacing:-0.01em}
-  .case p{font-family:var(--body);font-size:0.92rem;color:#999;line-height:1.55}
+  .case{padding:32px 28px;background:#fff;border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;gap:18px;transition:all 0.3s;position:relative;overflow:hidden;box-shadow:var(--shadow-card)}
+  .case:hover{transform:translateY(-4px);box-shadow:var(--shadow-card-hover);border-color:rgba(67,97,238,0.15)}
+  .case-tag{display:inline-flex;align-self:flex-start;font-size:0.75rem;font-weight:600;color:var(--accent);background:rgba(67,97,238,0.08);padding:5px 12px;border-radius:999px;letter-spacing:0.01em}
+  .case-num{font-size:clamp(2.6rem,4.5vw,3.5rem);font-weight:800;letter-spacing:-0.04em;line-height:1;background:var(--gradient);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .case-num small{font-size:0.28em;color:var(--muted);font-weight:500;display:block;margin-top:8px;-webkit-text-fill-color:initial;background:none;letter-spacing:0}
+  .case h3{font-size:1.15rem;font-weight:700;letter-spacing:-0.02em;color:var(--dark);line-height:1.3}
+  .case p{font-size:0.92rem;color:var(--muted);line-height:1.55}
 
   /* ─── Pricing ─── */
-  .pricing{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:64px;border-top:1px solid var(--border);border-left:1px solid var(--border)}
-  @media(max-width:880px){.pricing{grid-template-columns:1fr}}
-  .price{padding:48px 32px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:24px;background:#0a0a0a;transition:background 0.3s;position:relative}
-  .price.hi{background:var(--accent);color:#fff}
-  .price.hi *{color:#fff !important}
-  .price.hi .price-tier{color:rgba(255,255,255,0.7)!important}
-  .price:hover:not(.hi){background:#111}
-  .price-tier{font-family:var(--mono);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--accent)}
-  .price-amount{font-family:var(--display);font-size:clamp(3rem,5vw,4rem);line-height:0.9;letter-spacing:-0.04em}
-  .price-amount small{font-family:var(--mono);font-size:0.32em;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;font-weight:normal;display:inline-block;margin-left:8px}
-  .price h3{font-family:var(--display);font-size:1.4rem;text-transform:uppercase;letter-spacing:-0.01em}
-  .price ul{list-style:none;display:flex;flex-direction:column;gap:10px;flex:1;font-family:var(--mono);font-size:0.8rem;color:#aaa}
-  .price ul li{padding-left:18px;position:relative;line-height:1.4}
-  .price ul li::before{content:'+';position:absolute;left:0;color:var(--accent);font-weight:bold}
-  .price.hi ul li::before{color:#fff}
-  .price-badge{position:absolute;top:0;right:0;background:#0a0a0a;color:var(--accent);padding:6px 14px;font-family:var(--mono);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.12em;font-weight:500}
-  .price .btn{width:100%;justify-content:center}
+  .pricing-section{background:#fff}
+  .pricing-head{text-align:center;margin-bottom:56px;max-width:720px;margin-left:auto;margin-right:auto}
+  .pricing-head .sec-title{margin-left:auto;margin-right:auto}
+  .pricing-head .sec-sub{margin-left:auto;margin-right:auto}
+  .pricing-wrap{display:flex;flex-direction:column;align-items:center;gap:24px}
+  .price-card{width:100%;max-width:480px;background:#fff;border:1px solid var(--border);border-radius:20px;padding:40px 36px;box-shadow:0 12px 40px rgba(67,97,238,0.10),var(--shadow-card);position:relative;overflow:hidden}
+  .price-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--gradient)}
+  .price-badge{display:inline-flex;align-items:center;gap:6px;font-size:0.74rem;font-weight:600;color:var(--accent);background:rgba(67,97,238,0.08);padding:6px 12px;border-radius:999px;margin-bottom:20px;letter-spacing:0.02em}
+  .price-badge::before{content:'★';color:var(--warning);font-size:0.8rem}
+  .price-tier{font-size:0.82rem;color:var(--muted);font-weight:600;letter-spacing:0.04em;text-transform:uppercase;margin-bottom:6px}
+  .price-amount{display:flex;align-items:baseline;gap:8px;margin-bottom:28px}
+  .price-amount .num{font-size:clamp(3.2rem,7vw,4.5rem);font-weight:800;letter-spacing:-0.045em;line-height:1;color:var(--dark)}
+  .price-amount .per{font-size:1rem;color:var(--muted);font-weight:500}
+  .price-list{list-style:none;display:flex;flex-direction:column;gap:14px;margin-bottom:32px}
+  .price-list li{display:flex;align-items:flex-start;gap:12px;font-size:0.96rem;color:var(--dark);font-weight:500;line-height:1.45}
+  .price-list li::before{content:'';flex-shrink:0;width:22px;height:22px;border-radius:50%;background:rgba(16,185,129,0.12);background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>");background-size:14px;background-position:center;background-repeat:no-repeat;margin-top:1px}
+  .price-card .btn{width:100%;justify-content:center;padding:14px 24px;font-size:1rem}
+  .price-note{text-align:center;font-size:0.88rem;color:var(--muted);max-width:520px;line-height:1.55}
+  .price-note span{color:var(--accent);font-weight:600}
 
   /* ─── FAQ ─── */
-  .faq{margin-top:64px;border-top:1px solid var(--border)}
-  .faq-item{border-bottom:1px solid var(--border);overflow:hidden}
-  .faq-q{padding:28px 0;cursor:pointer;display:flex;align-items:center;gap:32px;transition:padding 0.2s}
-  .faq-q:hover{padding-left:8px}
-  .faq-q:hover .faq-q-text{color:var(--accent)}
-  .faq-num{font-family:var(--mono);font-size:0.78rem;color:var(--muted);min-width:50px;letter-spacing:0.1em}
-  .faq-q-text{font-family:var(--display);font-size:clamp(1.1rem,2vw,1.6rem);text-transform:uppercase;letter-spacing:-0.01em;flex:1;line-height:1.1;transition:color 0.2s}
-  .faq-icon{font-family:var(--mono);font-size:1.2rem;color:var(--accent);transition:transform 0.3s;flex-shrink:0}
-  .faq-item.open .faq-icon{transform:rotate(45deg)}
-  .faq-a{max-height:0;overflow:hidden;transition:max-height 0.4s ease;font-family:var(--body);font-size:1rem;color:#999;line-height:1.6}
-  .faq-item.open .faq-a{max-height:300px}
-  .faq-a-inner{padding:0 0 28px 82px;max-width:760px}
-  @media(max-width:640px){.faq-a-inner{padding-left:0}}
+  .faq-head{text-align:center;margin-bottom:48px;max-width:720px;margin-left:auto;margin-right:auto}
+  .faq-head .sec-title{margin-left:auto;margin-right:auto}
+  .faq-head .sec-sub{margin-left:auto;margin-right:auto}
+  .faq{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  .faq-item{background:#fff;border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:all 0.25s;box-shadow:var(--shadow-card)}
+  .faq-item:hover{border-color:rgba(67,97,238,0.18)}
+  .faq-item.open{box-shadow:var(--shadow-card-hover);border-color:rgba(67,97,238,0.2)}
+  .faq-q{padding:22px 26px;cursor:pointer;display:flex;align-items:center;gap:18px}
+  .faq-num{font-size:0.82rem;color:var(--accent);min-width:30px;font-weight:700}
+  .faq-q-text{font-size:1.05rem;font-weight:600;flex:1;line-height:1.4;color:var(--dark);letter-spacing:-0.01em}
+  .faq-icon{width:32px;height:32px;border-radius:50%;background:rgba(67,97,238,0.08);color:var(--accent);transition:all 0.3s;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:1.1rem;line-height:1}
+  .faq-item.open .faq-icon{transform:rotate(45deg);background:var(--gradient);color:#fff}
+  .faq-a{max-height:0;overflow:hidden;transition:max-height 0.4s ease;font-size:0.98rem;color:var(--muted);line-height:1.65}
+  .faq-item.open .faq-a{max-height:340px}
+  .faq-a-inner{padding:0 26px 24px 74px;max-width:760px}
+  @media(max-width:640px){
+    .faq-q{padding:20px 20px}
+    .faq-a-inner{padding:0 20px 22px 20px}
+    .faq-q-text{font-size:0.98rem}
+  }
 
   /* ─── CTA Final ─── */
-  .cta-final{padding:140px 0;background:var(--accent);color:#fff;text-align:center;border-bottom:none;position:relative;overflow:hidden}
-  .cta-final::before{content:'MAX/MARKETING';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:var(--display);font-size:clamp(8rem,20vw,18rem);color:rgba(255,255,255,0.08);white-space:nowrap;letter-spacing:-0.04em;pointer-events:none;line-height:1}
-  .cta-final h2{font-family:var(--display);font-size:clamp(3rem,8vw,7rem);line-height:0.85;letter-spacing:-0.04em;text-transform:uppercase;margin-bottom:32px;position:relative}
-  .cta-final p{font-family:var(--mono);font-size:0.9rem;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:40px;position:relative;opacity:0.9}
-  .cta-final .btn{background:#0a0a0a;color:#fff;padding:18px 32px;font-size:0.85rem;position:relative}
-  .cta-final .btn:hover{background:#fff;color:#0a0a0a}
+  .cta-final{padding:120px 0;background:var(--gradient);color:#fff;text-align:center;position:relative;overflow:hidden}
+  .cta-final::before{content:'МАКС МАРКЕТИНГ';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:clamp(5rem,15vw,12rem);color:rgba(255,255,255,0.08);white-space:nowrap;letter-spacing:-0.045em;pointer-events:none;line-height:1;font-weight:800}
+  .cta-final-inner{position:relative;z-index:2;max-width:680px;margin:0 auto}
+  .cta-final p.kicker{display:inline-flex;align-items:center;gap:8px;font-size:0.9rem;font-weight:600;background:rgba(255,255,255,0.15);padding:8px 16px;border-radius:999px;margin-bottom:28px;backdrop-filter:blur(10px)}
+  .cta-final h2{font-size:clamp(2.4rem,6vw,4.2rem);line-height:1.05;letter-spacing:-0.045em;font-weight:800;margin-bottom:20px}
+  .cta-final p.sub{font-size:1.1rem;margin-bottom:36px;opacity:0.92;font-weight:400;max-width:520px;margin-left:auto;margin-right:auto}
+  .cta-final .btn{padding:16px 32px;font-size:1.05rem;background:#fff;color:var(--accent);box-shadow:0 12px 32px rgba(0,0,0,0.18)}
+  .cta-final .btn:hover{background:var(--dark);color:#fff;transform:translateY(-2px)}
 
   /* ─── Footer ─── */
-  footer{padding:60px 0 40px;background:#000;border-top:1px solid var(--border)}
-  .footer-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:48px;margin-bottom:48px}
+  footer{padding:72px 0 36px;background:#fff;border-top:1px solid var(--border)}
+  .footer-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:48px;margin-bottom:48px}
   @media(max-width:768px){.footer-grid{grid-template-columns:1fr 1fr;gap:32px}}
-  .footer-grid h4{font-family:var(--mono);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);margin-bottom:18px}
+  .footer-grid h4{font-size:0.85rem;font-weight:700;color:var(--dark);margin-bottom:18px;letter-spacing:-0.01em}
   .footer-grid ul{list-style:none;display:flex;flex-direction:column;gap:10px}
-  .footer-grid a{font-family:var(--body);font-size:0.92rem;color:#aaa;transition:color 0.15s}
+  .footer-grid a{font-size:0.92rem;color:var(--muted);transition:color 0.15s;font-weight:500}
   .footer-grid a:hover{color:var(--accent)}
-  .footer-bottom{display:flex;justify-content:space-between;padding-top:32px;border-top:1px solid var(--border);font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;flex-wrap:wrap;gap:12px}
+  .footer-about{font-size:0.92rem;color:var(--muted);max-width:300px;line-height:1.6;margin-top:14px;font-weight:400}
+  .footer-bottom{display:flex;justify-content:space-between;padding-top:32px;border-top:1px solid var(--border);font-size:0.88rem;color:var(--muted);font-weight:500;flex-wrap:wrap;gap:12px}
 
   /* ─── Reveal animation ─── */
   .reveal{opacity:0;transform:translateY(24px);transition:opacity 0.7s cubic-bezier(0.22,1,0.36,1),transform 0.7s cubic-bezier(0.22,1,0.36,1)}
@@ -214,68 +254,57 @@
   .reveal-stagger.in>*:nth-child(8){transition-delay:0.4s}
   .reveal-stagger.in>*:nth-child(9){transition-delay:0.45s}
   .reveal-stagger.in>*{opacity:1;transform:translateY(0)}
-
-  /* marquee strip */
-  .strip{padding:18px 0;background:var(--accent);color:#fff;overflow:hidden;border-top:1px solid var(--accent);border-bottom:1px solid var(--accent)}
-  .strip-inner{display:flex;gap:48px;animation:marquee 30s linear infinite;white-space:nowrap;font-family:var(--display);font-size:1.1rem;text-transform:uppercase;letter-spacing:-0.01em}
-  .strip-inner span::before{content:'★';color:#0a0a0a;margin-right:48px;font-size:0.9rem;display:inline-block;vertical-align:middle}
-  @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 </style>
 </head>
 <body>
 
 <header>
   <nav class="nav">
-    <a href="#" class="logo"><span class="logo-dot"></span>MAX/MARKETING</a>
+    <a href="#" class="logo"><span class="logo-mark">М</span>МАКС Маркетинг</a>
     <div class="nav-links">
-      <a href="#features">001 / Функции</a>
-      <a href="#cases">003 / Кейсы</a>
-      <a href="#pricing">004 / Тарифы</a>
-      <a href="#faq">005 / FAQ</a>
+      <a href="#features">Функции</a>
+      <a href="#cases">Кейсы</a>
+      <a href="#pricing">Тарифы</a>
+      <a href="#faq">FAQ</a>
     </div>
-    <a href="https://itcakes.ru/login" class="btn">Войти</a>
+    <a href="https://itcakes.ru/login" class="btn btn-primary">Войти</a>
   </nav>
 </header>
 
 <!-- HERO -->
 <section class="hero">
-  <div class="hero-grid"></div>
-  <div class="container reveal">
-    <div class="hero-meta">
-      <span>Версия 2.4</span>
-      <span>Только для MAX</span>
-      <span>Активно</span>
-    </div>
-    <h1>
-      Маркетинг<br>
-      для каналов<br>
-      <span class="slash">/</span> <span class="accent">MAX</span>
-    </h1>
-    <p>Привлекайте, удерживайте и монетизируйте подписчиков. Один сервис вместо десятка инструментов. ИИ-лендинги, воронки, рассылки, магазин и платные чаты.</p>
-    <div class="hero-cta">
-      <a href="https://itcakes.ru/login" class="btn btn-accent">Начать бесплатно</a>
-      <a href="#features" class="btn btn-ghost">Изучить функции</a>
-      <span class="hero-tag">→ <b>14 дней</b> без оплаты</span>
+  <div class="container">
+    <div class="hero-inner reveal">
+      <div class="hero-pill"><b>Первые 2 дня бесплатно</b> для новых каналов</div>
+      <h1>
+        Маркетинг для каналов <span class="gradient-text">МАКС</span>
+      </h1>
+      <p class="hero-sub">Привлекайте, удерживайте и монетизируйте подписчиков. Один сервис вместо десятка инструментов: ИИ-лендинги, воронки, рассылки, магазин и платные чаты.</p>
+      <div class="hero-cta">
+        <a href="https://itcakes.ru/login" class="btn btn-primary btn-arrow">Начать бесплатно</a>
+        <a href="#features" class="btn btn-ghost">Смотреть функции</a>
+      </div>
     </div>
   </div>
-  <div class="scroll-cue">SCROLL</div>
 </section>
 
 <!-- METRICS -->
-<div class="metrics reveal-stagger">
-  <div class="metric"><div class="metric-num">×10</div><div class="metric-label">Рост подписчиков</div></div>
-  <div class="metric"><div class="metric-num">24/7</div><div class="metric-label">Автоворонки</div></div>
-  <div class="metric"><div class="metric-num">50+</div><div class="metric-label">Инструментов</div></div>
-  <div class="metric"><div class="metric-num">100%</div><div class="metric-label">MAX API</div></div>
+<div class="metrics-wrap">
+  <div class="metrics reveal-stagger">
+    <div class="metric"><div class="metric-num">×10</div><div class="metric-label">Рост подписчиков</div></div>
+    <div class="metric"><div class="metric-num">24/7</div><div class="metric-label">Автоворонки без сна</div></div>
+    <div class="metric"><div class="metric-num">50+</div><div class="metric-label">Готовых инструментов</div></div>
+    <div class="metric"><div class="metric-num">100%</div><div class="metric-label">Нативный API МАКС</div></div>
+  </div>
 </div>
 
 <!-- DEMO -->
-<section>
+<section class="demo-section">
   <div class="container">
-    <div class="reveal">
-      <div class="sec-num">002 / Личный кабинет</div>
-      <h2 class="sec-title">Один экран —<br>вся аналитика</h2>
-      <p class="sec-sub">Дашборд с подписками, визитами, конверсиями. Все каналы в одном выпадающем списке. Графики, метрики, фильтры по периодам.</p>
+    <div class="demo-head reveal">
+      <div class="eyebrow"><span class="eyebrow-dot"></span>Личный кабинет</div>
+      <h2 class="sec-title">Один экран — <span class="gradient-text">вся аналитика</span></h2>
+      <p class="sec-sub">Дашборд с подписками, визитами и конверсиями. Все каналы в одном выпадающем списке. Графики, метрики, фильтры по периодам.</p>
     </div>
     <div class="demo-wrap reveal">
       <div class="demo-bar">
@@ -284,7 +313,7 @@
       </div>
       <div class="demo-grid">
         <div class="demo-side">
-          <div class="active">→ Дашборд</div>
+          <div class="active">Дашборд</div>
           <div>Ссылки</div>
           <div>Воронки</div>
           <div>Рассылки</div>
@@ -308,66 +337,64 @@
 <section id="features">
   <div class="container">
     <div class="features-head reveal">
-      <div>
-        <div class="sec-num">003 / Функции</div>
-        <h2 class="sec-title">Девять<br>инструментов,<br>одна платформа</h2>
-      </div>
-      <p>Каждый инструмент решает свою задачу — от привлечения трафика до автоматизации продаж. Запускайте по отдельности или вместе.</p>
+      <div class="eyebrow"><span class="eyebrow-dot"></span>Функции</div>
+      <h2 class="sec-title">Девять инструментов, <span class="gradient-text">одна платформа</span></h2>
+      <p class="sec-sub">Каждый инструмент решает свою задачу — от привлечения трафика до автоматизации продаж. Запускайте по отдельности или вместе.</p>
     </div>
     <div class="stamps reveal-stagger">
       <div class="stamp">
-        <span class="stamp-num">/01</span>
+        <span class="stamp-num">01</span>
+        <div class="stamp-icon">✨</div>
         <h3>ИИ Лендинг</h3>
         <p>Генерация HTML-лендинга по ТЗ. Подставит ваши фото, тексты, аналитику. 500 токенов = готовая страница за 2 минуты.</p>
-        <span class="stamp-arrow">↗</span>
       </div>
       <div class="stamp">
-        <span class="stamp-num">/02</span>
+        <span class="stamp-num">02</span>
+        <div class="stamp-icon">🔗</div>
         <h3>Трекинг ссылки</h3>
         <p>UTM-метки, Яндекс Метрика, VK Пиксель. Статистика визитов и подписок по дням. График конверсий с переключателем месяца.</p>
-        <span class="stamp-arrow">↗</span>
       </div>
       <div class="stamp">
-        <span class="stamp-num">/03</span>
+        <span class="stamp-num">03</span>
+        <div class="stamp-icon">⚡</div>
         <h3>Воронки</h3>
         <p>Автоматические цепочки сообщений после подписки. Шаги с задержками: секунды, дни, конкретное время.</p>
-        <span class="stamp-arrow">↗</span>
       </div>
       <div class="stamp">
-        <span class="stamp-num">/04</span>
+        <span class="stamp-num">04</span>
+        <div class="stamp-icon">📨</div>
         <h3>Рассылки</h3>
         <p>Личные сообщения подписчикам через бота. Таргетинг, отложенная отправка, статистика доставки, тестовый режим.</p>
-        <span class="stamp-arrow">↗</span>
       </div>
       <div class="stamp">
-        <span class="stamp-num">/05</span>
+        <span class="stamp-num">05</span>
+        <div class="stamp-icon">🎁</div>
         <h3>Розыгрыши</h3>
         <p>Конкурсы среди подписчиков с автоматическим выбором победителей. ERID, призы, сроки, условия.</p>
-        <span class="stamp-arrow">↗</span>
       </div>
       <div class="stamp">
-        <span class="stamp-num">/06</span>
+        <span class="stamp-num">06</span>
+        <div class="stamp-icon">💳</div>
         <h3>Платные чаты</h3>
         <p>Подписка за деньги на чат или канал. Tinkoff, YooKassa, Robokassa. Авто-добавление при оплате, удаление при истечении.</p>
-        <span class="stamp-arrow">↗</span>
       </div>
       <div class="stamp">
-        <span class="stamp-num">/07</span>
+        <span class="stamp-num">07</span>
+        <div class="stamp-icon">🛍️</div>
         <h3>Магазин</h3>
-        <p>Каталог, корзина, доставка, промокоды. MiniApp в MAX. Категории, атрибуты, варианты товаров, статусы заказов.</p>
-        <span class="stamp-arrow">↗</span>
+        <p>Каталог, корзина, доставка, промокоды. MiniApp в МАКС. Категории, атрибуты, варианты товаров, статусы заказов.</p>
       </div>
       <div class="stamp">
-        <span class="stamp-num">/08</span>
+        <span class="stamp-num">08</span>
+        <div class="stamp-icon">📅</div>
         <h3>Услуги и запись</h3>
         <p>Онлайн-запись к специалистам. Филиалы, расписание, услуги, оплата. Напоминания клиентам и сотрудникам.</p>
-        <span class="stamp-arrow">↗</span>
       </div>
       <div class="stamp">
-        <span class="stamp-num">/09</span>
+        <span class="stamp-num">09</span>
+        <div class="stamp-icon">🎨</div>
         <h3>ИИ Оформление</h3>
         <p>Аватарка канала + описание + лид-магнит за один клик. ИИ создаст 9 вариантов аватара, выберите лучший.</p>
-        <span class="stamp-arrow">↗</span>
       </div>
     </div>
   </div>
@@ -376,24 +403,24 @@
 <!-- MARQUEE STRIP -->
 <div class="strip">
   <div class="strip-inner">
-    <span>MAX/MARKETING</span><span>2026</span><span>API NATIVE</span><span>NO CODE</span><span>BUILT FOR MAX</span><span>OFFICIAL BOT</span>
-    <span>MAX/MARKETING</span><span>2026</span><span>API NATIVE</span><span>NO CODE</span><span>BUILT FOR MAX</span><span>OFFICIAL BOT</span>
+    <span>МАКС МАРКЕТИНГ</span><span>2026</span><span>РОДНОЙ API</span><span>БЕЗ КОДА</span><span>ДЛЯ MAX</span><span>ОФИЦИАЛЬНЫЙ БОТ</span>
+    <span>МАКС МАРКЕТИНГ</span><span>2026</span><span>РОДНОЙ API</span><span>БЕЗ КОДА</span><span>ДЛЯ MAX</span><span>ОФИЦИАЛЬНЫЙ БОТ</span>
   </div>
 </div>
 
 <!-- COMPARISON -->
-<section>
+<section class="compare-section">
   <div class="container">
-    <div class="reveal">
-      <div class="sec-num">004 / Сравнение</div>
-      <h2 class="sec-title">Стандартный<br>MAX vs нас</h2>
-      <p class="sec-sub">Что вы теряете без MAXМаркетинг и что получаете с ним.</p>
+    <div class="compare-head-wrap reveal">
+      <div class="eyebrow"><span class="eyebrow-dot"></span>Сравнение</div>
+      <h2 class="sec-title">Стандартный MAX <span class="gradient-text">против нас</span></h2>
+      <p class="sec-sub">Что вы теряете без МАКС Маркетинг и что получаете с ним.</p>
     </div>
     <div class="compare-block reveal">
       <div class="compare-head">
         <div>Возможность</div>
         <div>MAX</div>
-        <div>+ MAXМаркетинг</div>
+        <div>+ МАКС Маркетинг</div>
       </div>
       <div class="compare-row">
         <div>Аналитика подписчиков</div>
@@ -427,14 +454,14 @@
 <!-- CASES -->
 <section id="cases">
   <div class="container">
-    <div class="reveal">
-      <div class="sec-num">005 / Кейсы</div>
-      <h2 class="sec-title">Цифры,<br>а не обещания</h2>
+    <div class="cases-head reveal">
+      <div class="eyebrow"><span class="eyebrow-dot"></span>Кейсы</div>
+      <h2 class="sec-title">Цифры, <span class="gradient-text">а не обещания</span></h2>
       <p class="sec-sub">Реальные результаты клиентов после внедрения сервиса.</p>
     </div>
     <div class="cases reveal-stagger">
       <div class="case">
-        <span class="case-tag">E-Commerce</span>
+        <span class="case-tag">Магазин</span>
         <div class="case-num">+248%<small>Конверсия в продажу</small></div>
         <h3>Магазин косметики</h3>
         <p>Запустили MiniApp каталог + воронку отправки купона после первой покупки. Средний чек вырос на 40%, повторные покупки — 32%.</p>
@@ -443,7 +470,7 @@
         <span class="case-tag">Инфобизнес</span>
         <div class="case-num">×7<small>Рост подписной базы</small></div>
         <h3>Школа дизайна</h3>
-        <p>ИИ-лендинг + лид-магнит "Чек-лист 50 сервисов". Подписчики получили файл, попали в воронку из 14 шагов, конверсия в покупку 18%.</p>
+        <p>ИИ-лендинг + лид-магнит «Чек-лист 50 сервисов». Подписчики получили файл, попали в воронку из 14 шагов, конверсия в покупку 18%.</p>
       </div>
       <div class="case">
         <span class="case-tag">Услуги</span>
@@ -456,59 +483,32 @@
 </section>
 
 <!-- PRICING -->
-<section id="pricing">
+<section id="pricing" class="pricing-section">
   <div class="container">
-    <div class="reveal">
-      <div class="sec-num">006 / Тарифы</div>
-      <h2 class="sec-title">Без скрытых<br>условий</h2>
-      <p class="sec-sub">Цены за канал в месяц. Скидки за длительный срок: 6 мес −15%, 12 мес −30%.</p>
+    <div class="pricing-head reveal">
+      <div class="eyebrow"><span class="eyebrow-dot"></span>Тарифы</div>
+      <h2 class="sec-title">Один простой <span class="gradient-text">тариф</span></h2>
+      <p class="sec-sub">Первые 2 дня — бесплатно для новых каналов. Без скрытых платежей, без сложных конфигураций.</p>
     </div>
-    <div class="pricing reveal-stagger">
-      <div class="price">
-        <div>
-          <div class="price-tier">/01 Старт</div>
-          <h3>Старт</h3>
+    <div class="pricing-wrap reveal">
+      <div class="price-card">
+        <span class="price-badge">Единый тариф</span>
+        <div class="price-tier">Всего</div>
+        <div class="price-amount">
+          <span class="num">490 ₽</span>
+          <span class="per">/ месяц за канал</span>
         </div>
-        <div class="price-amount">0<small>₽/месяц</small></div>
-        <ul>
-          <li>До 1 000 подписчиков</li>
-          <li>Трекинг-ссылки и аналитика</li>
-          <li>1 канал</li>
-          <li>Базовая поддержка</li>
-        </ul>
-        <a href="https://itcakes.ru/login" class="btn btn-ghost">Начать</a>
-      </div>
-      <div class="price hi">
-        <div class="price-badge">Популярный</div>
-        <div>
-          <div class="price-tier">/02 Бизнес</div>
-          <h3>Бизнес</h3>
-        </div>
-        <div class="price-amount">1990<small>₽/месяц</small></div>
-        <ul>
+        <ul class="price-list">
           <li>До 50 000 подписчиков</li>
-          <li>Все инструменты</li>
-          <li>До 5 каналов</li>
+          <li>Все инструменты платформы</li>
+          <li>Без ограничений по числу каналов — оплачивайте по факту подключения</li>
           <li>Воронки, рассылки, магазин</li>
+          <li>ИИ-токены в подарок</li>
           <li>Приоритетная поддержка</li>
         </ul>
-        <a href="https://itcakes.ru/login" class="btn">Выбрать</a>
+        <a href="https://itcakes.ru/login" class="btn btn-primary btn-arrow">Начать бесплатно</a>
       </div>
-      <div class="price">
-        <div>
-          <div class="price-tier">/03 Премиум</div>
-          <h3>Премиум</h3>
-        </div>
-        <div class="price-amount">4990<small>₽/месяц</small></div>
-        <ul>
-          <li>Без лимитов</li>
-          <li>Все инструменты + ИИ-токены</li>
-          <li>Безлимит каналов</li>
-          <li>Персональный менеджер</li>
-          <li>Кастомизация</li>
-        </ul>
-        <a href="https://itcakes.ru/login" class="btn btn-ghost">Выбрать</a>
-      </div>
+      <p class="price-note">Без скрытых платежей <span>·</span> Отмена в любой момент <span>·</span> Первые 2 дня бесплатно</p>
     </div>
   </div>
 </section>
@@ -516,30 +516,30 @@
 <!-- FAQ -->
 <section id="faq">
   <div class="container">
-    <div class="reveal" style="max-width:780px">
-      <div class="sec-num">007 / Вопросы</div>
-      <h2 class="sec-title">Часто<br>спрашивают</h2>
+    <div class="faq-head reveal">
+      <div class="eyebrow"><span class="eyebrow-dot"></span>Вопросы</div>
+      <h2 class="sec-title">Часто <span class="gradient-text">спрашивают</span></h2>
     </div>
     <div class="faq reveal">
       <div class="faq-item" onclick="this.classList.toggle('open')">
-        <div class="faq-q"><span class="faq-num">/01</span><span class="faq-q-text">Нужно ли платить за подключение?</span><span class="faq-icon">+</span></div>
-        <div class="faq-a"><div class="faq-a-inner">Нет. Регистрация бесплатна, тариф «Старт» подходит для каналов до 1000 подписчиков. Платите только когда нужны платные функции или большой канал.</div></div>
+        <div class="faq-q"><span class="faq-num">01</span><span class="faq-q-text">Нужно ли платить за подключение?</span><span class="faq-icon">+</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Нет. Регистрация бесплатна. Первые 2 дня для нового канала — полностью бесплатно. Дальше — единый тариф 490 ₽/месяц.</div></div>
       </div>
       <div class="faq-item" onclick="this.classList.toggle('open')">
-        <div class="faq-q"><span class="faq-num">/02</span><span class="faq-q-text">Какие платёжные системы поддерживаются?</span><span class="faq-icon">+</span></div>
+        <div class="faq-q"><span class="faq-num">02</span><span class="faq-q-text">Какие платёжные системы поддерживаются?</span><span class="faq-icon">+</span></div>
         <div class="faq-a"><div class="faq-a-inner">Tinkoff, YooKassa, Prodamus, Robokassa. Подключаются за 5 минут через ваш аккаунт у платёжки. Деньги клиентов идут напрямую к вам.</div></div>
       </div>
       <div class="faq-item" onclick="this.classList.toggle('open')">
-        <div class="faq-q"><span class="faq-num">/03</span><span class="faq-q-text">Как подключить канал MAX?</span><span class="faq-icon">+</span></div>
+        <div class="faq-q"><span class="faq-num">03</span><span class="faq-q-text">Как подключить канал MAX?</span><span class="faq-icon">+</span></div>
         <div class="faq-a"><div class="faq-a-inner">Найдите бота PKMarketing в MAX → /start → откройте личный кабинет → добавьте бота PKMarketing администратором вашего канала. Канал появится автоматически.</div></div>
       </div>
       <div class="faq-item" onclick="this.classList.toggle('open')">
-        <div class="faq-q"><span class="faq-num">/04</span><span class="faq-q-text">Можно ли использовать на нескольких каналах?</span><span class="faq-icon">+</span></div>
-        <div class="faq-a"><div class="faq-a-inner">Да. Тариф «Бизнес» включает до 5 каналов, «Премиум» — без лимита. Каждый канал имеет отдельную статистику и настройки. Скидка 10% за каждый дополнительный канал.</div></div>
+        <div class="faq-q"><span class="faq-num">04</span><span class="faq-q-text">Можно ли использовать на нескольких каналах?</span><span class="faq-icon">+</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Да. Тариф 490 ₽/месяц считается за каждый подключённый канал. Можно подключить сколько угодно каналов — у каждого своя статистика, настройки и воронки. Первые 2 дня для каждого нового канала бесплатно.</div></div>
       </div>
       <div class="faq-item" onclick="this.classList.toggle('open')">
-        <div class="faq-q"><span class="faq-num">/05</span><span class="faq-q-text">Что такое ИИ-токены?</span><span class="faq-icon">+</span></div>
-        <div class="faq-a"><div class="faq-a-inner">Виртуальная валюта для ИИ-функций: лендинги, аватары, описания. Покупаются отдельно: 100 токенов = 300 ₽. ИИ Оформление = 150 токенов, ИИ Лендинг = 500.</div></div>
+        <div class="faq-q"><span class="faq-num">05</span><span class="faq-q-text">Что такое ИИ-токены?</span><span class="faq-icon">+</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Виртуальная валюта для ИИ-функций: лендинги, аватары, описания. Часть токенов уже включена в тариф, докупить можно отдельно.</div></div>
       </div>
     </div>
   </div>
@@ -548,9 +548,12 @@
 <!-- FINAL CTA -->
 <section class="cta-final">
   <div class="container">
-    <p class="reveal">→ Готовы начать?</p>
-    <h2 class="reveal">Откройте<br>личный кабинет</h2>
-    <a href="https://itcakes.ru/login" class="btn reveal">Войти в MAXМаркетинг</a>
+    <div class="cta-final-inner">
+      <p class="kicker reveal">Готовы начать?</p>
+      <h2 class="reveal">Откройте<br>личный кабинет</h2>
+      <p class="sub reveal">Подключите канал за 5 минут. Первые 2 дня — бесплатно.</p>
+      <a href="https://itcakes.ru/login" class="btn reveal btn-arrow">Войти в МАКС Маркетинг</a>
+    </div>
   </div>
 </section>
 
@@ -559,8 +562,8 @@
   <div class="container">
     <div class="footer-grid">
       <div>
-        <a href="#" class="logo" style="margin-bottom:16px;display:flex"><span class="logo-dot"></span>MAX/MARKETING</a>
-        <p style="font-family:var(--mono);font-size:0.78rem;color:var(--muted);max-width:300px;line-height:1.6">SaaS-платформа для управления каналами в мессенджере MAX. Маркетинг, аналитика, монетизация.</p>
+        <a href="#" class="logo"><span class="logo-mark">М</span>МАКС Маркетинг</a>
+        <p class="footer-about">SaaS-платформа для управления каналами в мессенджере MAX. Маркетинг, аналитика, монетизация.</p>
       </div>
       <div>
         <h4>Продукт</h4>
@@ -590,8 +593,8 @@
       </div>
     </div>
     <div class="footer-bottom">
-      <span>© 2026 MAXМаркетинг</span>
-      <span>Build 2.4 / Made in 2026</span>
+      <span>© 2026 МАКС Маркетинг</span>
+      <span>Все права защищены</span>
     </div>
   </div>
 </footer>
@@ -608,12 +611,12 @@
   }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
   document.querySelectorAll('.reveal, .reveal-stagger').forEach(el => io.observe(el));
 
-  // Subtle parallax for hero grid
-  const heroGrid = document.querySelector('.hero-grid');
-  if (heroGrid) {
+  // Subtle parallax for hero ambient blobs
+  const hero = document.querySelector('.hero');
+  if (hero) {
     window.addEventListener('scroll', () => {
-      const y = window.scrollY * 0.3;
-      heroGrid.style.transform = `translateY(${y}px)`;
+      const y = window.scrollY * 0.15;
+      hero.style.backgroundPosition = `center ${y}px`;
     }, { passive: true });
   }
 </script>
