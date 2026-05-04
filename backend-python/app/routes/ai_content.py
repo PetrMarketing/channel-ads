@@ -755,14 +755,27 @@ async def generate_posts(tc: str, session_id: int, user: Dict[str, Any] = Depend
     try:
         content = await openrouter_chat(full_prompt, model="anthropic/claude-sonnet-4")
     except HTTPException:
+        await _refund_tokens(user["id"], cost, f"Ошибка генерации контент-плана сессии {session_id}")
+        await execute(
+            "UPDATE ai_content_sessions SET status='draft', tokens_charged=0 WHERE id=$1",
+            session_id,
+        )
         raise
     except Exception as e:
-        await execute("UPDATE ai_content_sessions SET status='draft' WHERE id=$1", session_id)
+        await _refund_tokens(user["id"], cost, f"Ошибка обращения к ИИ для сессии {session_id}")
+        await execute(
+            "UPDATE ai_content_sessions SET status='draft', tokens_charged=0 WHERE id=$1",
+            session_id,
+        )
         raise HTTPException(status_code=500, detail=f"Ошибка обращения к ИИ: {e}")
 
     items = _parse_generated_posts(content)
     if not items:
-        await execute("UPDATE ai_content_sessions SET status='draft' WHERE id=$1", session_id)
+        await _refund_tokens(user["id"], cost, f"Невалидный ответ ИИ для сессии {session_id}")
+        await execute(
+            "UPDATE ai_content_sessions SET status='draft', tokens_charged=0 WHERE id=$1",
+            session_id,
+        )
         raise HTTPException(status_code=500, detail="ИИ вернул некорректный ответ. Попробуйте ещё раз.")
 
     # Сохраняем посты
@@ -1658,45 +1671,60 @@ async def generate_images_all(
                 total_charged += TOKENS_IMAGE_GEN
                 generated += 1
                 results.append({"post_id": post_id, "image_url": image_url, "mode": mode})
-                # Обновляем счётчик прогресса (атомарно — только запись в свой ключ)
+                # Атомарный snapshot для polling — frontend сразу подменит
+                # картинку на конкретном посте, не дожидаясь окончания батча.
                 bp = _BATCH_PROGRESS.get(sid)
                 if bp is not None:
                     bp["generated"] = generated
+                    bp["results"] = list(results)
             except HTTPException as e:
                 failed += 1
                 results.append({"post_id": post_id, "error": e.detail})
                 bp = _BATCH_PROGRESS.get(sid)
                 if bp is not None:
                     bp["failed"] = failed
+                    bp["results"] = list(results)
             except Exception as e:
                 failed += 1
                 results.append({"post_id": post_id, "error": str(e)})
                 bp = _BATCH_PROGRESS.get(sid)
                 if bp is not None:
                     bp["failed"] = failed
+                    bp["results"] = list(results)
 
-    try:
-        await asyncio.gather(*[process_post(dict(p)) for p in posts])
-    finally:
-        bp = _BATCH_PROGRESS.get(sid)
-        if bp is not None:
-            bp["in_progress"] = False
-            bp["generated"] = generated
-            bp["failed"] = failed
+    # Fire-and-forget. Возвращаем 202 сразу — батч из 10+ изображений запросто
+    # выходит за nginx proxy_read_timeout=300с и фронт ловит 504. Прогресс,
+    # финальные счётчики и список сгенерированных результатов фронт читает из
+    # /batch-progress (он уже опрашивается в UI каждые 1500мс).
+    async def _runner():
+        try:
+            await asyncio.gather(*[process_post(dict(p)) for p in posts])
+        except Exception as e:
+            print(f"[ai-content] batch runner exception sid={sid}: {type(e).__name__}: {e}")
+        finally:
+            bp = _BATCH_PROGRESS.get(sid)
+            if bp is not None:
+                bp["in_progress"] = False
+                bp["generated"] = generated
+                bp["failed"] = failed
+                bp["tokens_charged"] = total_charged
+                bp["results"] = results
+            # Запоминаем палитру в сессии — подставится в следующие генерации
+            if palette:
+                try:
+                    await execute(
+                        "UPDATE ai_content_sessions SET last_image_palette=$1, updated_at=NOW() WHERE id=$2",
+                        json_mod.dumps(palette, ensure_ascii=False), sid,
+                    )
+                except Exception as e:
+                    print(f"[ai-content] palette save failed sid={sid}: {e}")
 
-    # Запоминаем палитру в сессии — подставится в следующие генерации
-    if palette:
-        await execute(
-            "UPDATE ai_content_sessions SET last_image_palette=$1, updated_at=NOW() WHERE id=$2",
-            json_mod.dumps(palette, ensure_ascii=False), sid,
-        )
+    asyncio.create_task(_runner())
 
     return {
         "success": True,
-        "generated_count": generated,
-        "failed_count": failed,
-        "tokens_charged": total_charged,
-        "results": results,
+        "in_progress": True,
+        "total": len(posts),
     }
 
 

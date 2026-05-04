@@ -1614,7 +1614,7 @@ function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadP
 // =============================================================================
 // BATCH IMAGE GENERATION MODAL
 // =============================================================================
-function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onComplete, photos = [], onOpenPhotoBank, sessionPalette = [] }) {
+function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onComplete, onProgress, photos = [], onOpenPhotoBank, sessionPalette = [] }) {
   const { showToast } = useToast();
   const [palette, setPalette] = useState([]);
   const [format, setFormat] = useState('1:1');
@@ -1661,49 +1661,66 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
     setBusy(true);
     setProgress({ status: 'running', total: postsToProcess.length, generated: 0, failed: 0 });
 
-    // Polling прогресса каждые 1500ms
-    let pollTimer = setInterval(async () => {
-      try {
-        const p = await api.get(`/ai-content/${tc}/session/${sessionId}/batch-progress`);
-        if (p && p.success) {
-          setProgress(prev => prev && prev.status === 'running' ? {
-            ...prev,
-            total: p.total || prev.total,
-            generated: p.generated || 0,
-            failed: p.failed || 0,
-          } : prev);
-          if (!p.in_progress) {
-            clearInterval(pollTimer);
-            pollTimer = null;
-          }
-        }
-      } catch { /* ignore poll errors */ }
-    }, 1500);
-
     try {
-      const res = await api.post(`/ai-content/${tc}/session/${sessionId}/generate-images-all`, {
+      // POST стартует фоновый батч и сразу возвращается (~202). Все
+      // финальные данные (generated_count, failed_count, tokens_charged,
+      // results) приходят из /batch-progress когда in_progress=false.
+      const startRes = await api.post(`/ai-content/${tc}/session/${sessionId}/generate-images-all`, {
         format,
         palette,
         default_mode: defaultMode,
         photo_ids: photoScope === 'selected' ? selectedPhotoIds : [],
       });
-      if (res.success) {
-        setProgress({
-          status: 'done',
-          total: postsToProcess.length,
-          generated: res.generated_count,
-          failed: res.failed_count,
-        });
-        showToast(`Сгенерировано ${res.generated_count}/${postsToProcess.length} фото (-${res.tokens_charged} токенов)`, 'success');
-        onComplete && onComplete(res);
-      }
+      if (!startRes?.success) throw new Error(startRes?.error || 'Не удалось запустить батч');
     } catch (e) {
       showToast(e.message, 'error');
       setProgress(null);
-    } finally {
-      if (pollTimer) clearInterval(pollTimer);
       setBusy(false);
+      return;
     }
+
+    let lastSeenDone = 0;
+    let pollTimer = setInterval(async () => {
+      try {
+        const p = await api.get(`/ai-content/${tc}/session/${sessionId}/batch-progress`);
+        if (!p?.success) return;
+        const done = (p.generated || 0) + (p.failed || 0);
+        setProgress(prev => prev && prev.status === 'running' ? {
+          ...prev,
+          total: p.total || prev.total,
+          generated: p.generated || 0,
+          failed: p.failed || 0,
+        } : prev);
+        // Новый пост готов — дёргаем родителя, он перезагружает посты и
+        // конкретный пост рендерится с уже сгенерированной картинкой.
+        if (done > lastSeenDone) {
+          lastSeenDone = done;
+          try { onProgress && onProgress(p); } catch {}
+        }
+        if (!p.in_progress) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          setProgress({
+            status: 'done',
+            total: p.total || postsToProcess.length,
+            generated: p.generated || 0,
+            failed: p.failed || 0,
+          });
+          showToast(
+            `Сгенерировано ${p.generated || 0}/${p.total || postsToProcess.length} фото (-${p.tokens_charged || 0} токенов)`,
+            'success',
+          );
+          onComplete && onComplete({
+            success: true,
+            generated_count: p.generated || 0,
+            failed_count: p.failed || 0,
+            tokens_charged: p.tokens_charged || 0,
+            results: p.results || [],
+          });
+          setBusy(false);
+        }
+      } catch { /* ignore poll errors */ }
+    }, 1500);
   };
 
   return (
@@ -2152,6 +2169,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
   const handleImageGenerated = () => { onReload(); };
 
   const handleBatchComplete = () => { onReload(); };
+  const handleBatchProgress = () => { onReload(); };
 
   return (
     <div style={{ animation: 'aicFade 0.4s ease both' }}>
@@ -2362,6 +2380,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
         sessionId={sessionId}
         postsToProcess={postsWithoutImage}
         onComplete={handleBatchComplete}
+        onProgress={handleBatchProgress}
         photos={photos}
         onOpenPhotoBank={() => { setShowBatchModal(false); setShowPhotoBank(true); }}
         sessionPalette={sessionPalette}
