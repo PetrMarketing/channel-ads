@@ -262,19 +262,58 @@ async def list_products(tc: str, category_id: Optional[int] = Query(None), user=
     channel = await _get_owned_channel(tc, user["id"])
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
+    base_sql = """
+        SELECT p.*, c.name AS category_name,
+               COALESCE(
+                 (SELECT array_agg(pav.attribute_value_id ORDER BY pav.attribute_value_id)
+                  FROM shop_product_attribute_values pav WHERE pav.product_id = p.id),
+                 ARRAY[]::int[]
+               ) AS attribute_value_ids
+        FROM shop_products p
+        LEFT JOIN shop_categories c ON c.id = p.category_id
+        WHERE p.channel_id = $1
+    """
     if category_id:
         products = await fetch_all(
-            """SELECT p.*, c.name AS category_name FROM shop_products p
-               LEFT JOIN shop_categories c ON c.id = p.category_id
-               WHERE p.channel_id = $1 AND p.category_id = $2 ORDER BY p.created_at DESC""",
-            channel["id"], category_id)
+            base_sql + " AND p.category_id = $2 ORDER BY p.created_at DESC",
+            channel["id"], category_id,
+        )
     else:
         products = await fetch_all(
-            """SELECT p.*, c.name AS category_name FROM shop_products p
-               LEFT JOIN shop_categories c ON c.id = p.category_id
-               WHERE p.channel_id = $1 ORDER BY p.created_at DESC""",
-            channel["id"])
+            base_sql + " ORDER BY p.created_at DESC",
+            channel["id"],
+        )
     return {"success": True, "products": products}
+
+
+async def _set_product_attribute_values(product_id: int, channel_id: int, value_ids):
+    """Перезаписать привязки product → attribute_values. Атомарно: чистим всё
+    и вставляем заново. Принимает любой iterable из id; невалидные/чужие
+    отсекаются по принадлежности к каналу через JOIN."""
+    await execute("DELETE FROM shop_product_attribute_values WHERE product_id = $1", product_id)
+    cleaned = []
+    for v in (value_ids or []):
+        try:
+            cleaned.append(int(v))
+        except Exception:
+            continue
+    if not cleaned:
+        return
+    valid = await fetch_all(
+        """SELECT av.id FROM shop_attribute_values av
+           JOIN shop_attributes a ON a.id = av.attribute_id
+           WHERE av.id = ANY($1::int[]) AND a.channel_id = $2""",
+        cleaned, channel_id,
+    )
+    for row in valid:
+        try:
+            await execute(
+                """INSERT INTO shop_product_attribute_values (product_id, attribute_value_id)
+                   VALUES ($1, $2) ON CONFLICT DO NOTHING""",
+                product_id, row["id"],
+            )
+        except Exception as e:
+            print(f"[shop] attr_value insert failed product={product_id} val={row['id']}: {e}")
 
 
 @router.post("/{tc}/products")
@@ -297,6 +336,8 @@ async def create_product(tc: str, request: Request, user=Depends(get_current_use
         bool(body.get("is_hit", False)), bool(body.get("is_new", False)),
         body.get("image_url"), images,
     )
+    if "attribute_value_ids" in body:
+        await _set_product_attribute_values(pid, channel["id"], body.get("attribute_value_ids") or [])
     return {"success": True, "id": pid}
 
 
@@ -325,6 +366,8 @@ async def update_product(tc: str, pid: int, request: Request, user=Depends(get_c
         params.extend([pid, channel["id"]])
         await execute(
             f"UPDATE shop_products SET {', '.join(fields)} WHERE id = ${idx} AND channel_id = ${idx+1}", *params)
+    if "attribute_value_ids" in body:
+        await _set_product_attribute_values(pid, channel["id"], body.get("attribute_value_ids") or [])
     return {"success": True}
 
 

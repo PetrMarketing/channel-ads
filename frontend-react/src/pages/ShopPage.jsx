@@ -190,7 +190,7 @@ export default function ShopPage() {
   const [products, setProducts] = useState([]);
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [productForm, setProductForm] = useState({ name: '', description: '', category_id: '', price: '', compare_at_price: '', sku: '', stock: -1, is_hit: false, is_new: false, image_url: '' });
+  const [productForm, setProductForm] = useState({ name: '', description: '', category_id: '', price: '', compare_at_price: '', sku: '', stock: -1, is_hit: false, is_new: false, image_url: '', attribute_value_ids: [] });
   const [savingProduct, setSavingProduct] = useState(false);
   const [productFilter, setProductFilter] = useState('');
 
@@ -439,11 +439,11 @@ export default function ShopPage() {
 
   const headerCta = (() => {
     switch (tab) {
-      case 'products':    return { label: 'Добавить товар',     action: () => { setEditingProduct(null); setProductForm({ name: '', description: '', category_id: '', price: '', compare_at_price: '', sku: '', stock: -1, is_hit: false, is_new: false, image_url: '' }); setShowProductModal(true); } };
+      case 'products':    return { label: 'Добавить товар',     action: () => { setEditingProduct(null); setProductForm({ name: '', description: '', category_id: '', price: '', compare_at_price: '', sku: '', stock: -1, is_hit: false, is_new: false, image_url: '', attribute_value_ids: [] }); setShowProductModal(true); } };
       case 'categories':  return { label: 'Добавить категорию', action: () => { setEditingCategory(null); setCategoryForm({ name: '', description: '', parent_id: '', sort_order: 0 }); setShowCategoryModal(true); } };
       case 'delivery':    return { label: 'Способ доставки',    action: () => { setEditingDelivery(null); setDeliveryForm({ name: '', price: 0, free_from: '', estimated_days: '' }); setShowDeliveryModal(true); } };
       case 'promotions':  return { label: 'Создать акцию',      action: () => { setEditingPromo(null); setPromoForm({ name: '', promo_type: 'percent', code: '', discount_value: '', min_order_amount: '', max_uses: '', starts_at: '', expires_at: '' }); setShowPromoModal(true); } };
-      default:            return { label: 'Добавить товар',     action: () => { setTab('products'); setTimeout(() => { setEditingProduct(null); setProductForm({ name: '', description: '', category_id: '', price: '', compare_at_price: '', sku: '', stock: -1, is_hit: false, is_new: false, image_url: '' }); setShowProductModal(true); }, 60); } };
+      default:            return { label: 'Добавить товар',     action: () => { setTab('products'); setTimeout(() => { setEditingProduct(null); setProductForm({ name: '', description: '', category_id: '', price: '', compare_at_price: '', sku: '', stock: -1, is_hit: false, is_new: false, image_url: '', attribute_value_ids: [] }); setShowProductModal(true); }, 60); } };
     }
   })();
 
@@ -479,6 +479,7 @@ export default function ShopPage() {
           productForm={productForm} setProductForm={setProductForm}
           savingProduct={savingProduct} saveProduct={saveProduct}
           productFilter={productFilter} setProductFilter={setProductFilter}
+          attributes={attributes} onGoToAttributes={() => setTab('attributes')}
         />
       );
     }

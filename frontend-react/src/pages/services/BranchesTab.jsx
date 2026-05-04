@@ -122,7 +122,19 @@ export default function BranchesTab({
       </div>
 
       {/* Branch Modal */}
-      <Modal isOpen={showBranchModal} onClose={() => setShowBranchModal(false)} title={editingBranch ? 'Редактировать филиал' : 'Новый филиал'}>
+      <Modal
+        isOpen={showBranchModal}
+        onClose={() => setShowBranchModal(false)}
+        title={editingBranch ? 'Редактировать филиал' : 'Новый филиал'}
+        footer={
+          <>
+            <button className="btn btn-outline" onClick={() => setShowBranchModal(false)}>Отмена</button>
+            <button className="btn btn-primary" onClick={saveBranch} disabled={savingBranch}>
+              {savingBranch ? 'Сохранение...' : 'Сохранить'}
+            </button>
+          </>
+        }
+      >
         <div className="modal-form">
           <div className="form-group"><label>Название *</label><input className="form-input" value={branchForm.name} onChange={e => setBranchForm(p => ({ ...p, name: e.target.value }))} placeholder={branchForm.is_online ? 'Онлайн-консультация' : 'Салон на Невском'} /></div>
 
@@ -184,7 +196,6 @@ export default function BranchesTab({
             </div>
           </div>
 
-          <button className="btn btn-primary" onClick={saveBranch} disabled={savingBranch} style={{ marginTop: 12 }}>{savingBranch ? 'Сохранение...' : 'Сохранить'}</button>
         </div>
       </Modal>
     </div>

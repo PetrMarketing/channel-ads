@@ -10,6 +10,7 @@ export default function ShopProductsTab({
   productForm, setProductForm,
   savingProduct, saveProduct,
   productFilter, setProductFilter,
+  attributes = [], onGoToAttributes,
 }) {
   const [unlimitedStock, setUnlimitedStock] = useState(false);
   const [showFeedModal, setShowFeedModal] = useState(false);
@@ -106,7 +107,7 @@ export default function ShopProductsTab({
 
   const openCreate = () => {
     setEditingProduct(null);
-    setProductForm({ name: '', description: '', category_id: '', price: '', compare_at_price: '', sku: '', stock: -1, is_hit: false, is_new: false, image_url: '' });
+    setProductForm({ name: '', description: '', category_id: '', price: '', compare_at_price: '', sku: '', stock: -1, is_hit: false, is_new: false, image_url: '', attribute_value_ids: [] });
     setUnlimitedStock(true);
     setProductImages([]);
     setShowProductModal(true);
@@ -127,6 +128,7 @@ export default function ShopProductsTab({
       is_hit: !!prod.is_hit,
       is_new: !!prod.is_new,
       image_url: prod.image_url || '',
+      attribute_value_ids: Array.isArray(prod.attribute_value_ids) ? prod.attribute_value_ids.map(Number) : [],
     });
     setProductImages([]);
     loadProductImages(prod.id);
@@ -340,6 +342,86 @@ export default function ShopProductsTab({
               Новинка
             </label>
           </div>
+
+          {/* Параметры товара — выбор значений из существующих атрибутов */}
+          <div className="form-group" style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+            <label className="form-label">Параметры</label>
+            {attributes.length === 0 ? (
+              <div style={{
+                padding: '14px 16px', borderRadius: 10,
+                background: 'var(--bg-secondary)', border: '1px dashed var(--border)',
+                fontSize: '0.85rem', color: 'var(--text-secondary)',
+                display: 'flex', flexDirection: 'column', gap: 8,
+              }}>
+                <div>Параметры (Цвет, Размер, Память и т.п.) ещё не созданы.</div>
+                {onGoToAttributes && (
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ alignSelf: 'flex-start', padding: '6px 14px', fontSize: '0.82rem' }}
+                    onClick={() => { setShowProductModal(false); onGoToAttributes(); }}
+                  >Создать параметр</button>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {attributes.map(attr => {
+                  const values = attr.values || [];
+                  if (values.length === 0) return null;
+                  const selected = new Set(productForm.attribute_value_ids || []);
+                  return (
+                    <div key={attr.id}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+                        {attr.name}
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {values.map(v => {
+                          const isOn = selected.has(v.id);
+                          return (
+                            <button
+                              key={v.id}
+                              type="button"
+                              onClick={() => {
+                                setProductForm(p => {
+                                  const cur = new Set((p.attribute_value_ids || []).map(Number));
+                                  if (cur.has(v.id)) cur.delete(v.id);
+                                  else cur.add(v.id);
+                                  return { ...p, attribute_value_ids: Array.from(cur) };
+                                });
+                              }}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                padding: '6px 12px', borderRadius: 999,
+                                border: `1px solid ${isOn ? '#4361ee' : 'var(--border)'}`,
+                                background: isOn ? 'rgba(67,97,238,0.10)' : 'var(--bg-secondary)',
+                                color: isOn ? '#4361ee' : 'var(--text-primary)',
+                                fontWeight: isOn ? 600 : 400,
+                                fontSize: '0.82rem', cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              {v.color_hex && (
+                                <span style={{
+                                  width: 12, height: 12, borderRadius: '50%',
+                                  background: v.color_hex, border: '1px solid rgba(0,0,0,0.1)',
+                                  flexShrink: 0,
+                                }} />
+                              )}
+                              {v.image_url && !v.color_hex && (
+                                <img src={v.image_url} alt="" style={{ width: 16, height: 16, borderRadius: 3, objectFit: 'cover' }} />
+                              )}
+                              <span>{v.value}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <button className="btn btn-primary" onClick={saveProduct} disabled={savingProduct} style={{ marginTop: 12 }}>
             {savingProduct ? 'Сохранение...' : 'Сохранить'}
           </button>

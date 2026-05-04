@@ -810,6 +810,17 @@ async def generate_posts(tc: str, session_id: int, user: Dict[str, Any] = Depend
     if not session:
         raise HTTPException(status_code=404, detail="Сессия не найдена")
 
+    # Idempotency guard — если генерация для этой сессии уже идёт, не запускаем
+    # второй раннер (двойной клик / retry привели бы к двойным списаниям).
+    existing_tp = _TEXT_PROGRESS.get(session_id)
+    if existing_tp and existing_tp.get("in_progress"):
+        return {
+            "success": True,
+            "in_progress": True,
+            "total": existing_tp.get("total", 0),
+            "already_running": True,
+        }
+
     if not session.get("topic"):
         raise HTTPException(status_code=400, detail="Заполните бриф (тематика канала)")
     if (session.get("goal_sales") or 0) + (session.get("goal_warmup") or 0) + (session.get("goal_activity") or 0) != 100:
@@ -1349,34 +1360,63 @@ async def _build_image_prompt(
     photo_description: Optional[str],
     image_format: str,
 ) -> str:
-    """Зовёт Claude и получает text prompt для image-модели в стиле Midjourney/Imagen."""
+    """Зовёт Claude и получает text prompt для image-модели. Дефолт —
+    hyperrealistic фотография в указанной палитре, без надписей; если по
+    смыслу нужны надписи — только кириллица."""
     palette_block = _format_palette(palette) or "не задана"
     photo_block = (photo_description or "не задано")[:300] if mode in ("photo", "collage") else "не используется"
     fmt = image_format or "1:1"
 
     mode_hint = {
-        "text": "иллюстрация по тексту поста (без людей и фото) — концептуальный объект, метафора, графика",
-        "photo": f"использовать как референс фото: «{photo_block}». На итоговом изображении присутствует человек/предмет с фото в подходящей сцене",
-        "collage": f"коллаж из нескольких скриншотов/изображений ({photo_block})",
-    }.get(mode, "иллюстрация по тексту поста")
+        "text": (
+            "Hyperrealistic photographic SCENE that literally depicts the topic "
+            "of the post (real people or objects performing the activity, real "
+            "environment) — NOT an abstract metaphor, NOT graphic design, NOT a "
+            "conceptual icon. Treat the post as a brief and stage a photo shoot."
+        ),
+        "photo": (
+            f"Hyperrealistic photo using this reference photo as subject "
+            f"description: «{photo_block}». The same person/object appears in a "
+            f"new scene that matches the post topic."
+        ),
+        "collage": (
+            f"Photographic collage composed of multiple realistic shots "
+            f"({photo_block}). Cohesive lighting and palette across panels."
+        ),
+    }.get(mode, "Hyperrealistic photographic scene illustrating the post topic")
 
     sys_prompt = (
-        "Ты — арт-директор. На основе поста и заданного режима сгенерируй ОДИН промт "
-        "(на английском, 60–140 слов) для нейросети для создания иллюстрации к посту "
-        "в стиле Midjourney/Imagen. Учитывай цветовую палитру если задана. "
-        "Опиши: композицию, освещение, материалы, стилистику, настроение. "
-        "Без надписей и текста на изображении. "
-        "Верни СТРОГО только сам промт, без префиксов «Prompt:», без markdown."
+        "You are a senior art director crafting prompts for a top-tier image "
+        "generation model (Midjourney / Imagen / Flux quality).\n\n"
+        "OUTPUT REQUIREMENTS:\n"
+        "- Return ONE prompt in English, 90–160 words, no preface, no markdown.\n"
+        "- Default style is HYPERREALISTIC PHOTOGRAPHY — real human skin texture, "
+        "  natural lighting, real environment, shallow depth of field, sharp focus, "
+        "  film grain, 8k resolution. Avoid abstract, conceptual, vector, "
+        "  illustration, graphic design, 3D render, cartoon UNLESS the post "
+        "  explicitly demands it.\n"
+        "- Compose like a photographer: subject + action + setting + camera angle + "
+        "  lens + lighting (e.g. soft diffused window light, golden hour, studio "
+        "  softbox) + mood.\n"
+        "- COLOR PALETTE is a hard constraint — name the dominant tones explicitly "
+        "  in the prompt and instruct the model to keep walls, props, clothing, "
+        "  background within that palette.\n"
+        "- TEXT ON IMAGE: by default 'No text, no logos, no watermarks'. Only if "
+        "  the post genuinely requires text on the image (e.g. a visible price tag, "
+        "  street sign, a quote) — instruct the model to render Russian (Cyrillic) "
+        "  text only, with accurate cyrillic typography, no Latin characters.\n"
+        "- End with photographic technical tags: 'shallow depth of field, sharp "
+        "  focus, soft shadows, hyperrealistic skin texture, film grain, 8k'.\n"
     )
 
-    user_prompt = f"""ТЕКСТ ПОСТА:
+    user_prompt = f"""POST TEXT (the brief — translate the topic into a real scene):
 {(post_text or '')[:2000]}
 
-РЕЖИМ ИЛЛЮСТРАЦИИ: {mode_hint}
-ЦВЕТОВАЯ ПАЛИТРА: {palette_block}
-СООТНОШЕНИЕ СТОРОН: {fmt}
+ILLUSTRATION MODE: {mode_hint}
+COLOR PALETTE (must dominate): {palette_block}
+ASPECT RATIO: {fmt}
 
-Верни только сам промт."""
+Return only the final prompt (one paragraph, English)."""
 
     full = sys_prompt + "\n\n" + user_prompt
     raw = await openrouter_chat(full, model="anthropic/claude-sonnet-4")
@@ -1558,7 +1598,9 @@ async def _do_image_generation_for_post(
         if ref and ref.get("file_path"):
             photo_base64 = _read_photo_base64(ref["file_path"])
 
-    # Усиление промпта форматом и палитрой (image-модель не поддерживает aspect ratio параметр напрямую)
+    # Safety net поверх промпта: aspect ratio (image-модель не понимает --ar
+    # параметр напрямую), палитра как hard constraint, фотореализм по умолчанию,
+    # русская кириллица если текст всё-таки появится.
     palette_str = _format_palette(palette)
     enhanced = prompt
     fmt_hint = {
@@ -1569,8 +1611,23 @@ async def _do_image_generation_for_post(
     if fmt_hint:
         enhanced = f"{enhanced}\n\n{fmt_hint}"
     if palette_str:
-        enhanced = f"{enhanced}\n\nUse this brand color palette: {palette_str}."
-    enhanced += "\n\nNo text, no letters, no captions on the image."
+        enhanced = (
+            f"{enhanced}\n\nDominant color palette (HARD CONSTRAINT): {palette_str}. "
+            f"Walls, props, clothing, background and accents must stay within this palette."
+        )
+    enhanced += (
+        "\n\nPhotographic realism is mandatory: real human skin texture, natural "
+        "lighting, real-world environment, sharp focus, shallow depth of field, soft "
+        "shadows, hyperrealistic 8k resolution, subtle film grain. NO abstract "
+        "shapes, NO vector art, NO illustration, NO 3D render, NO cartoon, NO "
+        "graphic-design aesthetic — unless the post explicitly asks for them."
+    )
+    enhanced += (
+        "\n\nText on image: prefer NO text, no captions, no logos, no watermarks. "
+        "If text is essential to the scene (sign, price tag, label, document) — "
+        "render ONLY Russian (Cyrillic) characters with accurate cyrillic "
+        "typography. No Latin letters, no fake glyphs, no gibberish."
+    )
 
     image_result = await openrouter_image_gen(enhanced, photo_base64)
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
@@ -1689,6 +1746,19 @@ async def generate_images_all(
     session = await _get_session(sid, user["id"], channel["id"])
     if not session:
         raise HTTPException(status_code=404, detail="Сессия не найдена")
+
+    # Idempotency guard — если батч для этой сессии уже идёт, не запускаем
+    # второй раннер (раньше двойной клик / retry на фронте приводил к тому,
+    # что один и тот же пост обрабатывался 2-4 раза и за каждый списывалось
+    # 10 токенов). Возвращаем успех, фронт продолжит polling существующего.
+    existing_bp = _BATCH_PROGRESS.get(sid)
+    if existing_bp and existing_bp.get("in_progress"):
+        return {
+            "success": True,
+            "in_progress": True,
+            "total": existing_bp.get("total", 0),
+            "already_running": True,
+        }
 
     body = await request.json()
     image_format = (body.get("format") or "1:1").strip()

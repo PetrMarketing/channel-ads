@@ -1017,7 +1017,9 @@ tr:hover td {
     border: 1px solid var(--border);
     width: 100%;
     max-width: 520px;
-    max-height: 90vh;
+    /* dvh учитывает адресную строку Safari — модалка не уезжает за экран */
+    max-height: 80vh;
+    max-height: 80dvh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -1070,7 +1072,11 @@ tr:hover td {
 .modal-body {
     padding: 24px;
     overflow-y: auto;
-    flex: 1;
+    flex: 1 1 auto;
+    /* min-height:0 критично — без этого flex-ребёнок отказывается сжиматься
+       меньше своего контента, модалка вылазит за max-height и footer уезжает
+       за низ экрана. Это классический flexbox quirk. */
+    min-height: 0;
 }
 
 .modal-footer {
@@ -3147,7 +3153,8 @@ select.form-input option {
 
     .modal {
         margin: 10px;
-        max-height: calc(100vh - 20px);
+        max-height: 85vh;
+        max-height: 85dvh;
     }
 
     .modal-header h3 {
@@ -4544,15 +4551,21 @@ button[role="tab"][aria-selected="true"] {
     max-width: 100%;
   }
 
-  /* — Modals — keep within viewport — */
+  /* — Modals — keep within viewport. Внутренние flex-дети сами управляют
+     scroll'ом (modal-body скроллится, modal-footer sticky). НЕ ставим
+     overflow на сам .modal — это ломает sticky-footer и кнопка «Сохранить»
+     уезжает вниз за пределы экрана. Используем dvh (dynamic viewport height)
+     с fallback на vh — учитывает адресную строку Safari. */
   .modal,
   .modal-content,
   .modal-dialog,
   .dp-modal {
     max-width: calc(100vw - 24px) !important;
-    max-height: 90vh !important;
-    overflow-y: auto !important;
+    max-height: 85vh !important;
+    max-height: 85dvh !important;
+    overflow: hidden !important;
   }
+  .modal-body { max-height: none !important; overflow-y: auto !important; }
 
   /* — Common page-header pattern: title row with actions — wrap — */
   .page-header,
