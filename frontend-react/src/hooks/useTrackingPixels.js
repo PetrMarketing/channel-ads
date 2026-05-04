@@ -11,6 +11,29 @@
  */
 import { useEffect, useCallback, useMemo, useRef } from 'react';
 
+// Stable per-browser pseudo-cid stored in our own cookie. Used in MAX in-app
+// browser where mc.yandex.ru is unreachable (SSL error) and `_ym_uid` cookie
+// never gets set. The same value is sent to YM via the proxy beacon — YM treats
+// each unique cid as one synthetic visitor and attributes goals to it.
+function getOrCreateCid() {
+  if (typeof document === 'undefined') return null;
+  try {
+    const m = document.cookie.match(/(?:^|;\s*)_ym_uid=([^;]+)/);
+    if (m && m[1]) return decodeURIComponent(m[1]);
+  } catch {}
+  try {
+    const m = document.cookie.match(/(?:^|;\s*)pk_cid=([^;]+)/);
+    if (m && m[1]) return decodeURIComponent(m[1]);
+  } catch {}
+  // 19-char numeric cid in the same shape YM uses ({timestamp}{6 random digits}).
+  const cid = `${Date.now()}${Math.floor(100000 + Math.random() * 899999)}`;
+  try {
+    const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString();
+    document.cookie = `pk_cid=${cid}; expires=${expires}; path=/; SameSite=Lax`;
+  } catch {}
+  return cid;
+}
+
 export function useTrackingPixels(info) {
   const counterId = info?.ym_counter_id || info?.channel_ym_id || info?.yandex_metrika_id;
   const pixelId = info?.vk_pixel_id || info?.channel_vk_pixel_id;
@@ -70,21 +93,23 @@ export function useTrackingPixels(info) {
       console.info('[track] YM tag.js injected');
     }
 
-    // Image-beacon visit registration. Fires in parallel with tag.js so the
-    // visit is recorded even when tag.js fails (SSL error in MAX in-app
-    // browser, AdBlock, network filter). YM accepts the GET, sets _ym_uid
-    // cookie and registers the hit. Subsequent reads of `_ym_uid` give us
-    // a stable cid even if tag.js never loads.
+    // Image-beacon visit registration via our /_ymp proxy — works around
+    // MAX in-app browser SSL incompatibility with mc.yandex.ru. The browser
+    // hits us (valid SSL), we forward server-to-server with X-Forwarded-For.
+    // We attach our own UUID-style cid so YM consistently attributes the
+    // visit and any future goal hit to the same synthetic visitor.
     try {
-      const url = `https://mc.yandex.ru/watch/${encodeURIComponent(counterId)}` +
+      const cid = getOrCreateCid();
+      const cidPart = cid ? `:cid:${encodeURIComponent(cid)}` : '';
+      const url = `/_ymp/watch/${encodeURIComponent(counterId)}` +
         `?page-url=${encodeURIComponent(window.location.href)}` +
         `&page-ref=${encodeURIComponent(document.referrer || '')}` +
-        `&browser-info=ifr:0:ti:0` +
+        `&browser-info=ifr:0${cidPart}:ti:0` +
         `&ut=noindex&t=${Date.now()}`;
       const img = new Image(1, 1);
       img.referrerPolicy = 'no-referrer-when-downgrade';
       img.src = url;
-      console.info('[track] YM init beacon fired', counterId);
+      console.info('[track] YM init beacon fired (proxy)', counterId, 'cid=', cid);
     } catch (e) {
       console.info('[track] YM init beacon failed', e);
     }
@@ -115,12 +140,25 @@ export function useTrackingPixels(info) {
       document.head.appendChild(script);
       console.info('[track] VK code.js injected');
     }
+
+    // Image-beacon pageView via our /_vkp proxy — bypasses the same SSL
+    // incompatibility MAX has with top-fwz1.mail.ru.
+    try {
+      const url = `/_vkp/counter?id=${encodeURIComponent(pixelId)}` +
+        `&js=na&t=${Date.now()}`;
+      const img = new Image(1, 1);
+      img.referrerPolicy = 'no-referrer-when-downgrade';
+      img.src = url;
+      console.info('[track] VK init beacon fired (proxy)', pixelId);
+    } catch (e) {
+      console.info('[track] VK init beacon failed', e);
+    }
   }, [pixelId, info]);
 
-  // Get YM ClientID — try tag.js global first, fall back to _ym_uid cookie
-  // (which is the same value YM uses internally). Cookie fallback is critical
-  // for MAX in-app browser where tag.js fails SSL but image beacons still set
-  // the cookie.
+  // Get YM ClientID — three-tier fallback:
+  //   1. tag.js global (best — real ClientID)
+  //   2. _ym_uid cookie (set by tag.js if it loaded once before)
+  //   3. our pk_cid cookie (synthetic UUID for MAX in-app browser case)
   const getYmClientIdSync = useCallback(() => {
     if (!counterId) return null;
     try {
@@ -130,11 +168,7 @@ export function useTrackingPixels(info) {
         if (v) return v;
       }
     } catch {}
-    try {
-      const m = document.cookie.match(/(?:^|;\s*)_ym_uid=([^;]+)/);
-      if (m && m[1]) return decodeURIComponent(m[1]);
-    } catch {}
-    return null;
+    return getOrCreateCid();
   }, [counterId]);
 
   // Fire YM goal via BOTH JS API and image beacon.
@@ -148,18 +182,18 @@ export function useTrackingPixels(info) {
     } catch (e) {
       console.info('[track] YM reachGoal (js) failed', e);
     }
-    // 2. Image beacon — direct GET to mc.yandex.ru, works without tag.js.
+    // 2. Image beacon via /_ymp proxy — works in MAX in-app browser too.
     try {
       const cid = getYmClientIdSync();
       const cidPart = cid ? `:cid:${encodeURIComponent(cid)}` : '';
-      const url = `https://mc.yandex.ru/watch/${encodeURIComponent(counterId)}` +
+      const url = `/_ymp/watch/${encodeURIComponent(counterId)}` +
         `?browser-info=ifr:0${cidPart}:ti:0:goal:${encodeURIComponent(goal)}` +
         `&page-url=${encodeURIComponent(window.location.href)}` +
         `&ut=noindex&t=${Date.now()}`;
       const img = new Image(1, 1);
       img.referrerPolicy = 'no-referrer-when-downgrade';
       img.src = url;
-      console.info('[track] YM reachGoal (beacon)', counterId, goal);
+      console.info('[track] YM reachGoal (proxy beacon)', counterId, goal);
     } catch (e) {
       console.info('[track] YM reachGoal (beacon) failed', e);
     }
@@ -176,14 +210,14 @@ export function useTrackingPixels(info) {
     } catch (e) {
       console.info('[track] VK reachGoal (js) failed', e);
     }
-    // 2. Image beacon — Top.Mail.Ru noscript fallback URL.
+    // 2. Image beacon via /_vkp proxy — works in MAX in-app browser too.
     try {
-      const url = `https://top-fwz1.mail.ru/counter?id=${encodeURIComponent(pixelId)}` +
+      const url = `/_vkp/counter?id=${encodeURIComponent(pixelId)}` +
         `&type=reachGoal&goal=${encodeURIComponent(goal)}&js=na&t=${Date.now()}`;
       const img = new Image(1, 1);
       img.referrerPolicy = 'no-referrer-when-downgrade';
       img.src = url;
-      console.info('[track] VK reachGoal (beacon)', pixelId, goal);
+      console.info('[track] VK reachGoal (proxy beacon)', pixelId, goal);
     } catch (e) {
       console.info('[track] VK reachGoal (beacon) failed', e);
     }

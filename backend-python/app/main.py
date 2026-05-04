@@ -9,7 +9,7 @@ from datetime import datetime, date
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse, Response
 
 
 class _SafeEncoder(json.JSONEncoder):
@@ -131,6 +131,50 @@ if os.path.isdir(frontend_dist):
     async def serve_promo_landing():
         landing_path = os.path.join(os.path.dirname(__file__), "routes", "maxmarketing_landing.html")
         return FileResponse(landing_path, media_type="text/html")
+
+    # Reverse proxies for analytics pixels — MAX in-app browser fails SSL on
+    # mc.yandex.ru and top-fwz1.mail.ru directly. Browser hits us instead and
+    # we forward server-to-server. Real user IP/UA are passed via X-Forwarded-*
+    # so YM/VK can attribute. Cookies aren't relayed (they're set by upstream
+    # on the wrong domain), so the frontend uses its own UUID cid for
+    # attribution.
+    import aiohttp as _aiohttp
+    _PROXY_TIMEOUT = _aiohttp.ClientTimeout(total=5)
+
+    async def _pixel_proxy(upstream_base: str, path: str, request: Request):
+        qs = request.url.query
+        target = f"{upstream_base.rstrip('/')}/{path}{('?' + qs) if qs else ''}"
+        real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+        ua = request.headers.get("user-agent", "")
+        headers = {
+            "User-Agent": ua,
+            "Accept": "image/*,*/*;q=0.5",
+        }
+        if real_ip:
+            headers["X-Forwarded-For"] = real_ip
+            headers["X-Real-IP"] = real_ip
+        try:
+            async with _aiohttp.ClientSession(timeout=_PROXY_TIMEOUT) as s:
+                async with s.get(target, headers=headers, allow_redirects=False) as resp:
+                    body = await resp.read()
+                    return Response(
+                        content=body,
+                        status_code=resp.status,
+                        media_type=resp.headers.get("content-type", "image/gif"),
+                    )
+        except Exception as e:
+            print(f"[pixel-proxy] {target[:200]} → {type(e).__name__}: {e}")
+            # Return a 1x1 gif so the <img> doesn't error in console.
+            gif = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+            return Response(content=gif, status_code=200, media_type="image/gif")
+
+    @app.get("/_ymp/{path:path}", include_in_schema=False)
+    async def yandex_metrika_proxy(path: str, request: Request):
+        return await _pixel_proxy("https://mc.yandex.ru", path, request)
+
+    @app.get("/_vkp/{path:path}", include_in_schema=False)
+    async def vk_pixel_proxy(path: str, request: Request):
+        return await _pixel_proxy("https://top-fwz1.mail.ru", path, request)
 
     # Serve assets
     assets_dir = os.path.join(frontend_dist, "assets")

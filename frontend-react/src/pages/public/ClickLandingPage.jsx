@@ -73,10 +73,13 @@ export default function ClickLandingPage() {
 
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  // Mounts YM tag.js (and VK code.js if configured) — sets _ym_uid cookie
-  // and primes window.ym so getClientID resolves. We do NOT call reachGoals
-  // here — the server fires the goal after atomic claim.
-  const { ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
+  // Mounts YM tag.js (and VK code.js if configured), generates pk_cid in
+  // cookie, fires init beacon via /_ymp proxy. We ALSO call reachGoals at
+  // click time — server-side fire from our datacenter IP gets filtered by
+  // YM, but the click-time fire goes through the user's browser via the
+  // proxy (real user IP) and counts reliably. Tradeoff: ~5-15% overcount
+  // since some users click but never finish subscribing.
+  const { reachGoals, ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
 
   const buildBotUrl = useCallback(() => {
     // ВСЕГДА используем go_ префикс — Mini App URL бота указывает на
@@ -119,11 +122,17 @@ export default function ClickLandingPage() {
       }
     }
 
+    // Fire YM/VK goals from the user's browser via /_ymp proxy. Image-beacon
+    // GETs use the user's IP, so the goal attaches to the same session as
+    // the visit hit — guaranteed to count in YM reports. Server-side fire
+    // after subscription stays as a backup (idempotent via cid dedupe).
+    try { reachGoals(); } catch {}
+
     // Hard navigate (assign, not href, to preserve back-button history).
     if (typeof window !== 'undefined') {
       window.location.assign(targetUrl);
     }
-  }, [visitId, ymClientIdPromise, getYmClientIdSync, buildBotUrl]);
+  }, [visitId, ymClientIdPromise, getYmClientIdSync, buildBotUrl, reachGoals]);
 
   if (loading) return (
     <div style={{
