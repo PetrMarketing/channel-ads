@@ -270,7 +270,7 @@ function EmptyPins({ onCreate }) {
 
       <button className="pins-primary" style={primaryBtn} onClick={onCreate}>
         <PlusIcon />
-        Создать пин
+        Создать закреп
       </button>
     </div>
   );
@@ -694,7 +694,7 @@ export default function PinsPage() {
   };
 
   const isPinsTab = activeTab === 'pins';
-  const headerCtaLabel = isPinsTab ? 'Создать пин' : 'Создать лид-магнит';
+  const headerCtaLabel = isPinsTab ? 'Создать закреп' : 'Создать лид-магнит';
   const headerCtaAction = isPinsTab ? openCreatePin : openCreateLm;
 
   return (
@@ -987,7 +987,7 @@ export default function PinsPage() {
           </section>
         )}
 
-        <Modal isOpen={showPinModal} onClose={() => setShowPinModal(false)} title={editingPin ? 'Редактировать пин' : 'Создать пин-пост'}>
+        <Modal isOpen={showPinModal} onClose={() => setShowPinModal(false)} title={editingPin ? 'Редактировать закреп' : 'Создать закреп'}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
               <label style={labelStyle}>Название</label>

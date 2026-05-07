@@ -242,17 +242,18 @@ export default function Header({ onToggleSidebar, onBurgerClick }) {
           </button>
         )}
 
-        {/* + Канал */}
+        {/* Мои каналы */}
         <button onClick={() => navigate('/')} data-tour="add-channel"
           className="header-add-channel-btn"
           style={{ ...addChannelBtn, animation: 'hdrFadeIn 0.4s ease 0.15s both' }}
           onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 6px 20px ${ACCENT}50`; }}
           onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = `0 4px 14px ${ACCENT}40`; }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <path d="M12 5v14M5 12h14"/>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12l2-2 4 4 8-8 4 4"/>
+            <path d="M3 18h18"/>
           </svg>
-          <span className="header-add-channel-label">Канал</span>
+          <span className="header-add-channel-label">Мои каналы</span>
         </button>
 
         {/* Profile */}

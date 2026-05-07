@@ -27,6 +27,8 @@ export default function DashboardPage() {
   const [saving, setSaving] = useState(false);
   const [, setAddPlatform] = useState('max');
   const [unclaimedChannels, setUnclaimedChannels] = useState([]);
+  const [bonuses, setBonuses] = useState([]);
+  const [bonusBusyKey, setBonusBusyKey] = useState(null);
   const pollRef = useRef(null);
   const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
   const maxBotName = import.meta.env.VITE_MAX_BOT_NAME || 'PKMarketing';
@@ -57,6 +59,32 @@ export default function DashboardPage() {
       if (data.success) setUnclaimedChannels(data.channels || []);
     } catch {}
   }, []);
+
+  const loadBonuses = useCallback(async () => {
+    try {
+      const data = await api.get('/dashboard/subscription-bonuses');
+      if (data.success) setBonuses(data.bonuses || []);
+    } catch {}
+  }, []);
+
+  useEffect(() => { loadBonuses(); }, [loadBonuses]);
+
+  const claimBonus = async (b) => {
+    setBonusBusyKey(b.key);
+    try {
+      const data = await api.post(`/dashboard/subscription-bonuses/${b.key}/claim`);
+      if (data.success) {
+        showToast(data.already_claimed ? 'Бонус уже получен' : `+${b.ai_tokens} ИИ-токенов начислено`, 'success');
+        loadBonuses();
+      } else {
+        showToast(data.error || 'Не удалось проверить подписку', 'error');
+      }
+    } catch (e) {
+      showToast(e.message || 'Подписка не найдена', 'error');
+    } finally {
+      setBonusBusyKey(null);
+    }
+  };
 
   const claimChannel = async (trackingCode) => {
     try {
@@ -216,6 +244,79 @@ export default function DashboardPage() {
         </section>
       )}
 
+      {/* SUBSCRIPTION BONUSES — +N ИИ-токенов за подписку на канал */}
+      {bonuses.length > 0 && (
+        <section style={{ marginBottom: 28 }}>
+          <SectionHeader title="Бонусы за подписку" subtitle="Подпишитесь на каналы и получите ИИ-токены" />
+          <div style={{
+            display: 'grid', gap: 12,
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          }}>
+            {bonuses.map((b, i) => (
+              <div
+                key={b.key}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  padding: 14, borderRadius: 14,
+                  background: '#fff',
+                  border: `1px solid ${ACCENT2}25`,
+                  boxShadow: `0 2px 10px ${ACCENT2}10`,
+                  animation: `dashFadeUp 0.4s ease ${0.05 + i * 0.04}s both`,
+                }}
+              >
+                <div style={{
+                  width: 52, height: 52, borderRadius: 12,
+                  background: b.avatar_url
+                    ? `url(${b.avatar_url}) center/cover`
+                    : `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})`,
+                  flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', fontWeight: 800, fontSize: '1.1rem',
+                  boxShadow: `0 3px 10px ${ACCENT2}30`,
+                }}>
+                  {!b.avatar_url && (b.title || '?')[0]}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: DARK, fontSize: '0.92rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {b.title}
+                  </div>
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4,
+                    fontSize: '0.78rem', fontWeight: 700, color: ACCENT2,
+                    background: `${ACCENT2}10`, padding: '2px 8px', borderRadius: 12,
+                  }}>
+                    +{b.ai_tokens} ИИ-токенов
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                  <a href={b.url} target="_blank" rel="noreferrer"
+                    style={{
+                      textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '7px 14px', borderRadius: 10, fontSize: '0.78rem', fontWeight: 600,
+                      color: '#fff', background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})`,
+                      boxShadow: `0 2px 8px ${ACCENT}30`,
+                    }}>
+                    Подписаться
+                  </a>
+                  <button
+                    onClick={() => claimBonus(b)}
+                    disabled={bonusBusyKey === b.key}
+                    style={{
+                      padding: '6px 12px', borderRadius: 10, fontSize: '0.74rem', fontWeight: 600,
+                      cursor: bonusBusyKey === b.key ? 'wait' : 'pointer',
+                      background: '#fff', color: ACCENT2,
+                      border: `1px solid ${ACCENT2}40`,
+                      opacity: bonusBusyKey === b.key ? 0.6 : 1,
+                    }}>
+                    {bonusBusyKey === b.key ? 'Проверяем…' : 'Я подписался'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* CHANNELS — список каналов */}
       <section style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
@@ -281,35 +382,28 @@ export default function DashboardPage() {
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Добавить канал">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ padding: 16, background: '#fafbfc', border: '1px solid #f0f0f0', borderRadius: 10 }}>
-            {!user?.max_user_id ? (
-              <>
-                <h4 style={{ marginBottom: 8, fontSize: '0.95rem' }}>Подключите MAX</h4>
-                <p style={{ marginBottom: 12, color: MUTED, fontSize: '0.88rem', lineHeight: 1.5 }}>
-                  Чтобы добавлять MAX-каналы, сначала авторизуйтесь через MAX-бота.
+            <h4 style={{ marginBottom: 8, fontSize: '0.95rem' }}>Добавьте бота в канал</h4>
+            <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 10, fontSize: '0.88rem', color: '#333' }}>
+              <li>Добавьте бота в подписчики канала:
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                  <code style={codePill} onClick={() => { navigator.clipboard.writeText(`@${maxBotUsername}`); showToast('Скопировано'); }}>@{maxBotUsername}</code>
+                  <span style={{ fontSize: '0.78rem', color: MUTED, alignSelf: 'center' }}>или</span>
+                  <code style={codePill} onClick={() => { navigator.clipboard.writeText(maxBotName); showToast('Скопировано'); }}>{maxBotName}</code>
+                </div>
+              </li>
+              <li>Откройте канал → <b>Настройки</b> → <b>Администраторы</b> → назначьте бота администратором</li>
+              <li>Канал появится автоматически в списке</li>
+            </ol>
+            {!user?.max_user_id && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px dashed #e5e7eb` }}>
+                <p style={{ marginBottom: 10, color: MUTED, fontSize: '0.82rem', lineHeight: 1.5 }}>
+                  Не привязали MAX к аккаунту? Откройте бота — он пришлёт ссылку для входа.
                 </p>
                 <a href={`https://max.ru/${maxBotUsername}?start=auth`} target="_blank" rel="noreferrer"
                   className="btn btn-primary" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, background: ACCENT2 }}>
                   💬 Открыть бота в MAX
                 </a>
-                <p style={{ fontSize: '0.78rem', color: MUTED, marginTop: 10 }}>
-                  Нажмите кнопку — бот пришлёт ссылку для привязки аккаунта.
-                </p>
-              </>
-            ) : (
-              <>
-                <h4 style={{ marginBottom: 8, fontSize: '0.95rem' }}>Добавьте бота в канал</h4>
-                <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 10, fontSize: '0.88rem', color: '#333' }}>
-                  <li>Добавьте бота в подписчики канала:
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                      <code style={codePill} onClick={() => { navigator.clipboard.writeText(`@${maxBotUsername}`); showToast('Скопировано'); }}>@{maxBotUsername}</code>
-                      <span style={{ fontSize: '0.78rem', color: MUTED, alignSelf: 'center' }}>или</span>
-                      <code style={codePill} onClick={() => { navigator.clipboard.writeText(maxBotName); showToast('Скопировано'); }}>{maxBotName}</code>
-                    </div>
-                  </li>
-                  <li>Откройте канал → <b>Настройки</b> → <b>Администраторы</b> → назначьте бота администратором</li>
-                  <li>Канал появится автоматически в списке</li>
-                </ol>
-              </>
+              </div>
             )}
           </div>
 

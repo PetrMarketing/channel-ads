@@ -887,7 +887,7 @@ const MODE_OPTIONS = [
   { id: 'collage', emoji: '🖼️', label: 'Коллаж', sub: 'Из подборки фото' },
 ];
 
-function PostCard({ post, onEdit, onDelete, onPublishNow, onSchedule, busyId, onGenerateImage, onRegenerateImage, onDeleteImage, imageBusyId, selected, onToggleSelect, onOpenInPublications }) {
+function PostCard({ post, onEdit, onDelete, onPublishNow, onSchedule, busyId, onGenerateImage, onRegenerateImage, onDeleteImage, imageBusyId, imageGenerating = false, selected, onToggleSelect, onOpenInPublications }) {
   const [expanded, setExpanded] = useState(false);
   const goalMeta = GOAL_META[post.goal_type] || GOAL_META.warmup;
   const isPublished = !!post.published_post_id;
@@ -1007,6 +1007,27 @@ function PostCard({ post, onEdit, onDelete, onPublishNow, onSchedule, busyId, on
                 title="Удалить картинку"
               >🗑</button>
             </div>
+          </div>
+        ) : imageGenerating ? (
+          <div
+            aria-label="Картинка генерируется"
+            style={{
+              position: 'relative',
+              width: '100%', height: 160,
+              borderRadius: 12,
+              background: 'repeating-linear-gradient(45deg, #eef0f4 0 12px, #e6e9ef 12px 24px)',
+              border: `1px solid ${BORDER}`,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 8,
+              animation: 'aicShimmer 1.6s linear infinite',
+              backgroundSize: '200% 100%',
+            }}
+          >
+            <svg width="26" height="26" viewBox="0 0 24 24" style={{ animation: 'aicSpin 1.4s linear infinite' }}>
+              <circle cx="12" cy="12" r="9" fill="none" stroke="#cdd2db" strokeWidth="2.5" />
+              <circle cx="12" cy="12" r="9" fill="none" stroke={ACCENT} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="18 80" />
+            </svg>
+            <div style={{ fontSize: '0.78rem', color: MUTED, fontWeight: 600 }}>Картинка генерируется…</div>
           </div>
         ) : (
           <button
@@ -1635,13 +1656,12 @@ function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadP
 // =============================================================================
 // BATCH IMAGE GENERATION MODAL
 // =============================================================================
-function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onComplete, onProgress, photos = [], onOpenPhotoBank, sessionPalette = [] }) {
+function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onStart, photos = [], onOpenPhotoBank, sessionPalette = [] }) {
   const { showToast } = useToast();
   const [palette, setPalette] = useState([]);
   const [format, setFormat] = useState('1:1');
   const [defaultMode, setDefaultMode] = useState('auto');
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(null);
   const [photoScope, setPhotoScope] = useState('all'); // 'all' | 'selected'
   const [selectedPhotoIds, setSelectedPhotoIds] = useState([]);
 
@@ -1649,7 +1669,6 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
 
   useEffect(() => {
     if (isOpen) {
-      setProgress(null);
       setBusy(false);
       // Подставляем палитру из сессии, если задана
       setPalette(sessionPalette && sessionPalette.length > 0 ? sessionPalette : []);
@@ -1680,12 +1699,9 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
       return;
     }
     setBusy(true);
-    setProgress({ status: 'running', total: postsToProcess.length, generated: 0, failed: 0 });
-
     try {
-      // POST стартует фоновый батч и сразу возвращается (~202). Все
-      // финальные данные (generated_count, failed_count, tokens_charged,
-      // results) приходят из /batch-progress когда in_progress=false.
+      // POST стартует фоновый батч и возвращается ~202. Прогресс читается
+      // родителем через /batch-progress; модалка сразу закрывается.
       const startRes = await api.post(`/ai-content/${tc}/session/${sessionId}/generate-images-all`, {
         format,
         palette,
@@ -1693,55 +1709,13 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
         photo_ids: photoScope === 'selected' ? selectedPhotoIds : [],
       });
       if (!startRes?.success) throw new Error(startRes?.error || 'Не удалось запустить батч');
+      showToast(`Генерация запущена — ${postsToProcess.length} картинок`, 'info');
+      try { onStart && onStart({ total: postsToProcess.length }); } catch {}
+      onClose();
     } catch (e) {
       showToast(e.message, 'error');
-      setProgress(null);
       setBusy(false);
-      return;
     }
-
-    let lastSeenDone = 0;
-    let pollTimer = setInterval(async () => {
-      try {
-        const p = await api.get(`/ai-content/${tc}/session/${sessionId}/batch-progress`);
-        if (!p?.success) return;
-        const done = (p.generated || 0) + (p.failed || 0);
-        setProgress(prev => prev && prev.status === 'running' ? {
-          ...prev,
-          total: p.total || prev.total,
-          generated: p.generated || 0,
-          failed: p.failed || 0,
-        } : prev);
-        // Новый пост готов — дёргаем родителя, он перезагружает посты и
-        // конкретный пост рендерится с уже сгенерированной картинкой.
-        if (done > lastSeenDone) {
-          lastSeenDone = done;
-          try { onProgress && onProgress(p); } catch {}
-        }
-        if (!p.in_progress) {
-          clearInterval(pollTimer);
-          pollTimer = null;
-          setProgress({
-            status: 'done',
-            total: p.total || postsToProcess.length,
-            generated: p.generated || 0,
-            failed: p.failed || 0,
-          });
-          showToast(
-            `Сгенерировано ${p.generated || 0}/${p.total || postsToProcess.length} фото (-${p.tokens_charged || 0} токенов)`,
-            'success',
-          );
-          onComplete && onComplete({
-            success: true,
-            generated_count: p.generated || 0,
-            failed_count: p.failed || 0,
-            tokens_charged: p.tokens_charged || 0,
-            results: p.results || [],
-          });
-          setBusy(false);
-        }
-      } catch { /* ignore poll errors */ }
-    }, 1500);
   };
 
   return (
@@ -1758,39 +1732,37 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
           </div>
           <div style={{ fontSize: '0.78rem', color: MUTED }}>
             Стоимость: {totalCost} токенов ({postsToProcess.length}×10). Списываем за каждый успешный пост.
-            Генерация займёт несколько минут.
+            После запуска окно закроется — прогресс будет показан над постами.
           </div>
         </div>
 
-        {!progress?.status && (
-          <>
-            <div>
-              <label style={labelStyle}>Режим иллюстраций</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
-                {[
-                  { id: 'auto', emoji: '✨', label: 'Авто (ИИ решает)' },
-                  ...MODE_OPTIONS,
-                ].map(m => {
-                  const active = defaultMode === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setDefaultMode(m.id)}
-                      style={{
-                        ...cardBase, padding: '10px 12px', cursor: 'pointer', textAlign: 'left',
-                        borderColor: active ? 'transparent' : BORDER,
-                        background: active ? `linear-gradient(135deg, ${ACCENT}06 0%, ${ACCENT2}06 100%)` : '#fff',
-                        boxShadow: active ? `0 0 0 2px ${ACCENT}80` : '0 1px 3px rgba(0,0,0,0.04)',
-                      }}
-                    >
-                      <div style={{ fontSize: '1rem' }}>{m.emoji}</div>
-                      <div style={{ fontWeight: 700, color: DARK, fontSize: '0.8rem', marginTop: 2 }}>{m.label}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+        <div>
+          <label style={labelStyle}>Режим иллюстраций</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
+            {[
+              { id: 'auto', emoji: '✨', label: 'Авто (ИИ решает)' },
+              ...MODE_OPTIONS,
+            ].map(m => {
+              const active = defaultMode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setDefaultMode(m.id)}
+                  style={{
+                    ...cardBase, padding: '10px 12px', cursor: 'pointer', textAlign: 'left',
+                    borderColor: active ? 'transparent' : BORDER,
+                    background: active ? `linear-gradient(135deg, ${ACCENT}06 0%, ${ACCENT2}06 100%)` : '#fff',
+                    boxShadow: active ? `0 0 0 2px ${ACCENT}80` : '0 1px 3px rgba(0,0,0,0.04)',
+                  }}
+                >
+                  <div style={{ fontSize: '1rem' }}>{m.emoji}</div>
+                  <div style={{ fontWeight: 700, color: DARK, fontSize: '0.8rem', marginTop: 2 }}>{m.label}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
             {photoBankEmpty && (
               <div style={{
@@ -1880,108 +1852,43 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onCo
               </div>
             )}
 
-            <div>
-              <label style={labelStyle}>Цветовая палитра</label>
-              <ColorPaletteSelector value={palette} onChange={setPalette} />
-            </div>
+        <div>
+          <label style={labelStyle}>Цветовая палитра</label>
+          <ColorPaletteSelector value={palette} onChange={setPalette} />
+        </div>
 
-            <div>
-              <label style={labelStyle}>Формат</label>
-              <FormatSelector value={format} onChange={setFormat} />
-            </div>
-          </>
-        )}
-
-        {progress?.status === 'running' && (() => {
-          const total = progress.total || 1;
-          const gen = progress.generated || 0;
-          const fail = progress.failed || 0;
-          const pct = Math.min(100, Math.round(((gen + fail) / total) * 100));
-          return (
-            <div style={{ padding: '14px 0 6px' }}>
-              {/* Progress bar */}
-              <div style={{
-                position: 'relative',
-                width: '100%', height: 14, borderRadius: 999,
-                background: SOFT_BG,
-                border: `1px solid ${BORDER}`,
-                overflow: 'hidden',
-                boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
-                marginBottom: 14,
-              }}>
-                <div style={{
-                  position: 'absolute', top: 0, left: 0, bottom: 0,
-                  width: `${pct}%`,
-                  background: `linear-gradient(90deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
-                  borderRadius: 999,
-                  transition: 'width 0.5s ease',
-                  boxShadow: `0 0 8px ${ACCENT2}55`,
-                }} />
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontSize: '1rem', color: DARK, fontWeight: 800, letterSpacing: '-0.01em' }}>
-                    Сгенерировано <strong>{gen}/{total}</strong> картинок
-                  </div>
-                  {fail > 0 && (
-                    <div style={{ fontSize: '0.78rem', color: MUTED, marginTop: 4 }}>
-                      Неудачных: {fail}
-                    </div>
-                  )}
-                  <div style={{ fontSize: '0.78rem', color: MUTED, marginTop: 4 }}>
-                    Это занимает несколько минут. Не закрывайте окно.
-                  </div>
-                </div>
-                <svg width="28" height="28" viewBox="0 0 28 28" style={{ animation: 'aicSpin 1.5s linear infinite', flexShrink: 0 }}>
-                  <circle cx="14" cy="14" r="11" fill="none" stroke={BORDER} strokeWidth="3" />
-                  <circle cx="14" cy="14" r="11" fill="none" stroke={ACCENT} strokeWidth="3" strokeLinecap="round" strokeDasharray="22 100" />
-                </svg>
-              </div>
-            </div>
-          );
-        })()}
-
-        {progress?.status === 'done' && (
-          <div style={{ padding: '14px 16px', borderRadius: 12, background: `${SUCCESS}08`, border: `1px solid ${SUCCESS}30` }}>
-            <div style={{ fontWeight: 700, color: SUCCESS, marginBottom: 6 }}>✓ Готово!</div>
-            <div style={{ fontSize: '0.84rem', color: DARK }}>
-              Сгенерировано: <strong>{progress.generated}</strong> · Неудачно: <strong>{progress.failed}</strong>
-            </div>
-          </div>
-        )}
+        <div>
+          <label style={labelStyle}>Формат</label>
+          <FormatSelector value={format} onChange={setFormat} />
+        </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 10, borderTop: `1px solid ${BORDER}` }}>
-          {!busy && progress?.status !== 'done' && (
+          {!busy && (
             <button style={ghostBtn} onClick={onClose}>Отмена</button>
           )}
-          {progress?.status === 'done' ? (
-            <button style={primaryBtn} onClick={onClose}>Закрыть</button>
-          ) : (
-            <button
-              className="aic-primary"
-              style={{
-                ...primaryBtn,
-                opacity: busy || postsToProcess.length === 0 || photoBankEmpty || noPhotosSelected ? 0.5 : 1,
-                cursor: busy || postsToProcess.length === 0 || photoBankEmpty || noPhotosSelected ? 'not-allowed' : 'pointer',
-              }}
-              onClick={handleStart}
-              disabled={busy || postsToProcess.length === 0 || photoBankEmpty || noPhotosSelected}
-              title={
-                photoBankEmpty ? 'Сначала добавьте хотя бы 1 фото в фотобанк'
-                  : noPhotosSelected ? 'Выберите хотя бы одно фото'
-                  : ''
-              }
-            >
-              {busy
-                ? 'Генерация…'
-                : photoBankEmpty
-                  ? 'Нужно фото в банке'
-                  : noPhotosSelected
-                    ? 'Выберите фото'
-                    : `Запустить (${totalCost} токенов)`}
-            </button>
-          )}
+          <button
+            className="aic-primary"
+            style={{
+              ...primaryBtn,
+              opacity: busy || postsToProcess.length === 0 || photoBankEmpty || noPhotosSelected ? 0.5 : 1,
+              cursor: busy || postsToProcess.length === 0 || photoBankEmpty || noPhotosSelected ? 'not-allowed' : 'pointer',
+            }}
+            onClick={handleStart}
+            disabled={busy || postsToProcess.length === 0 || photoBankEmpty || noPhotosSelected}
+            title={
+              photoBankEmpty ? 'Сначала добавьте хотя бы 1 фото в фотобанк'
+                : noPhotosSelected ? 'Выберите хотя бы одно фото'
+                : ''
+            }
+          >
+            {busy
+              ? 'Запуск…'
+              : photoBankEmpty
+                ? 'Нужно фото в банке'
+                : noPhotosSelected
+                  ? 'Выберите фото'
+                  : `Запустить (${totalCost} токенов)`}
+          </button>
         </div>
       </div>
     </Modal>
@@ -2004,6 +1911,9 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
   const [imageGenPost, setImageGenPost] = useState(null);
   const [showPhotoBank, setShowPhotoBank] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
+  // Lifted batch progress state — модалка теперь закрывается сразу,
+  // прогресс идёт здесь и отображается лентой над сеткой постов
+  const [batchProgress, setBatchProgress] = useState(null); // { in_progress, total, generated, failed, tokens_charged }
 
   const remaining = posts.filter(p => !p.published_post_id).length;
   const postsWithoutImage = posts.filter(p => !p.published_post_id && !p.generated_image_url);
@@ -2189,8 +2099,55 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
 
   const handleImageGenerated = () => { onReload(); };
 
-  const handleBatchComplete = () => { onReload(); };
-  const handleBatchProgress = () => { onReload(); };
+  const handleBatchStart = ({ total }) => {
+    setBatchProgress({ in_progress: true, total, generated: 0, failed: 0, tokens_charged: 0 });
+  };
+
+  // Polling /batch-progress while batchProgress is active.
+  useEffect(() => {
+    if (!batchProgress?.in_progress) return undefined;
+    let lastSeenDone = 0;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const p = await api.get(`/ai-content/${tc}/session/${sessionId}/batch-progress`);
+        if (cancelled || !p?.success) return;
+        const done = (p.generated || 0) + (p.failed || 0);
+        setBatchProgress({
+          in_progress: !!p.in_progress,
+          total: p.total || 0,
+          generated: p.generated || 0,
+          failed: p.failed || 0,
+          tokens_charged: p.tokens_charged || 0,
+        });
+        if (done > lastSeenDone) {
+          lastSeenDone = done;
+          onReload();
+        }
+        if (!p.in_progress) {
+          showToast(
+            `Сгенерировано ${p.generated || 0}/${p.total || 0} фото (-${p.tokens_charged || 0} токенов)`,
+            'success',
+          );
+          onReload();
+        }
+      } catch { /* ignore poll errors */ }
+    };
+    tick();
+    const id = setInterval(tick, 1500);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [batchProgress?.in_progress, tc, sessionId, onReload, showToast]);
+
+  // Auto-clear progress strip ~5 sec after completion.
+  useEffect(() => {
+    if (batchProgress && !batchProgress.in_progress) {
+      const id = setTimeout(() => setBatchProgress(null), 5000);
+      return () => clearTimeout(id);
+    }
+    return undefined;
+  }, [batchProgress]);
+
+  const batchActive = !!batchProgress?.in_progress;
 
   return (
     <div style={{ animation: 'aicFade 0.4s ease both' }}>
@@ -2284,28 +2241,88 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
         </div>
       )}
 
+      {batchProgress && (() => {
+        const total = batchProgress.total || 1;
+        const gen = batchProgress.generated || 0;
+        const fail = batchProgress.failed || 0;
+        const pct = Math.min(100, Math.round(((gen + fail) / total) * 100));
+        const done = !batchProgress.in_progress;
+        return (
+          <div style={{
+            margin: '0 0 14px',
+            padding: '14px 16px',
+            borderRadius: 14,
+            border: `1px solid ${done ? `${SUCCESS}30` : `${ACCENT2}30`}`,
+            background: done ? `${SUCCESS}08` : `linear-gradient(135deg, ${ACCENT}06 0%, ${ACCENT2}10 100%)`,
+            display: 'flex', flexDirection: 'column', gap: 10,
+            animation: 'aicFade 0.3s ease both',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {!done ? (
+                  <svg width="22" height="22" viewBox="0 0 24 24" style={{ animation: 'aicSpin 1.4s linear infinite' }}>
+                    <circle cx="12" cy="12" r="9" fill="none" stroke={BORDER} strokeWidth="2.5" />
+                    <circle cx="12" cy="12" r="9" fill="none" stroke={ACCENT} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="18 80" />
+                  </svg>
+                ) : (
+                  <span style={{ fontSize: '1.1rem' }}>✓</span>
+                )}
+                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: DARK, letterSpacing: '-0.01em' }}>
+                  {done ? 'Готово' : 'Генерируем картинки'} — <strong>{gen}/{total}</strong>
+                  {fail > 0 && <span style={{ marginLeft: 8, color: DANGER, fontWeight: 600 }}>· не удалось: {fail}</span>}
+                </div>
+              </div>
+              {!done && (
+                <div style={{ fontSize: '0.78rem', color: MUTED }}>
+                  Можно работать с постами — картинки появятся по мере готовности
+                </div>
+              )}
+            </div>
+            <div style={{
+              position: 'relative', width: '100%', height: 10, borderRadius: 999,
+              background: '#fff', border: `1px solid ${BORDER}`,
+              overflow: 'hidden',
+            }}>
+              <div style={{
+                position: 'absolute', top: 0, left: 0, bottom: 0,
+                width: `${pct}%`,
+                background: done
+                  ? SUCCESS
+                  : `linear-gradient(90deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
+                borderRadius: 999,
+                transition: 'width 0.5s ease',
+              }} />
+            </div>
+          </div>
+        );
+      })()}
+
       <div style={{
         display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 16,
         scrollSnapType: 'x mandatory',
       }}>
-        {posts.map(p => (
-          <div key={p.id} style={{ scrollSnapAlign: 'start' }}>
-            <PostCard
-              post={p}
-              onEdit={openEdit}
-              onDelete={handleDelete}
-              onPublishNow={handlePublishNow}
-              busyId={busyId}
-              onGenerateImage={handleOpenImageGen}
-              onRegenerateImage={handleRegenerateImage}
-              onDeleteImage={handleDeleteImage}
-              imageBusyId={imageBusyId}
-              selected={selectedIds.has(p.id)}
-              onToggleSelect={toggleSelect}
-              onOpenInPublications={handleOpenInPublications}
-            />
-          </div>
-        ))}
+        {posts.map(p => {
+          const pendingImage = batchActive && !p.published_post_id && !p.generated_image_url;
+          return (
+            <div key={p.id} style={{ scrollSnapAlign: 'start' }}>
+              <PostCard
+                post={p}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+                onPublishNow={handlePublishNow}
+                busyId={busyId}
+                onGenerateImage={handleOpenImageGen}
+                onRegenerateImage={handleRegenerateImage}
+                onDeleteImage={handleDeleteImage}
+                imageBusyId={imageBusyId}
+                imageGenerating={pendingImage}
+                selected={selectedIds.has(p.id)}
+                onToggleSelect={toggleSelect}
+                onOpenInPublications={handleOpenInPublications}
+              />
+            </div>
+          );
+        })}
       </div>
 
       <Modal
@@ -2400,8 +2417,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
         tc={tc}
         sessionId={sessionId}
         postsToProcess={postsWithoutImage}
-        onComplete={handleBatchComplete}
-        onProgress={handleBatchProgress}
+        onStart={handleBatchStart}
         photos={photos}
         onOpenPhotoBank={() => { setShowBatchModal(false); setShowPhotoBank(true); }}
         sessionPalette={sessionPalette}
@@ -2679,6 +2695,7 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
         @keyframes aicBlob { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(14px, -10px); } }
         @keyframes aicSpin { to { transform: rotate(360deg); } }
         @keyframes aicDot { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); } 40% { opacity: 1; transform: scale(1.1); } }
+        @keyframes aicShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
         .aic-card:hover {
           transform: translateY(-2px);
           box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important;

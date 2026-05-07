@@ -71,6 +71,33 @@ async def _find_or_create_max_user(max_user_id: str, name: str = "", dialog_chat
     return result
 
 
+# ---- Welcome video attachment (cached MAX upload token) ----
+_WELCOME_VIDEO_CACHE: Dict[str, str] = {"token": ""}
+
+
+async def _build_welcome_video_attachment(max_api):
+    """Upload welcome.mp4 once, then reuse the token. None if file missing."""
+    import os
+    path = "/app/uploads/welcome_intro.mp4"
+    if not os.path.exists(path):
+        return None
+    if not _WELCOME_VIDEO_CACHE.get("token"):
+        try:
+            res = await max_api.upload_file(path, file_type="video")
+            if res.get("success"):
+                _WELCOME_VIDEO_CACHE["token"] = res.get("data", {}).get("token", "")
+            else:
+                print(f"[MAX Bot] welcome video upload failed: {res.get('error')}")
+                return None
+        except Exception as e:
+            print(f"[MAX Bot] welcome video upload exception: {e}")
+            return None
+    token = _WELCOME_VIDEO_CACHE.get("token")
+    if not token:
+        return None
+    return [{"type": "video", "payload": {"token": token}}]
+
+
 # ---- Lead magnet delivery ----
 
 async def handle_lead_magnet(max_api, chat_id: str, max_user_id: str, username: str, first_name: str, code: str):
@@ -724,26 +751,21 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
 
     login_url = f"{settings.APP_URL}/login?token={token}"
 
-    await _send_to_chat(max_api, chat_id,
-        f"{referrer_line}👋 Привет! Я помогу отслеживать подписчиков каналов.\n\n"
+    welcome_text = (
+        f"{referrer_line}👋 Добро пожаловать в сервисе MAX Маркетинг\n\n"
         f"📌 **Как подключить канал:**\n"
-        f"1. Откройте ваш канал → Настройки → Администраторы\n"
-        f"2. Добавьте меня как администратора\n"
-        f"3. Каналы появятся в личном кабинете автоматически\n\n"
-        f"📋 **Команды бота:**\n"
-        f"/login — войти в личный кабинет\n"
-        f"/channels — мои каналы\n"
-        f"/links — ссылки отслеживания\n"
-        f"/newlink — создать ссылку\n"
-        f"/giveaways — розыгрыши\n"
-        f"/newgiveaway — создать розыгрыш\n"
-        f"/pins — закрепы и лид-магниты\n"
-        f"/newpin — создать закреп\n"
-        f"/newleadmagnet — создать лид-магнит\n"
-        f"/stats — статистика\n"
-        f"/help — помощь\n\n"
-        f"🔗 Личный кабинет: {login_url}",
-        buttons=[[{"type": "link", "text": "🔑 Открыть личный кабинет", "url": login_url}]],
+        f"1. Откройте ваш канал → Настройки → Подписчики\n"
+        f"2. Добавьте меня в подписчики канала\n"
+        f"3. Затем, добавьте меня администратором канала\n"
+        f"4. Канал появятся в личном кабинете автоматически\n\n"
+        f"🔗 Личный кабинет: {login_url}"
+    )
+    welcome_buttons = [[{"type": "link", "text": "🔑 Открыть личный кабинет", "url": login_url}]]
+    welcome_attachments = await _build_welcome_video_attachment(max_api)
+    await _send_to_chat(
+        max_api, chat_id, welcome_text,
+        attachments=welcome_attachments,
+        buttons=welcome_buttons,
     )
 
 

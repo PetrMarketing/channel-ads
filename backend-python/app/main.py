@@ -349,6 +349,100 @@ async def dashboard_stats(request: Request, user=Depends(get_current_user)):
         return {"success": False, "error": str(e)}
 
 
+# --- Subscription bonuses (Обзор) ---
+# Бонусные подписки за +N ИИ-токенов. Проверка через MAX API: бот должен
+# быть участником канала (status=member или admin), тогда is_user_member
+# вернёт true для подписчика.
+SUBSCRIPTION_BONUSES = [
+    {
+        "key": "smmpavel",
+        "title": "Пресняков Маркетинг",
+        "url": "https://max.ru/smmpavel",
+        "ai_tokens": 10,
+        "max_chat_id": "-68434131015095",
+        "avatar_url": "https://i.oneme.ru/i?r=BUFxtygYfQ8hp8NJRyp5v4T32KpmXgwbUtbi3wrEKV4whvN14XTwre9u91cvAM4_XgBF94LGqStOwUK28iSN1Ynb&fn=w_1440",
+    },
+    {
+        "key": "diary_neprogrammist",
+        "title": "Дневник НЕпрограммиста",
+        "url": "https://max.ru/join/VCz2RMDkwZRzXPpo1kjo5TypZrfajw2vhVQtY_LVMVg",
+        "ai_tokens": 10,
+        "max_chat_id": "",  # бот ещё не добавлен — заполним, как только добавите
+        "avatar_url": "",
+    },
+]
+
+
+def _bonus_by_key(key: str):
+    for b in SUBSCRIPTION_BONUSES:
+        if b["key"] == key:
+            return b
+    return None
+
+
+@app.get("/api/dashboard/subscription-bonuses")
+async def list_subscription_bonuses(user=Depends(get_current_user)):
+    """Список доступных подписочных бонусов с признаком claimed для текущего юзера."""
+    rows = await fetch_all(
+        "SELECT bonus_key FROM user_subscription_bonuses WHERE user_id = $1",
+        user["id"],
+    )
+    claimed_keys = {r["bonus_key"] for r in rows}
+    items = []
+    for b in SUBSCRIPTION_BONUSES:
+        if b["key"] in claimed_keys:
+            continue  # после получения плашка скрывается
+        items.append({
+            "key": b["key"],
+            "title": b["title"],
+            "url": b["url"],
+            "ai_tokens": b["ai_tokens"],
+            "avatar_url": b["avatar_url"],
+        })
+    return {"success": True, "bonuses": items}
+
+
+@app.post("/api/dashboard/subscription-bonuses/{key}/claim")
+async def claim_subscription_bonus(key: str, user=Depends(get_current_user)):
+    bonus = _bonus_by_key(key)
+    if not bonus:
+        raise HTTPException(status_code=404, detail="Бонус не найден")
+
+    # Idempotency: уже забран?
+    existing = await fetch_one(
+        "SELECT id FROM user_subscription_bonuses WHERE user_id = $1 AND bonus_key = $2",
+        user["id"], key,
+    )
+    if existing:
+        return {"success": True, "already_claimed": True}
+
+    if not user.get("max_user_id"):
+        raise HTTPException(status_code=400, detail="Сначала привяжите MAX-аккаунт через бота")
+
+    chat_id = bonus.get("max_chat_id")
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="Бот ещё не добавлен в канал — попробуйте позже")
+
+    from .services.max_api import get_max_api
+    max_api = get_max_api()
+    if not max_api:
+        raise HTTPException(status_code=500, detail="MAX API недоступен")
+    is_member = await max_api.is_user_member(chat_id, str(user["max_user_id"]))
+    if not is_member:
+        raise HTTPException(status_code=400, detail="Подписка не найдена. Подпишитесь на канал и попробуйте снова.")
+
+    tokens = int(bonus["ai_tokens"])
+    await execute(
+        "INSERT INTO user_subscription_bonuses (user_id, bonus_key, tokens_granted) VALUES ($1, $2, $3) ON CONFLICT (user_id, bonus_key) DO NOTHING",
+        user["id"], key, tokens,
+    )
+    await execute(
+        "UPDATE users SET ai_tokens = COALESCE(ai_tokens, 0) + $1 WHERE id = $2",
+        tokens, user["id"],
+    )
+    return {"success": True, "tokens_granted": tokens}
+
+
 @app.get("/api/modules/{tracking_code}")
 async def get_module_settings(tracking_code: str):
     """Get enabled modules for a channel."""
