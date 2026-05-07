@@ -12,6 +12,15 @@ import { usePageOnboarding } from '../components/OnboardingTour';
 const SESSION_COST_DEFAULT = 500; // Цена для 1-го уровня; реальная — с /channels/{tc}/levels
 const MAX_REGEN = 2;
 
+function plurLanding(n) {
+  const last = n % 10;
+  const teen = n % 100;
+  if (teen >= 11 && teen <= 14) return 'лендингов';
+  if (last === 1) return 'лендинг';
+  if (last >= 2 && last <= 4) return 'лендинга';
+  return 'лендингов';
+}
+
 export default function AiLandingPage() {
   const { currentChannel } = useChannels();
   const { showToast } = useToast();
@@ -50,6 +59,7 @@ export default function AiLandingPage() {
   // Динамическая цена с уровня канала
   const [landingCost, setLandingCost] = useState(SESSION_COST_DEFAULT);
   const [landingNextCost, setLandingNextCost] = useState(null);
+  const [landingRemaining, setLandingRemaining] = useState(null);
   useEffect(() => {
     if (!tc) return;
     let cancelled = false;
@@ -59,6 +69,8 @@ export default function AiLandingPage() {
       if (ld) {
         setLandingCost(ld.current_cost || SESSION_COST_DEFAULT);
         setLandingNextCost(ld.is_max ? null : ld.next_cost);
+        const remaining = ld.is_max ? null : Math.max(0, (ld.next_threshold || 0) - (ld.period_count || 0));
+        setLandingRemaining(remaining);
       }
     }).catch(() => {});
     return () => { cancelled = true; };
@@ -253,6 +265,11 @@ export default function AiLandingPage() {
               {landingNextCost != null && (
                 <span style={{ marginLeft: 8, color: '#10b981', fontWeight: 600 }}>
                   → {landingNextCost} на следующем уровне
+                  {landingRemaining != null && (
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 500, marginLeft: 4 }}>
+                      ({landingRemaining} {plurLanding(landingRemaining)} до апгрейда)
+                    </span>
+                  )}
                 </span>
               )}
             </p>

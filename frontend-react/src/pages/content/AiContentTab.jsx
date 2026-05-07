@@ -79,6 +79,24 @@ function calcCost(n, perPost = 5) {
   return c * Math.max(1, Number(perPost) || 5);
 }
 
+function plurText(n) {
+  const last = n % 10;
+  const teen = n % 100;
+  if (teen >= 11 && teen <= 14) return 'текстов';
+  if (last === 1) return 'текст';
+  if (last >= 2 && last <= 4) return 'текста';
+  return 'текстов';
+}
+
+function plurImage(n) {
+  const last = n % 10;
+  const teen = n % 100;
+  if (teen >= 11 && teen <= 14) return 'картинок';
+  if (last === 1) return 'картинка';
+  if (last >= 2 && last <= 4) return 'картинки';
+  return 'картинок';
+}
+
 function fmtRu(d) {
   if (!d) return '';
   try {
@@ -656,9 +674,14 @@ function ProductsStep({ tc, sessionId, products, setProducts, onNext, onBack, op
 // =============================================================================
 // SCHEDULE STEP
 // =============================================================================
-function ScheduleStep({ schedule, setSchedule, onGenerate, onBack, busy, textCost = 5 }) {
-  const cost = calcCost(schedule.posts_count, textCost);
-  const perPost = textCost;
+function ScheduleStep({ schedule, setSchedule, onGenerate, onBack, busy, textSkill }) {
+  const ts = textSkill || { current_cost: 5, next_cost: null, period_count: 0, next_threshold: null, is_max: false };
+  const cost = calcCost(schedule.posts_count, ts.current_cost);
+  const perPost = ts.current_cost;
+  const nextHint = !ts.is_max && ts.next_cost != null ? {
+    nextCost: ts.next_cost,
+    remaining: Math.max(0, (ts.next_threshold || 0) - (ts.period_count || 0)),
+  } : null;
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto' }}>
@@ -694,12 +717,20 @@ function ScheduleStep({ schedule, setSchedule, onGenerate, onBack, busy, textCos
               display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6,
             }}>
               <span style={{ fontWeight: 600 }}>
-                Стоимость: <span style={{ color: ACCENT2 }}>{cost} ИИ-токенов</span>
+                Стоимость: <span style={{ color: ACCENT2 }}>{cost} ИИ-токенов</span> ({perPost} ИИт/пост)
               </span>
               <span style={{ fontSize: '0.76rem', color: MUTED }}>
-                ≈ {perPost}₽/пост · {schedule.posts_count > 30 ? '2 поста в день' : '1 пост в день'}
+                {schedule.posts_count > 30 ? '2 поста в день' : '1 пост в день'}
               </span>
             </div>
+            {nextHint && (
+              <div style={{ fontSize: '0.78rem', color: SUCCESS, marginTop: 8, fontWeight: 600 }}>
+                → {nextHint.nextCost} ИИт/пост на следующем уровне
+                <span style={{ color: MUTED, fontWeight: 500, marginLeft: 4 }}>
+                  ({nextHint.remaining} {plurText(nextHint.remaining)} до апгрейда)
+                </span>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
@@ -1895,7 +1926,13 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onSt
   );
 }
 
-function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDone, leadMagnets, sessionPalette, onSwitchView, imageCost = 10, onLevelsRefresh }) {
+function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDone, leadMagnets, sessionPalette, onSwitchView, imageSkill, onLevelsRefresh }) {
+  const imgSk = imageSkill || { current_cost: 10, next_cost: null, period_count: 0, next_threshold: null, is_max: false };
+  const imageCost = imgSk.current_cost;
+  const imageNextHint = !imgSk.is_max && imgSk.next_cost != null ? {
+    nextCost: imgSk.next_cost,
+    remaining: Math.max(0, (imgSk.next_threshold || 0) - (imgSk.period_count || 0)),
+  } : null;
   const { showToast } = useToast();
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ title: '', message_text: '', scheduled_at: '', inline_buttons: '', attach_type: '' });
@@ -2171,20 +2208,30 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
           >
             📁 Фотобанк {photos.length > 0 && <span style={{ marginLeft: 4, ...pill(`${ACCENT}10`, ACCENT), padding: '2px 8px', fontSize: '0.7rem' }}>{photos.length}</span>}
           </button>
-          <button
-            className="aic-primary"
-            style={{
-              ...primaryBtn,
-              background: `linear-gradient(135deg, ${ACCENT2} 0%, ${PURPLE} 100%)`,
-              boxShadow: `0 4px 14px ${ACCENT2}40`,
-              opacity: postsWithoutImage.length === 0 ? 0.5 : 1,
-            }}
-            onClick={() => setShowBatchModal(true)}
-            disabled={postsWithoutImage.length === 0}
-            title={postsWithoutImage.length === 0 ? 'У всех постов уже есть картинки' : ''}
-          >
-            🪄 Сгенерировать фото ко всем ({postsWithoutImage.length}×{imageCost} = {batchCost} токенов)
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            <button
+              className="aic-primary"
+              style={{
+                ...primaryBtn,
+                background: `linear-gradient(135deg, ${ACCENT2} 0%, ${PURPLE} 100%)`,
+                boxShadow: `0 4px 14px ${ACCENT2}40`,
+                opacity: postsWithoutImage.length === 0 ? 0.5 : 1,
+              }}
+              onClick={() => setShowBatchModal(true)}
+              disabled={postsWithoutImage.length === 0}
+              title={postsWithoutImage.length === 0 ? 'У всех постов уже есть картинки' : ''}
+            >
+              🪄 Сгенерировать фото ко всем ({postsWithoutImage.length}×{imageCost} = {batchCost} токенов)
+            </button>
+            {imageNextHint && (
+              <span style={{ fontSize: '0.74rem', color: SUCCESS, fontWeight: 600 }}>
+                → {imageNextHint.nextCost} ИИт/картинка на следующем уровне
+                <span style={{ color: MUTED, fontWeight: 500, marginLeft: 4 }}>
+                  ({imageNextHint.remaining} {plurImage(imageNextHint.remaining)} до апгрейда)
+                </span>
+              </span>
+            )}
+          </div>
           {selectedCount > 0 ? (
             <button
               className="aic-primary"
@@ -2482,23 +2529,22 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
   const [doneCount, setDoneCount] = useState(0);
   const [postsAvailable, setPostsAvailable] = useState(0);
   const [sessionPalette, setSessionPalette] = useState([]);
-  // Уровни канала: { text: {level, current_cost, ...}, image: {...} }
-  const [skillCosts, setSkillCosts] = useState({ text: 5, image: 10 });
+  // Уровни канала: полные snapshots по text/image
+  const [skillsByType, setSkillsByType] = useState({});
   const loadLevels = useCallback(async () => {
     if (!tc) return;
     try {
       const data = await api.get(`/channels/${tc}/levels`);
       if (data?.success) {
         const map = {};
-        for (const s of (data.skills || [])) map[s.skill] = s.current_cost;
-        setSkillCosts({
-          text: map.text ?? 5,
-          image: map.image ?? 10,
-        });
+        for (const s of (data.skills || [])) map[s.skill] = s;
+        setSkillsByType(map);
       }
     } catch { /* ignore */ }
   }, [tc]);
   useEffect(() => { loadLevels(); }, [loadLevels]);
+  const textSkill = skillsByType.text || { current_cost: 5, next_cost: null, period_count: 0, next_threshold: null, is_max: false };
+  const imageSkill = skillsByType.image || { current_cost: 10, next_cost: null, period_count: 0, next_threshold: null, is_max: false };
 
   const [brief, setBrief] = useState({
     topic: '',
@@ -2773,7 +2819,7 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
           onGenerate={handleGenerate}
           onBack={() => setStep(brief.goal_sales >= 10 ? 'products' : 'style')}
           busy={loading}
-          textCost={skillCosts.text}
+          textSkill={textSkill}
         />
       )}
       {step === 'generating' && (
@@ -2795,7 +2841,7 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
           leadMagnets={leadMagnets}
           sessionPalette={sessionPalette}
           onSwitchView={onSwitchView}
-          imageCost={skillCosts.image}
+          imageSkill={imageSkill}
           onLevelsRefresh={loadLevels}
         />
       )}
