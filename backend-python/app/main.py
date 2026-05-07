@@ -367,8 +367,8 @@ SUBSCRIPTION_BONUSES = [
         "title": "Дневник НЕпрограммиста",
         "url": "https://max.ru/join/VCz2RMDkwZRzXPpo1kjo5TypZrfajw2vhVQtY_LVMVg",
         "ai_tokens": 10,
-        "max_chat_id": "",  # бот ещё не добавлен — заполним, как только добавите
-        "avatar_url": "",
+        "max_chat_id": "-72587203431884",
+        "avatar_url": "https://i.oneme.ru/i?r=BTEFHNxXjmuR0N2Fir9SuMMRbeyfTwSY0YCDuD26Ydmft5HBHiOr_iGqJFFEZ2PBTiY&fn=w_1440",
     },
 ]
 
