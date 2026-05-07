@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 import Paywall from '../components/Paywall';
 import { usePageOnboarding } from '../components/OnboardingTour';
 
-const SESSION_COST = 500;
+const SESSION_COST_DEFAULT = 500; // Цена для 1-го уровня; реальная — с /channels/{tc}/levels
 const MAX_REGEN = 2;
 
 export default function AiLandingPage() {
@@ -46,6 +46,23 @@ export default function AiLandingPage() {
   const [htmlContent, setHtmlContent] = useState('');
   const [slug, setSlug] = useState('');
   const [regenCount, setRegenCount] = useState(0);
+
+  // Динамическая цена с уровня канала
+  const [landingCost, setLandingCost] = useState(SESSION_COST_DEFAULT);
+  const [landingNextCost, setLandingNextCost] = useState(null);
+  useEffect(() => {
+    if (!tc) return;
+    let cancelled = false;
+    api.get(`/channels/${tc}/levels`).then(d => {
+      if (cancelled || !d?.success) return;
+      const ld = (d.skills || []).find(s => s.skill === 'landing');
+      if (ld) {
+        setLandingCost(ld.current_cost || SESSION_COST_DEFAULT);
+        setLandingNextCost(ld.is_max ? null : ld.next_cost);
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [tc]);
 
   // Метрика
   const [metrikaForm, setMetrikaForm] = useState({ ym_counter_id: '', ym_goal_name: 'subscribe_channel', vk_pixel_id: '', vk_goal_name: 'subscribe_channel' });
@@ -232,7 +249,12 @@ export default function AiLandingPage() {
               Генерация HTML-лендинга с кнопками подписки на ваш канал
             </p>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: 24 }}>
-              Стоимость: <b style={{ color: '#7B68EE' }}>{SESSION_COST} токенов</b>
+              Стоимость: <b style={{ color: '#7B68EE' }}>{landingCost} токенов</b>
+              {landingNextCost != null && (
+                <span style={{ marginLeft: 8, color: '#10b981', fontWeight: 600 }}>
+                  → {landingNextCost} на следующем уровне
+                </span>
+              )}
             </p>
             <button data-tour-page="landing-create" className="btn btn-primary" onClick={handleCreate} disabled={loading}
               style={{ padding: '12px 32px', fontSize: '1rem' }}>

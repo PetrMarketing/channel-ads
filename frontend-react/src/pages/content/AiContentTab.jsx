@@ -74,9 +74,9 @@ const pill = (bg, color) => ({
   whiteSpace: 'nowrap',
 });
 
-function calcCost(n) {
+function calcCost(n, perPost = 5) {
   const c = Math.max(15, Math.min(60, Number(n) || 30));
-  return Math.round(150 + ((c - 15) * (300 - 150)) / (60 - 15));
+  return c * Math.max(1, Number(perPost) || 5);
 }
 
 function fmtRu(d) {
@@ -656,9 +656,9 @@ function ProductsStep({ tc, sessionId, products, setProducts, onNext, onBack, op
 // =============================================================================
 // SCHEDULE STEP
 // =============================================================================
-function ScheduleStep({ schedule, setSchedule, onGenerate, onBack, busy }) {
-  const cost = calcCost(schedule.posts_count);
-  const perPost = Math.round((cost / schedule.posts_count) * 10) / 10;
+function ScheduleStep({ schedule, setSchedule, onGenerate, onBack, busy, textCost = 5 }) {
+  const cost = calcCost(schedule.posts_count, textCost);
+  const perPost = textCost;
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto' }}>
@@ -1656,7 +1656,7 @@ function ImageGenModal({ isOpen, onClose, post, tc, sessionId, photos, onReloadP
 // =============================================================================
 // BATCH IMAGE GENERATION MODAL
 // =============================================================================
-function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onStart, photos = [], onOpenPhotoBank, sessionPalette = [] }) {
+function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onStart, photos = [], onOpenPhotoBank, sessionPalette = [], imageCost = 10 }) {
   const { showToast } = useToast();
   const [palette, setPalette] = useState([]);
   const [format, setFormat] = useState('1:1');
@@ -1665,7 +1665,7 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onSt
   const [photoScope, setPhotoScope] = useState('all'); // 'all' | 'selected'
   const [selectedPhotoIds, setSelectedPhotoIds] = useState([]);
 
-  const totalCost = postsToProcess.length * 10;
+  const totalCost = postsToProcess.length * imageCost;
 
   useEffect(() => {
     if (isOpen) {
@@ -1731,7 +1731,7 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onSt
             Будет обработано: <span style={{ color: ACCENT2 }}>{postsToProcess.length}</span> постов
           </div>
           <div style={{ fontSize: '0.78rem', color: MUTED }}>
-            Стоимость: {totalCost} токенов ({postsToProcess.length}×10). Списываем за каждый успешный пост.
+            Стоимость: {totalCost} токенов ({postsToProcess.length}×{imageCost}). Списываем за каждый успешный пост.
             После запуска окно закроется — прогресс будет показан над постами.
           </div>
         </div>
@@ -1895,7 +1895,7 @@ function BatchImagesModal({ isOpen, onClose, tc, sessionId, postsToProcess, onSt
   );
 }
 
-function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDone, leadMagnets, sessionPalette, onSwitchView }) {
+function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDone, leadMagnets, sessionPalette, onSwitchView, imageCost = 10, onLevelsRefresh }) {
   const { showToast } = useToast();
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ title: '', message_text: '', scheduled_at: '', inline_buttons: '', attach_type: '' });
@@ -1917,7 +1917,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
 
   const remaining = posts.filter(p => !p.published_post_id).length;
   const postsWithoutImage = posts.filter(p => !p.published_post_id && !p.generated_image_url);
-  const batchCost = postsWithoutImage.length * 10;
+  const batchCost = postsWithoutImage.length * imageCost;
   const unpublishedIds = posts.filter(p => !p.published_post_id).map(p => p.id);
   const selectedCount = selectedIds.size;
   const allUnpublishedSelected = unpublishedIds.length > 0 && unpublishedIds.every(id => selectedIds.has(id));
@@ -2130,6 +2130,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
             'success',
           );
           onReload();
+          try { onLevelsRefresh && onLevelsRefresh(); } catch {}
         }
       } catch { /* ignore poll errors */ }
     };
@@ -2182,7 +2183,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
             disabled={postsWithoutImage.length === 0}
             title={postsWithoutImage.length === 0 ? 'У всех постов уже есть картинки' : ''}
           >
-            🪄 Сгенерировать фото ко всем ({postsWithoutImage.length}×10 = {batchCost} токенов)
+            🪄 Сгенерировать фото ко всем ({postsWithoutImage.length}×{imageCost} = {batchCost} токенов)
           </button>
           {selectedCount > 0 ? (
             <button
@@ -2421,6 +2422,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
         photos={photos}
         onOpenPhotoBank={() => { setShowBatchModal(false); setShowPhotoBank(true); }}
         sessionPalette={sessionPalette}
+        imageCost={imageCost}
       />
     </div>
   );
@@ -2480,6 +2482,23 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
   const [doneCount, setDoneCount] = useState(0);
   const [postsAvailable, setPostsAvailable] = useState(0);
   const [sessionPalette, setSessionPalette] = useState([]);
+  // Уровни канала: { text: {level, current_cost, ...}, image: {...} }
+  const [skillCosts, setSkillCosts] = useState({ text: 5, image: 10 });
+  const loadLevels = useCallback(async () => {
+    if (!tc) return;
+    try {
+      const data = await api.get(`/channels/${tc}/levels`);
+      if (data?.success) {
+        const map = {};
+        for (const s of (data.skills || [])) map[s.skill] = s.current_cost;
+        setSkillCosts({
+          text: map.text ?? 5,
+          image: map.image ?? 10,
+        });
+      }
+    } catch { /* ignore */ }
+  }, [tc]);
+  useEffect(() => { loadLevels(); }, [loadLevels]);
 
   const [brief, setBrief] = useState({
     topic: '',
@@ -2563,8 +2582,12 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
         setProducts(sess.products || []);
         setPosts(data.posts || []);
         setSessionPalette(Array.isArray(sess.last_image_palette) ? sess.last_image_palette : []);
-        if ((data.posts || []).length > 0) setStep('review');
-        else setStep('brief');
+        if ((data.posts || []).length > 0) {
+          setStep('review');
+          try { loadLevels(); } catch { /* ignore */ }
+        } else {
+          setStep('brief');
+        }
       }
     } catch (e) { showToast(e.message, 'error'); }
     finally { setLoading(false); }
@@ -2647,7 +2670,7 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
               if (sd?.success) setPosts(sd.posts || []);
             } catch { /* ignore */ }
             setLoading(false);
-            setStep('review');
+            setStep('review'); try { loadLevels(); } catch {}
             if ((p.failed || 0) > 0) {
               showToast(`Готово: ${p.generated || 0}/${p.total || totalExpected} постов (${p.failed} с ошибкой)`, 'success');
             } else {
@@ -2750,6 +2773,7 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
           onGenerate={handleGenerate}
           onBack={() => setStep(brief.goal_sales >= 10 ? 'products' : 'style')}
           busy={loading}
+          textCost={skillCosts.text}
         />
       )}
       {step === 'generating' && (
@@ -2771,6 +2795,8 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
           leadMagnets={leadMagnets}
           sessionPalette={sessionPalette}
           onSwitchView={onSwitchView}
+          imageCost={skillCosts.image}
+          onLevelsRefresh={loadLevels}
         />
       )}
       {step === 'done' && (

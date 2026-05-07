@@ -829,8 +829,10 @@ async def generate_posts(tc: str, session_id: int, user: Dict[str, Any] = Depend
         raise HTTPException(status_code=400, detail="Загрузите образец стиля постов")
 
     posts_count = int(session.get("posts_count") or 30)
-    total_cost = calc_session_cost(posts_count)
-    cost_per_post = max(1, (total_cost + posts_count - 1) // posts_count)
+    # Динамическая цена с уровня канала (skill='text').
+    from ..services.channel_levels import skill_cost as _skill_cost, track_skill as _track_skill
+    cost_per_post = await _skill_cost(channel["id"], "text")
+    total_cost = cost_per_post * posts_count
 
     # Pre-check баланса на полную стоимость, но списание per-success в раннере.
     u = await fetch_one("SELECT ai_tokens FROM users WHERE id=$1", user["id"])
@@ -902,6 +904,10 @@ async def generate_posts(tc: str, session_id: int, user: Dict[str, Any] = Depend
                         user["id"], cost_per_post, "ai_content_post",
                         f"Пост #{i+1}/{posts_count} для канала {channel_label}",
                     )
+                    try:
+                        await _track_skill(channel["id"], "text", 1)
+                    except Exception as te:
+                        print(f"[Levels] track text skip: {te}")
                     charged_total += cost_per_post
                     gen_count += 1
                     prior_outlines.append({
@@ -1698,8 +1704,11 @@ async def generate_image_for_post(
                 detail="Фотобанк пуст. Добавьте хотя бы 1 фото для режима «По фото» или «Коллаж».",
             )
 
+    from ..services.channel_levels import skill_cost as _skill_cost, track_skill as _track_skill
+    img_cost = await _skill_cost(channel["id"], "image")
+
     await _charge_tokens(
-        user["id"], TOKENS_IMAGE_GEN, "ai_content_image",
+        user["id"], img_cost, "ai_content_image",
         f"Иллюстрация к посту #{pid}",
     )
 
@@ -1709,11 +1718,17 @@ async def generate_image_for_post(
             prompt, mode, image_format, palette, ref_photo_id,
         )
     except HTTPException as e:
-        await _refund_tokens(user["id"], TOKENS_IMAGE_GEN, f"Ошибка генерации иллюстрации поста #{pid}")
+        await _refund_tokens(user["id"], img_cost, f"Ошибка генерации иллюстрации поста #{pid}")
         raise
     except Exception as e:
-        await _refund_tokens(user["id"], TOKENS_IMAGE_GEN, f"Ошибка генерации иллюстрации поста #{pid}")
+        await _refund_tokens(user["id"], img_cost, f"Ошибка генерации иллюстрации поста #{pid}")
         raise HTTPException(status_code=500, detail=f"Ошибка генерации изображения: {e}")
+
+    try:
+        # Регенерация платной картинки — тоже считается за image
+        await _track_skill(channel["id"], "image", 1)
+    except Exception as te:
+        print(f"[Levels] track image skip: {te}")
 
     # Запоминаем палитру в сессии — подставится в следующие генерации
     if palette:
@@ -1726,7 +1741,7 @@ async def generate_image_for_post(
     return {
         "success": True,
         "image_url": image_url,
-        "tokens_charged": TOKENS_IMAGE_GEN,
+        "tokens_charged": img_cost,
         "post": _serialize_post(fresh),
     }
 
@@ -1794,12 +1809,14 @@ async def generate_images_all(
     if not posts:
         return {"success": True, "generated_count": 0, "failed_count": 0, "results": []}
 
-    total_needed = TOKENS_IMAGE_GEN * len(posts)
+    from ..services.channel_levels import skill_cost as _skill_cost, track_skill as _track_skill
+    img_cost = await _skill_cost(channel["id"], "image")
+    total_needed = img_cost * len(posts)
     u = await fetch_one("SELECT ai_tokens FROM users WHERE id=$1", user["id"])
     if not u or (u["ai_tokens"] or 0) < total_needed:
         raise HTTPException(
             status_code=402,
-            detail=f"Недостаточно ИИ токенов. Нужно {total_needed} ({len(posts)}×{TOKENS_IMAGE_GEN}), у вас {u['ai_tokens'] if u else 0}",
+            detail=f"Недостаточно ИИ токенов. Нужно {total_needed} ({len(posts)}×{img_cost}), у вас {u['ai_tokens'] if u else 0}",
         )
 
     photos = await fetch_all(
@@ -1869,15 +1886,19 @@ async def generate_images_all(
                     prompt, mode, image_format, palette, ref_photo_id,
                 )
 
-                # Списываем за успех
+                # Списываем за успех (динамическая цена по уровню)
                 await execute("UPDATE users SET ai_tokens = ai_tokens - $1 WHERE id=$2",
-                              TOKENS_IMAGE_GEN, user["id"])
+                              img_cost, user["id"])
                 await execute(
                     "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1,$2,$3,$4)",
-                    user["id"], TOKENS_IMAGE_GEN, "ai_content_image_batch",
+                    user["id"], img_cost, "ai_content_image_batch",
                     f"Батч-иллюстрация к посту #{post_id}",
                 )
-                total_charged += TOKENS_IMAGE_GEN
+                try:
+                    await _track_skill(channel["id"], "image", 1)
+                except Exception as te:
+                    print(f"[Levels] track image batch skip: {te}")
+                total_charged += img_cost
                 generated += 1
                 results.append({"post_id": post_id, "image_url": image_url, "mode": mode})
                 # Атомарный snapshot для polling — frontend сразу подменит

@@ -92,23 +92,26 @@ async def create_landing(tc: str, user: Dict[str, Any] = Depends(get_current_use
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
-    u = await fetch_one("SELECT ai_tokens FROM users WHERE id=$1", user["id"])
-    if not u or (u["ai_tokens"] or 0) < SESSION_COST:
-        raise HTTPException(status_code=402, detail=f"Недостаточно ИИ токенов. Нужно {SESSION_COST}, у вас {u['ai_tokens'] if u else 0}")
+    from ..services.channel_levels import skill_cost
+    cost = await skill_cost(channel["id"], "landing")
 
-    await execute("UPDATE users SET ai_tokens = ai_tokens - $1 WHERE id=$2", SESSION_COST, user["id"])
+    u = await fetch_one("SELECT ai_tokens FROM users WHERE id=$1", user["id"])
+    if not u or (u["ai_tokens"] or 0) < cost:
+        raise HTTPException(status_code=402, detail=f"Недостаточно ИИ токенов. Нужно {cost}, у вас {u['ai_tokens'] if u else 0}")
+
+    await execute("UPDATE users SET ai_tokens = ai_tokens - $1 WHERE id=$2", cost, user["id"])
     await execute(
         "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1,$2,$3,$4)",
-        user["id"], SESSION_COST, "ai_landing", f"Генерация лендинга для канала {channel['title']}"
+        user["id"], cost, "ai_landing", f"Генерация лендинга для канала {channel['title']}"
     )
 
     slug = secrets.token_hex(8)
     landing_id = await execute_returning_id(
         """INSERT INTO ai_landings (user_id, channel_id, slug, tokens_spent)
            VALUES ($1, $2, $3, $4) RETURNING id""",
-        user["id"], channel["id"], slug, SESSION_COST
+        user["id"], channel["id"], slug, cost
     )
-    return {"success": True, "landing_id": landing_id, "slug": slug}
+    return {"success": True, "landing_id": landing_id, "slug": slug, "cost": cost}
 
 
 # ---- Сохранение данных опроса ----
@@ -382,6 +385,13 @@ async def generate_landing(tc: str, landing_id: int, user: Dict[str, Any] = Depe
         "UPDATE ai_landings SET html_content=$1, status='generated', regen_count=$2, updated_at=NOW() WHERE id=$3",
         html, new_regen, landing_id
     )
+    # Прокачка навыка только за первую генерацию (перегенерации = 0).
+    if new_regen == 0:
+        try:
+            from ..services.channel_levels import track_skill
+            await track_skill(channel["id"], "landing", 1)
+        except Exception as e:
+            print(f"[Levels] track landing skip: {e}")
     return {"success": True, "html": html, "regen_count": new_regen}
 
 
