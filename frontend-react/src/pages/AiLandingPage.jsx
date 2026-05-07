@@ -12,13 +12,13 @@ import { usePageOnboarding } from '../components/OnboardingTour';
 const SESSION_COST_DEFAULT = 500; // Цена для 1-го уровня; реальная — с /channels/{tc}/levels
 const MAX_REGEN = 2;
 
-function plurLanding(n) {
+function plurGen(n) {
   const last = n % 10;
   const teen = n % 100;
-  if (teen >= 11 && teen <= 14) return 'лендингов';
-  if (last === 1) return 'лендинг';
-  if (last >= 2 && last <= 4) return 'лендинга';
-  return 'лендингов';
+  if (teen >= 11 && teen <= 14) return 'генераций';
+  if (last === 1) return 'генерация';
+  if (last >= 2 && last <= 4) return 'генерации';
+  return 'генераций';
 }
 
 export default function AiLandingPage() {
@@ -267,7 +267,7 @@ export default function AiLandingPage() {
                   → {landingNextCost} на следующем уровне
                   {landingRemaining != null && (
                     <span style={{ color: 'var(--text-secondary)', fontWeight: 500, marginLeft: 4 }}>
-                      ({landingRemaining} {plurLanding(landingRemaining)} до апгрейда)
+                      ({landingRemaining} {plurGen(landingRemaining)} до следующего уровня)
                     </span>
                   )}
                 </span>

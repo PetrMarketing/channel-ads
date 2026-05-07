@@ -192,10 +192,17 @@ SESSION_STATUS_GENERATED = "generated"
 SESSION_STATUS_PUBLISHED = "published"
 
 
-def calc_session_cost(posts_count: int) -> int:
-    """Линейная стоимость: 15 постов = 150 токенов, 60 постов = 300 токенов."""
+def calc_session_cost(posts_count: int, base_per_post: int = 10) -> int:
+    """Стоимость пакета с линейной скидкой за объём.
+    discount_factor: 1.0 при 15 постах → 0.5 при 60.
+    Пример при base=10: 15→150, 30→250, 60→300.
+    Пример при base=5 (макс уровень): 15→75, 60→150.
+    """
     n = max(15, min(60, int(posts_count or 30)))
-    return int(round(150 + (n - 15) * (300 - 150) / (60 - 15)))
+    base = max(1, int(base_per_post or 10))
+    discount_factor = 1.0 - 0.5 * (n - 15) / 45  # 1.0 → 0.5
+    total = int(round(base * n * discount_factor))
+    return max(n, total)  # минимум 1 токен/пост
 
 
 def _parse_json_field(val):
@@ -829,10 +836,12 @@ async def generate_posts(tc: str, session_id: int, user: Dict[str, Any] = Depend
         raise HTTPException(status_code=400, detail="Загрузите образец стиля постов")
 
     posts_count = int(session.get("posts_count") or 30)
-    # Динамическая цена с уровня канала (skill='text').
+    # Динамическая цена: базовая стоимость поста с уровня (skill='text'),
+    # дальше — скидка за объём через calc_session_cost.
     from ..services.channel_levels import skill_cost as _skill_cost, track_skill as _track_skill
-    cost_per_post = await _skill_cost(channel["id"], "text")
-    total_cost = cost_per_post * posts_count
+    base_per_post = await _skill_cost(channel["id"], "text")
+    total_cost = calc_session_cost(posts_count, base_per_post)
+    cost_per_post = max(1, (total_cost + posts_count - 1) // posts_count)
 
     # Pre-check баланса на полную стоимость, но списание per-success в раннере.
     u = await fetch_one("SELECT ai_tokens FROM users WHERE id=$1", user["id"])

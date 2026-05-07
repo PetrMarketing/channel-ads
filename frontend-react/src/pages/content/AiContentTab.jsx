@@ -74,27 +74,20 @@ const pill = (bg, color) => ({
   whiteSpace: 'nowrap',
 });
 
-function calcCost(n, perPost = 5) {
+function calcCost(n, basePerPost = 10) {
   const c = Math.max(15, Math.min(60, Number(n) || 30));
-  return c * Math.max(1, Number(perPost) || 5);
+  const base = Math.max(1, Number(basePerPost) || 10);
+  const discountFactor = 1.0 - 0.5 * (c - 15) / 45; // 1.0 → 0.5
+  return Math.max(c, Math.round(base * c * discountFactor));
 }
 
-function plurText(n) {
+function plurGen(n) {
   const last = n % 10;
   const teen = n % 100;
-  if (teen >= 11 && teen <= 14) return 'текстов';
-  if (last === 1) return 'текст';
-  if (last >= 2 && last <= 4) return 'текста';
-  return 'текстов';
-}
-
-function plurImage(n) {
-  const last = n % 10;
-  const teen = n % 100;
-  if (teen >= 11 && teen <= 14) return 'картинок';
-  if (last === 1) return 'картинка';
-  if (last >= 2 && last <= 4) return 'картинки';
-  return 'картинок';
+  if (teen >= 11 && teen <= 14) return 'генераций';
+  if (last === 1) return 'генерация';
+  if (last >= 2 && last <= 4) return 'генерации';
+  return 'генераций';
 }
 
 function fmtRu(d) {
@@ -675,11 +668,15 @@ function ProductsStep({ tc, sessionId, products, setProducts, onNext, onBack, op
 // SCHEDULE STEP
 // =============================================================================
 function ScheduleStep({ schedule, setSchedule, onGenerate, onBack, busy, textSkill }) {
-  const ts = textSkill || { current_cost: 5, next_cost: null, period_count: 0, next_threshold: null, is_max: false };
-  const cost = calcCost(schedule.posts_count, ts.current_cost);
-  const perPost = ts.current_cost;
+  const ts = textSkill || { current_cost: 10, next_cost: null, period_count: 0, next_threshold: null, is_max: false };
+  const n = Math.max(15, Math.min(60, Number(schedule.posts_count) || 30));
+  const cost = calcCost(n, ts.current_cost);
+  const perPostAvg = Math.max(1, Math.round((cost / n) * 10) / 10);
+  const baseCost = ts.current_cost * n;
+  const discount = baseCost > 0 ? Math.round(((baseCost - cost) / baseCost) * 100) : 0;
   const nextHint = !ts.is_max && ts.next_cost != null ? {
     nextCost: ts.next_cost,
+    nextTotal: calcCost(n, ts.next_cost),
     remaining: Math.max(0, (ts.next_threshold || 0) - (ts.period_count || 0)),
   } : null;
 
@@ -717,7 +714,12 @@ function ScheduleStep({ schedule, setSchedule, onGenerate, onBack, busy, textSki
               display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6,
             }}>
               <span style={{ fontWeight: 600 }}>
-                Стоимость: <span style={{ color: ACCENT2 }}>{cost} ИИ-токенов</span> ({perPost} ИИт/пост)
+                Стоимость: <span style={{ color: ACCENT2 }}>{cost} ИИ-токенов</span> (~{perPostAvg} ИИт/пост)
+                {discount > 0 && (
+                  <span style={{ marginLeft: 6, color: SUCCESS, fontSize: '0.76rem' }}>
+                    −{discount}% за объём
+                  </span>
+                )}
               </span>
               <span style={{ fontSize: '0.76rem', color: MUTED }}>
                 {schedule.posts_count > 30 ? '2 поста в день' : '1 пост в день'}
@@ -725,9 +727,9 @@ function ScheduleStep({ schedule, setSchedule, onGenerate, onBack, busy, textSki
             </div>
             {nextHint && (
               <div style={{ fontSize: '0.78rem', color: SUCCESS, marginTop: 8, fontWeight: 600 }}>
-                → {nextHint.nextCost} ИИт/пост на следующем уровне
+                → {nextHint.nextTotal} токенов за тот же пакет на следующем уровне
                 <span style={{ color: MUTED, fontWeight: 500, marginLeft: 4 }}>
-                  ({nextHint.remaining} {plurText(nextHint.remaining)} до апгрейда)
+                  ({nextHint.remaining} {plurGen(nextHint.remaining)} до следующего уровня)
                 </span>
               </div>
             )}
@@ -2227,7 +2229,7 @@ function ReviewStep({ tc, sessionId, posts, onReload, onPublishAll, onBack, onDo
               <span style={{ fontSize: '0.74rem', color: SUCCESS, fontWeight: 600 }}>
                 → {imageNextHint.nextCost} ИИт/картинка на следующем уровне
                 <span style={{ color: MUTED, fontWeight: 500, marginLeft: 4 }}>
-                  ({imageNextHint.remaining} {plurImage(imageNextHint.remaining)} до апгрейда)
+                  ({imageNextHint.remaining} {plurGen(imageNextHint.remaining)} до следующего уровня)
                 </span>
               </span>
             )}
