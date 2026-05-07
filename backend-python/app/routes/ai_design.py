@@ -362,6 +362,14 @@ async def apply_to_channel(tc: str, session_id: int, user: Dict[str, Any] = Depe
             f"{settings.APP_URL}{session['chosen_avatar_url']}", channel["id"]
         )
 
+    # Достижение «ИИ Оформление» — за каждое успешное применение.
+    if status == "applied":
+        try:
+            from ..services.achievements import track_event
+            await track_event(int(channel["id"]), "ai_design", 1)
+        except Exception as e:
+            print(f"[Achievements] track ai_design skip: {e}")
+
     result = {"success": True, "status": status, "description_note": "Описание нужно установить вручную в настройках канала"}
     if errors:
         result["errors"] = errors

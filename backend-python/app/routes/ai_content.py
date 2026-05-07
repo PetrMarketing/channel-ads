@@ -1203,6 +1203,13 @@ async def publish_all(tc: str, session_id: int, user: Dict[str, Any] = Depends(g
         "UPDATE ai_content_sessions SET status='published', updated_at=NOW() WHERE id=$1",
         session_id,
     )
+    # Достижение «ИИ Контент сессии» — за каждый publish-all (если что-то выложили).
+    if count > 0:
+        try:
+            from ..services.achievements import track_event
+            await track_event(int(channel["id"]), "ai_content_session", 1)
+        except Exception as e:
+            print(f"[Achievements] track ai_content_session skip: {e}")
     return {"success": True, "count": count}
 
 

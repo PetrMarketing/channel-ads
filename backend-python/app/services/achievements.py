@@ -237,6 +237,73 @@ async def fetch_pending_notifications(user_id: int) -> List[Dict[str, Any]]:
     return out
 
 
+async def get_season_leaderboard(channel_id: Optional[int] = None, limit: int = 10) -> Dict[str, Any]:
+    """Топ каналов сезона по сумме очков от ачивок + место выбранного канала
+    (если он не входит в топ)."""
+    season = current_season_key()
+    # Сумма очков по каналу. Используем CASE WHEN для перевода tier→points.
+    rows = await fetch_all(
+        """SELECT c.id AS channel_id, c.title, c.avatar_url,
+                  SUM(CASE a.tier
+                      WHEN 'bronze' THEN 1
+                      WHEN 'silver' THEN 3
+                      WHEN 'gold' THEN 5
+                      WHEN 'platinum' THEN 10
+                      ELSE 0
+                  END)::int AS points,
+                  COUNT(*)::int AS achievements_count
+           FROM channel_achievements a
+           JOIN channels c ON c.id = a.channel_id
+           WHERE a.season_key = $1
+           GROUP BY c.id, c.title, c.avatar_url
+           ORDER BY points DESC, achievements_count DESC, c.id ASC""",
+        season,
+    )
+    leaderboard = []
+    selected_position = None
+    selected_entry = None
+    for i, r in enumerate(rows):
+        pos = i + 1
+        entry = {
+            "position": pos,
+            "channel_id": r["channel_id"],
+            "title": r["title"] or f"Канал #{r['channel_id']}",
+            "avatar_url": r.get("avatar_url"),
+            "points": int(r["points"] or 0),
+            "achievements_count": int(r["achievements_count"] or 0),
+            "is_selected": channel_id is not None and r["channel_id"] == channel_id,
+        }
+        if entry["is_selected"]:
+            selected_position = pos
+            selected_entry = entry
+        if pos <= limit:
+            leaderboard.append(entry)
+    if channel_id and selected_position is None:
+        # Канал есть, но без очков — добавим в конец как "out of top"
+        ch_row = await fetch_one(
+            "SELECT id, title, avatar_url FROM channels WHERE id = $1",
+            channel_id,
+        )
+        if ch_row:
+            selected_entry = {
+                "position": None,
+                "channel_id": ch_row["id"],
+                "title": ch_row["title"] or f"Канал #{ch_row['id']}",
+                "avatar_url": ch_row.get("avatar_url"),
+                "points": 0,
+                "achievements_count": 0,
+                "is_selected": True,
+            }
+    return {
+        "season_key": season,
+        "season_label": season_label(season),
+        "top": leaderboard,
+        "total_channels": len(rows),
+        "selected_position": selected_position,
+        "selected": selected_entry,
+    }
+
+
 async def mark_notification_seen(user_id: int, achievement_id: int) -> bool:
     """Помечаем что пользователь увидел модалку (notified_at = now())."""
     res = await execute(

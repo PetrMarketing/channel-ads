@@ -128,7 +128,7 @@ export default function AchievementsPage() {
         : data ? <ProgressTab data={data} /> : <ComingSoon emoji="📈" title="Прогресс канала" desc="Не удалось загрузить данные." />
       )}
       {tab === 'badges' && <BadgesTab tc={tc} />}
-      {tab === 'race' && <ComingSoon emoji="🏁" title="Гонка каналов" desc="Сезонный рейтинг лучших каналов сервиса." />}
+      {tab === 'race' && <RaceTab tc={tc} />}
     </div>
   );
 }
@@ -458,6 +458,158 @@ function BadgeCard({ item, delay }) {
       )}
     </div>
   );
+}
+
+function RaceTab({ tc }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/achievements/race${tc ? `?tc=${tc}` : ''}`);
+      if (res.success) setData(res);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [tc]);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading && !data) return <ComingSoon emoji="⏳" title="Загружаем" desc="Минутку…" />;
+  if (!data) return <ComingSoon emoji="🏁" title="Гонка каналов" desc="Не удалось загрузить." />;
+
+  const empty = (data.top || []).length === 0;
+  const selectedInTop = data.selected_position && data.selected_position <= 10;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{
+        padding: '14px 18px', borderRadius: 14,
+        background: `linear-gradient(135deg, ${ACCENT}10 0%, ${ACCENT2}14 100%)`,
+        border: `1px solid ${ACCENT2}30`,
+        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+      }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: '0.74rem', fontWeight: 700, color: MUTED, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Сезон
+          </div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 800, color: DARK }}>{data.season_label}</div>
+          <div style={{ fontSize: '0.78rem', color: MUTED, marginTop: 2 }}>
+            Каналов в гонке: <b>{data.total_channels}</b>
+          </div>
+        </div>
+        <div style={{
+          padding: '10px 14px', borderRadius: 12, background: '#fff',
+          border: `1px solid ${SUCCESS}30`,
+          fontSize: '0.82rem', color: DARK, maxWidth: 320, lineHeight: 1.4,
+        }}>
+          🏆 <b>Победитель сезона</b> получает 1000 ИИ-токенов и 60 дней доступа бонусом
+        </div>
+      </div>
+
+      {empty ? (
+        <div style={{
+          padding: '40px 24px', textAlign: 'center', borderRadius: 14,
+          background: '#fff', border: `1px solid ${BORDER}`,
+        }}>
+          <div style={{ fontSize: '2.6rem', marginBottom: 10 }}>🏁</div>
+          <div style={{ fontSize: '0.94rem', color: MUTED }}>
+            Сезон только начался — никто пока не заработал ачивок. Будь первым!
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {data.top.map(entry => (
+            <RaceRow key={entry.channel_id} entry={entry} />
+          ))}
+        </div>
+      )}
+
+      {data.selected && !selectedInTop && (
+        <>
+          <div style={{ textAlign: 'center', color: MUTED, fontSize: '0.78rem', padding: '6px 0' }}>· · ·</div>
+          <RaceRow entry={data.selected} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function RaceRow({ entry }) {
+  const isTop3 = entry.position && entry.position <= 3;
+  const medal = entry.position === 1 ? '🥇' : entry.position === 2 ? '🥈' : entry.position === 3 ? '🥉' : null;
+  const accentBorder = entry.is_selected
+    ? `2px solid ${ACCENT}`
+    : isTop3 ? `1px solid ${TIER_COLORS.gold.bg}55` : `1px solid ${BORDER}`;
+  return (
+    <div style={{
+      padding: '12px 14px', borderRadius: 12,
+      background: entry.is_selected ? `${ACCENT}06` : '#fff',
+      border: accentBorder,
+      display: 'flex', alignItems: 'center', gap: 12,
+      boxShadow: entry.is_selected ? `0 4px 14px ${ACCENT}25` : '0 1px 3px rgba(0,0,0,0.04)',
+      transition: 'all .15s ease',
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: 10,
+        background: medal
+          ? 'transparent'
+          : entry.position == null
+            ? `${MUTED}15`
+            : `${ACCENT2}10`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: medal ? '1.5rem' : '0.92rem', fontWeight: 800,
+        color: entry.position == null ? MUTED : DARK,
+        flexShrink: 0,
+      }}>
+        {medal || (entry.position != null ? entry.position : '—')}
+      </div>
+      <div style={{
+        width: 38, height: 38, borderRadius: 10,
+        background: entry.avatar_url
+          ? `url(${entry.avatar_url}) center/cover`
+          : `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})`,
+        flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: '#fff', fontWeight: 800, fontSize: '0.95rem',
+      }}>
+        {!entry.avatar_url && (entry.title || '?')[0]}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: '0.94rem', fontWeight: 700, color: DARK,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {entry.title}
+          {entry.is_selected && (
+            <span style={{
+              marginLeft: 6, fontSize: '0.68rem', color: ACCENT, fontWeight: 700,
+              background: `${ACCENT}10`, padding: '2px 7px', borderRadius: 10,
+            }}>ваш</span>
+          )}
+        </div>
+        <div style={{ fontSize: '0.74rem', color: MUTED, marginTop: 2 }}>
+          {entry.achievements_count} {plurAchievements(entry.achievements_count)}
+        </div>
+      </div>
+      <div style={{
+        padding: '6px 12px', borderRadius: 10,
+        background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})`,
+        color: '#fff', fontSize: '0.88rem', fontWeight: 800,
+        boxShadow: `0 3px 8px ${ACCENT}30`, whiteSpace: 'nowrap',
+      }}>
+        🏆 {entry.points}
+      </div>
+    </div>
+  );
+}
+
+function plurAchievements(n) {
+  const last = n % 10;
+  const teen = n % 100;
+  if (teen >= 11 && teen <= 14) return 'ачивок';
+  if (last === 1) return 'ачивка';
+  if (last >= 2 && last <= 4) return 'ачивки';
+  return 'ачивок';
 }
 
 function plurOchki(n) {

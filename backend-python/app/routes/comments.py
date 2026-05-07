@@ -70,6 +70,11 @@ async def reply_comment(tc: str, comment_id: int, request: Request, user=Depends
         ch["id"], parent["post_type"], parent["post_id"],
         reply_name, text, comment_id, parent.get("user_name", ""),
     )
+    try:
+        from ..services.achievements import track_event
+        await track_event(int(ch["id"]), "comment_reply", 1)
+    except Exception as e:
+        print(f"[Achievements] track comment_reply skip: {e}")
     return {"success": True, "id": rid}
 
 

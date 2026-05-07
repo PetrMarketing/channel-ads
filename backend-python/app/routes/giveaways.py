@@ -395,6 +395,13 @@ async def draw_winner(tc: str, giveaway_id: int, user: Dict[str, Any] = Depends(
             except Exception as e:
                 print(f"[Giveaways] notify winner failed: {e}")
 
+        # Достижение «Розыгрыши завершить»
+        try:
+            from ..services.achievements import track_event
+            await track_event(int(g["channel_id"]), "giveaway_finish", 1)
+        except Exception as e:
+            print(f"[Achievements] track giveaway skip: {e}")
+
         return {
             "success": True,
             "winners": [

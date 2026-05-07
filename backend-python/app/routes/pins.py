@@ -68,6 +68,11 @@ async def create_lead_magnet(
         attach_type or None, subs_only, back_btn,
     )
     magnet = await fetch_one(f"SELECT {_LM_COLS} FROM lead_magnets WHERE id = $1", lm_id)
+    try:
+        from ..services.achievements import track_event
+        await track_event(int(channel["id"]), "lead_magnet", 1)
+    except Exception as e:
+        print(f"[Achievements] track lead_magnet skip: {e}")
     return {"success": True, "leadMagnet": magnet}
 
 
@@ -168,6 +173,11 @@ async def create_pin_json(tc: str, request_body: dict, user: Dict[str, Any] = De
         json.dumps(inline_buttons) if inline_buttons else None, attach_type,
     )
     pin = await fetch_one(f"SELECT {_PIN_COLS} FROM pin_posts WHERE id = $1", pin_id)
+    try:
+        from ..services.achievements import track_event
+        await track_event(int(channel["id"]), "pin_create", 1)
+    except Exception as e:
+        print(f"[Achievements] track pin_create skip: {e}")
     return {"success": True, "pin": pin}
 
 
@@ -217,6 +227,11 @@ async def create_pin_upload(
         attach_type or None,
     )
     pin = await fetch_one(f"SELECT {_PIN_COLS} FROM pin_posts WHERE id = $1", pin_id)
+    try:
+        from ..services.achievements import track_event
+        await track_event(int(channel["id"]), "pin_create", 1)
+    except Exception as e:
+        print(f"[Achievements] track pin_create skip: {e}")
     return {"success": True, "pin": pin}
 
 

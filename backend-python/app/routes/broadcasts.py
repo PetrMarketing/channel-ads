@@ -492,6 +492,13 @@ async def send_broadcast(tc: str, bc_id: int, user: Dict[str, Any] = Depends(get
             "UPDATE broadcasts SET status = 'completed', completed_at = NOW(), sent_count = $1, failed_count = $2, total_count = $3 WHERE id = $4",
             sent, failed, len(leads), bc_id,
         )
+        # Достижение «Сделать рассылку» — 1 за каждый завершённый запуск.
+        if sent > 0:
+            try:
+                from ..services.achievements import track_event
+                await track_event(int(channel["id"]), "broadcast_send", 1)
+            except Exception as e:
+                print(f"[Achievements] track broadcast skip: {e}")
 
     asyncio.create_task(_do_send())
     return {"success": True, "total": len(leads)}

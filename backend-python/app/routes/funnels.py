@@ -95,6 +95,11 @@ async def create_step(tc: str, lm_id: int, request: Request, user: Dict[str, Any
         file_path, file_type, delay_type, delay_config, file_data, attach_type,
     )
     step = await fetch_one(f"SELECT {_STEP_COLS} FROM funnel_steps WHERE id = $1", step_id)
+    try:
+        from ..services.achievements import track_event
+        await track_event(int(channel["id"]), "funnel_step", 1)
+    except Exception as e:
+        print(f"[Achievements] track funnel_step skip: {e}")
     return {"success": True, "step": step}
 
 

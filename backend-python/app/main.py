@@ -474,6 +474,22 @@ async def mark_achievement_seen(aid: int, user=Depends(get_current_user)):
     return {"success": True}
 
 
+@app.get("/api/achievements/race")
+async def get_race_leaderboard(tc: str = "", user=Depends(get_current_user)):
+    """Топ-10 каналов по очкам в текущем сезоне + место выбранного."""
+    channel_id = None
+    if tc:
+        ch = await fetch_one(
+            "SELECT id FROM channels WHERE tracking_code = $1 AND user_id = $2",
+            tc, user["id"],
+        )
+        if ch:
+            channel_id = ch["id"]
+    from .services.achievements import get_season_leaderboard
+    data = await get_season_leaderboard(channel_id=channel_id, limit=10)
+    return {"success": True, **data}
+
+
 @app.get("/api/modules/{tracking_code}")
 async def get_module_settings(tracking_code: str):
     """Get enabled modules for a channel."""
