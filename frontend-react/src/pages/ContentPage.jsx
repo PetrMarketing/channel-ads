@@ -361,7 +361,11 @@ export default function ContentPage() {
   const [viewMode, setViewMode] = useState('calendar');
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [stripOffset, setStripOffset] = useState(0); // сдвиг 14-дневной полосы
 
   const { overlay: pageTour } = usePageOnboarding('content', [
     { selector: '[data-tour-page="content-day"]', title: 'Календарь публикаций', text: 'Нажмите на любую свободную дату — откроется форма создания запланированного поста с выбранной датой.', placement: 'bottom' },
@@ -562,6 +566,33 @@ export default function ContentPage() {
   };
 
   const selectedDayPosts = selectedDate ? (postsByDate[selectedDate] || []) : [];
+
+  // 14-дневная горизонтальная полоса дат под календарём.
+  // Центрируем на выбранной дате с учётом текущего сдвига (stripOffset).
+  const stripDays = useMemo(() => {
+    const anchorStr = selectedDate || (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+    const [ay, am, ad] = anchorStr.split('-').map(Number);
+    const anchor = new Date(ay, am - 1, ad);
+    const days = [];
+    // 7 дней до и 7 после якоря, плюс смещение
+    for (let i = -6; i <= 7; i += 1) {
+      const d = new Date(anchor);
+      d.setDate(d.getDate() + i + stripOffset);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      days.push({
+        date: d,
+        key,
+        weekday: d.toLocaleDateString('ru-RU', { weekday: 'short' }),
+        day: d.getDate(),
+        month: d.toLocaleDateString('ru-RU', { month: 'short' }),
+        count: (postsByDate[key] || []).length,
+      });
+    }
+    return days;
+  }, [selectedDate, stripOffset, postsByDate]);
 
   const renderDayCard = (post, i) => {
     const meta = STATUS_META[post.status] || STATUS_META.draft;
@@ -907,7 +938,81 @@ export default function ContentPage() {
                   </div>
                 </section>
 
-                {selectedDate && selectedDayPosts.length > 0 && (
+                {/* Горизонтальная полоса дат под основным календарём */}
+                <section style={{ ...cardBase, padding: '14px 16px', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button className="cp-cal-nav" onClick={() => setStripOffset(o => o - 7)} title="Раньше">‹</button>
+                    <div style={{
+                      flex: 1, display: 'flex', gap: 6, overflowX: 'auto',
+                      scrollSnapType: 'x mandatory',
+                      paddingBottom: 2,
+                    }}>
+                      {stripDays.map(d => {
+                        const active = d.key === selectedDate;
+                        const isToday = d.key === today;
+                        return (
+                          <button
+                            key={d.key}
+                            type="button"
+                            onClick={() => setSelectedDate(d.key)}
+                            style={{
+                              flexShrink: 0, scrollSnapAlign: 'start',
+                              minWidth: 64, padding: '8px 6px',
+                              borderRadius: 12, cursor: 'pointer',
+                              border: active ? 'none' : `1px solid ${BORDER}`,
+                              background: active
+                                ? `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`
+                                : '#fff',
+                              color: active ? '#fff' : DARK,
+                              boxShadow: active ? `0 4px 12px ${ACCENT}40` : 'none',
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                              transition: 'all .15s ease',
+                              position: 'relative',
+                            }}
+                          >
+                            <span style={{
+                              fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.04em',
+                              textTransform: 'uppercase',
+                              opacity: active ? 0.9 : 0.65,
+                            }}>{d.weekday}</span>
+                            <span style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em' }}>{d.day}</span>
+                            <span style={{ fontSize: '0.62rem', opacity: active ? 0.85 : 0.5 }}>{d.month}</span>
+                            {d.count > 0 && (
+                              <span style={{
+                                position: 'absolute', top: 4, right: 4,
+                                minWidth: 16, height: 16, padding: '0 4px',
+                                borderRadius: 8,
+                                background: active ? 'rgba(255,255,255,0.85)' : ACCENT2,
+                                color: active ? ACCENT : '#fff',
+                                fontSize: '0.62rem', fontWeight: 800,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                lineHeight: 1,
+                              }}>{d.count}</span>
+                            )}
+                            {isToday && !active && (
+                              <span style={{
+                                position: 'absolute', bottom: 3,
+                                width: 4, height: 4, borderRadius: '50%',
+                                background: ACCENT,
+                              }} />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button className="cp-cal-nav" onClick={() => setStripOffset(o => o + 7)} title="Позже">›</button>
+                    {stripOffset !== 0 && (
+                      <button
+                        className="cp-cal-nav"
+                        style={{ width: 'auto', padding: '0 12px', fontSize: '0.78rem', fontWeight: 600 }}
+                        onClick={() => setStripOffset(0)}
+                        title="К сегодня"
+                      >Сегодня</button>
+                    )}
+                  </div>
+                </section>
+
+                {selectedDate && (
                   <section style={{ marginBottom: 8 }}>
                     <div style={sectionHeaderRow}>
                       <div>
@@ -917,15 +1022,35 @@ export default function ContentPage() {
                             return new Date(y, m - 1, d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
                           })()}
                         </h2>
-                        <p style={sectionSubStyle}>Постов на день: {selectedDayPosts.length}</p>
+                        <p style={sectionSubStyle}>
+                          {selectedDayPosts.length === 0 ? 'На этот день постов нет' : `Постов на день: ${selectedDayPosts.length}`}
+                        </p>
                       </div>
                       <button className="cp-ghost" style={ghostBtn} onClick={() => openCreate(selectedDate)}>
-                        <PlusIcon /> Добавить пост
+                        <PlusIcon /> {selectedDayPosts.length === 0 ? 'Создать пост' : 'Добавить пост'}
                       </button>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {selectedDayPosts.map((p, i) => renderDayCard(p, i))}
-                    </div>
+                    {selectedDayPosts.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {selectedDayPosts.map((p, i) => renderDayCard(p, i))}
+                      </div>
+                    ) : (
+                      <div style={{
+                        ...cardBase,
+                        padding: '32px 24px',
+                        textAlign: 'center',
+                        background: SOFT_BG,
+                        borderStyle: 'dashed',
+                      }}>
+                        <div style={{ fontSize: '2.2rem', marginBottom: 10 }}>📅</div>
+                        <p style={{ margin: '0 0 16px', color: MUTED, fontSize: '0.92rem', lineHeight: 1.5 }}>
+                          На выбранную дату пока нет запланированных публикаций.
+                        </p>
+                        <button className="cp-primary" style={primaryBtn} onClick={() => openCreate(selectedDate)}>
+                          <PlusIcon /> Создать пост
+                        </button>
+                      </div>
+                    )}
                   </section>
                 )}
 
