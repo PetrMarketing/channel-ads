@@ -194,6 +194,8 @@ async def update_post(tc: str, post_id: int, request: Request, user: Dict[str, A
         fields.append("max_file_token = NULL")
     if not fields:
         return {"success": True}
+    # updated_at — для DraftCleaner TTL
+    fields.append("updated_at = NOW()")
     params.extend([post_id, channel["id"]])
     await execute(f"UPDATE content_posts SET {', '.join(fields)} WHERE id = ${idx} AND channel_id = ${idx+1}", *params)
     post = await fetch_one(f"SELECT {_POST_COLS} FROM content_posts WHERE id = $1", post_id)

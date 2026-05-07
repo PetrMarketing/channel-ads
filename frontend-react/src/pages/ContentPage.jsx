@@ -511,8 +511,108 @@ export default function ContentPage() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Удалить пост?')) return;
+  // Confirm-удаление (вместо window.confirm) — { id, title } или null
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+  // ---- Авто-сохранение черновика ----
+  // Как только пользователь напечатал текст или приложил файл, в фоне
+  // создаём draft (status='draft'). Каждое следующее изменение — debounced PUT.
+  // Очищаются автоматически серверным кроном через 30 дней.
+  const [draftSavingState, setDraftSavingState] = useState('idle'); // 'idle'|'saving'|'saved'
+  const draftTimerRef = useRef(null);
+  const draftSavingRef = useRef(false);
+  const draftIdRef = useRef(null);
+
+  useEffect(() => {
+    if (showModal) {
+      // При каждом открытии модалки — чистый стейт авто-сейва
+      draftIdRef.current = editingPost?.id || null;
+      setDraftSavingState('idle');
+    } else {
+      // Закрыли модалку — отменяем активный таймер
+      if (draftTimerRef.current) { clearTimeout(draftTimerRef.current); draftTimerRef.current = null; }
+    }
+  }, [showModal, editingPost]);
+
+  const saveDraft = useCallback(async () => {
+    if (!showModal || !tc) return;
+    if (draftSavingRef.current) return;
+    const hasText = !!(form.message_text || '').trim();
+    const hasFile = !!postFile;
+    if (!hasText && !hasFile) return; // пусто — нечего сохранять
+    draftSavingRef.current = true;
+    setDraftSavingState('saving');
+    try {
+      // Существующий пост (или ранее созданный draft этой сессии) → PUT
+      const existingId = draftIdRef.current;
+      if (existingId) {
+        // Не трогаем явно установленный пользователем status (если он
+        // в этой сессии планирует/публикует — handleSave сделает явный PUT).
+        const payload = {
+          title: form.title || '',
+          message_text: form.message_text || '',
+          attach_type: form.attach_type || null,
+          erid: form.erid || null,
+        };
+        if (form.inline_buttons && form.inline_buttons.trim()) {
+          try { payload.inline_buttons = JSON.parse(form.inline_buttons); } catch { /* ignore */ }
+        }
+        await api.put(`/content/${tc}/${existingId}`, payload);
+      } else {
+        // Создаём новый draft (без scheduled_at — статус 'draft' автоматом).
+        // Файлы сюда не отправляем (они большие); файл прилетит при handleSave.
+        const payload = {
+          title: form.title || '',
+          message_text: form.message_text || '',
+          attach_type: form.attach_type || null,
+          erid: form.erid || null,
+        };
+        if (form.inline_buttons && form.inline_buttons.trim()) {
+          try { payload.inline_buttons = JSON.parse(form.inline_buttons); } catch { /* ignore */ }
+        }
+        const data = await api.post(`/content/${tc}`, payload);
+        if (data?.success && data?.post?.id) {
+          draftIdRef.current = data.post.id;
+          // Подменяем editingPost, чтобы handleSave работал в режиме PUT.
+          setEditingPost(data.post);
+        }
+      }
+      setDraftSavingState('saved');
+      // Перезагружаем список постов в фоне, чтобы черновик появился сразу
+      loadPosts();
+    } catch (e) {
+      // Тихо: не пугаем пользователя, в идеале next try-сейв дойдёт.
+      console.warn('[ContentPage] draft autosave failed:', e?.message);
+      setDraftSavingState('idle');
+    } finally {
+      draftSavingRef.current = false;
+    }
+  }, [showModal, tc, form, postFile, editingPost, loadPosts]);
+
+  // Debounce 1.5s после последнего изменения текста/полей.
+  useEffect(() => {
+    if (!showModal) return undefined;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => { saveDraft(); }, 1500);
+    return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.message_text, form.title, form.attach_type, form.inline_buttons, form.erid, showModal]);
+
+  // Файл прилетел — сохраняем сразу (без debounce).
+  useEffect(() => {
+    if (!showModal || !postFile) return;
+    saveDraft();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postFile]);
+
+  const handleDelete = (post) => {
+    setDeleteConfirm({ id: post.id, title: post.title || post.message_text?.replace(/<[^>]+>/g, '').slice(0, 60) || 'Пост' });
+  };
+
+  const performDelete = async () => {
+    if (!deleteConfirm) return;
+    const id = deleteConfirm.id;
+    setDeleteConfirm(null);
     try {
       const data = await api.delete(`/content/${tc}/${id}`);
       if (data.success) { showToast('Пост удалён'); loadPosts(); }
@@ -663,7 +763,7 @@ export default function ContentPage() {
             >
               {post.status === 'published' ? '↻' : '▶'}
             </button>
-            <button className="cp-danger" style={dangerGhost} onClick={() => handleDelete(post.id)} title="Удалить">🗑</button>
+            <button className="cp-danger" style={dangerGhost} onClick={() => handleDelete(post)} title="Удалить">🗑</button>
           </div>
         </div>
       </div>
@@ -1094,7 +1194,28 @@ export default function ContentPage() {
           </>
         )}
 
-        <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingPost ? 'Редактировать пост' : 'Создать пост'}>
+        <Modal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          title={
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+              {editingPost && editingPost.status === 'draft' ? 'Черновик'
+                : editingPost ? 'Редактировать пост'
+                : 'Создать пост'}
+              {(draftSavingState === 'saving' || draftSavingState === 'saved') && (
+                <span style={{
+                  fontSize: '0.7rem', fontWeight: 600,
+                  padding: '3px 8px', borderRadius: 10,
+                  background: draftSavingState === 'saving' ? 'rgba(245, 158, 11, 0.10)' : 'rgba(16, 185, 129, 0.10)',
+                  color: draftSavingState === 'saving' ? '#f59e0b' : '#10b981',
+                  letterSpacing: '0.02em',
+                }}>
+                  {draftSavingState === 'saving' ? '⏳ Сохраняем…' : '✓ Черновик сохранён'}
+                </span>
+              )}
+            </span>
+          }
+        >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
               <label style={labelStyle}>Заголовок</label>
@@ -1227,6 +1348,54 @@ export default function ContentPage() {
           defaultText={form.message_text?.replace(/<[^>]+>/g, '').slice(0, 200) || ''}
           defaultName={form.title || ''}
         />
+
+        <Modal
+          isOpen={!!deleteConfirm}
+          onClose={() => setDeleteConfirm(null)}
+          title="Удалить пост?"
+          footer={
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                style={{
+                  padding: '10px 18px', borderRadius: 10, cursor: 'pointer',
+                  background: '#fff', border: '1px solid #e5e7eb', color: '#1a1a2e',
+                  fontSize: '0.88rem', fontWeight: 600,
+                }}
+              >Отмена</button>
+              <button
+                onClick={performDelete}
+                style={{
+                  padding: '10px 18px', borderRadius: 10, cursor: 'pointer', border: 'none',
+                  background: 'linear-gradient(135deg, #e63946, #b71c1c)',
+                  color: '#fff', fontSize: '0.88rem', fontWeight: 700,
+                  boxShadow: '0 4px 14px rgba(230,57,70,0.40)',
+                }}
+              >Удалить безвозвратно</button>
+            </div>
+          }
+        >
+          <div style={{ padding: '6px 0' }}>
+            <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+              <div style={{
+                flexShrink: 0, width: 48, height: 48, borderRadius: 12,
+                background: 'rgba(230,57,70,0.10)', color: '#e63946',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '1.5rem',
+              }}>⚠️</div>
+              <div>
+                <p style={{ margin: '0 0 8px', fontSize: '0.95rem', fontWeight: 600, color: '#1a1a2e' }}>
+                  Вы точно хотите удалить этот пост? Он удалится безвозвратно.
+                </p>
+                {deleteConfirm?.title && (
+                  <p style={{ margin: 0, fontSize: '0.84rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                    «{deleteConfirm.title}»
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </Modal>
 
         <AiPostGenModal
           isOpen={!!aiGenMode}

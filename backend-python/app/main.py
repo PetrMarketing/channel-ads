@@ -61,6 +61,9 @@ async def lifespan(app: FastAPI):
     from .services.booking_reminder import start_booking_reminder
     start_booking_reminder()
 
+    from .services.draft_cleaner import start_draft_cleaner
+    start_draft_cleaner()
+
     # Start bot polling
     from .routes.telegram_bot import start_telegram_polling
     from .routes.max_webhook import start_max_polling
