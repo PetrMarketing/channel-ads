@@ -13,6 +13,7 @@ import MessagePreview from '../components/MessagePreview';
 import EridModal from '../components/EridModal';
 import { usePageOnboarding } from '../components/OnboardingTour';
 import AiContentTab from './content/AiContentTab';
+import FilesLibraryTab from './content/FilesLibraryTab';
 
 const ACCENT = '#4361ee';
 const ACCENT2 = '#7b68ee';
@@ -952,6 +953,14 @@ export default function ContentPage() {
               pointerEvents: 'none',
             }}>Хит</span>
           </button>
+          <button
+            role="tab"
+            aria-selected={viewMode === 'files'}
+            className={`cp-tab${viewMode === 'files' ? ' active' : ''}`}
+            onClick={() => setViewMode('files')}
+          >
+            📁 Мои файлы
+          </button>
         </div>
 
         {loading ? <Loading /> : (
@@ -1190,6 +1199,10 @@ export default function ContentPage() {
                   loadPosts();
                 }}
               />
+            )}
+
+            {viewMode === 'files' && (
+              <FilesLibraryTab tc={tc} />
             )}
           </>
         )}

@@ -32,7 +32,7 @@ from .routes import (
     funnels, content, giveaways, notifications, payments,
     max_routes, telegram_bot, max_webhook,
     admin, paid_chats, paid_chat_payments, services, ord, referrals, landings,
-    metrics, shop, payment_webhooks, ai_post,
+    metrics, shop, payment_webhooks, ai_post, files_library,
 )
 
 
@@ -234,6 +234,7 @@ app.include_router(ai_landings.router, prefix="/api/ai-landing", tags=["ai-landi
 from .routes import ai_content
 app.include_router(ai_content.router, prefix="/api/ai-content", tags=["ai-content"])
 app.include_router(ai_post.router, prefix="/api/ai-post", tags=["ai-post"])
+app.include_router(files_library.router, prefix="/api/files", tags=["files-library"])
 from .routes import support
 app.include_router(support.router, prefix="/api/support", tags=["support"])
 from .routes import client_notes

@@ -164,6 +164,23 @@ async def generate_post_text(
     except Exception as e:
         print(f"[Achievements] track ai_text (post) skip: {e}")
 
+    # Сохраняем в "Мои файлы → Генерации текста"
+    try:
+        import json as _json
+        meta = {
+            "has_file": bool(file is not None and file.filename),
+            "file_name": file.filename if file is not None else None,
+            "use_channel_style": use_style,
+            "has_description": bool(description and description.strip()),
+        }
+        await execute(
+            """INSERT INTO ai_generations (user_id, channel_id, kind, prompt, result_text, tokens_charged, metadata)
+               VALUES ($1, $2, 'text', $3, $4, $5, $6::jsonb)""",
+            user["id"], channel["id"], prompt, text, cost, _json.dumps(meta, ensure_ascii=False),
+        )
+    except Exception as e:
+        print(f"[ai-post] save generation history (text) failed: {e}")
+
     return {"success": True, "message_text": text, "tokens_charged": cost}
 
 
@@ -256,6 +273,21 @@ async def generate_post_image(
         await track_event(int(channel["id"]), "ai_image", 1)
     except Exception as e:
         print(f"[Achievements] track ai_image (post) skip: {e}")
+
+    # Сохраняем в "Мои файлы → Генерации фото"
+    try:
+        import json as _json
+        meta = {
+            "format": image_format,
+            "refs_count": len(ref_b64_list),
+        }
+        await execute(
+            """INSERT INTO ai_generations (user_id, channel_id, kind, prompt, result_file_path, tokens_charged, metadata)
+               VALUES ($1, $2, 'image', $3, $4, $5, $6::jsonb)""",
+            user["id"], channel["id"], prompt, image_url, cost, _json.dumps(meta, ensure_ascii=False),
+        )
+    except Exception as e:
+        print(f"[ai-post] save generation history (image) failed: {e}")
 
     return {
         "success": True,
