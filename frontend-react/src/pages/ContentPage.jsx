@@ -8,6 +8,7 @@ import Modal from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
 import ButtonBuilder from '../components/ButtonBuilder';
 import AttachmentPicker from '../components/AttachmentPicker';
+import AiPostGenModal from '../components/AiPostGenModal';
 import MessagePreview from '../components/MessagePreview';
 import EridModal from '../components/EridModal';
 import { usePageOnboarding } from '../components/OnboardingTour';
@@ -366,6 +367,7 @@ export default function ContentPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   });
   const [stripOffset, setStripOffset] = useState(0); // сдвиг 14-дневной полосы
+  const [aiGenMode, setAiGenMode] = useState(null); // 'text' | 'image' | null
 
   const { overlay: pageTour } = usePageOnboarding('content', [
     { selector: '[data-tour-page="content-day"]', title: 'Календарь публикаций', text: 'Нажмите на любую свободную дату — откроется форма создания запланированного поста с выбранной датой.', placement: 'bottom' },
@@ -1102,7 +1104,23 @@ export default function ContentPage() {
             </div>
 
             <div ref={messageRef}>
-              <label style={labelStyle}>Текст поста *</label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+                <label style={{ ...labelStyle, marginBottom: 0 }}>Текст поста *</label>
+                <button
+                  type="button"
+                  onClick={() => setAiGenMode('text')}
+                  disabled={!tc}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 12px', borderRadius: 8, border: 'none',
+                    cursor: tc ? 'pointer' : 'not-allowed',
+                    background: 'linear-gradient(135deg, #4361ee 0%, #7b68ee 100%)',
+                    color: '#fff', fontSize: '0.78rem', fontWeight: 700,
+                    boxShadow: '0 3px 10px rgba(67, 97, 238, 0.30)',
+                    opacity: tc ? 1 : 0.5,
+                  }}
+                >🪄 Сгенерировать</button>
+              </div>
               <div className={errors.message_text ? 'field-error-wrapper' : ''}>
                 <RichTextEditor
                   value={form.message_text}
@@ -1118,7 +1136,23 @@ export default function ContentPage() {
             </div>
 
             <div>
-              <label style={labelStyle}>Вложение</label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+                <label style={{ ...labelStyle, marginBottom: 0 }}>Вложение</label>
+                <button
+                  type="button"
+                  onClick={() => setAiGenMode('image')}
+                  disabled={!tc}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 12px', borderRadius: 8, border: 'none',
+                    cursor: tc ? 'pointer' : 'not-allowed',
+                    background: 'linear-gradient(135deg, #7b68ee 0%, #a855f7 100%)',
+                    color: '#fff', fontSize: '0.78rem', fontWeight: 700,
+                    boxShadow: '0 3px 10px rgba(123, 104, 238, 0.30)',
+                    opacity: tc ? 1 : 0.5,
+                  }}
+                >🖼 ИИ Картинка</button>
+              </div>
               <AttachmentPicker
                 file={postFile}
                 onFileChange={setPostFile}
@@ -1192,6 +1226,33 @@ export default function ContentPage() {
           onEridReceived={(erid) => setForm(f => ({ ...f, erid }))}
           defaultText={form.message_text?.replace(/<[^>]+>/g, '').slice(0, 200) || ''}
           defaultName={form.title || ''}
+        />
+
+        <AiPostGenModal
+          isOpen={!!aiGenMode}
+          onClose={() => setAiGenMode(null)}
+          mode={aiGenMode || 'text'}
+          tc={tc}
+          onSuccess={async (result) => {
+            if (aiGenMode === 'text') {
+              // Подставляем текст в основное поле
+              setForm(p => ({ ...p, message_text: result }));
+              setErrors(e => ({ ...e, message_text: '' }));
+            } else if (aiGenMode === 'image') {
+              // result = /uploads/ai_post_img_*.png — скачиваем как File
+              try {
+                const resp = await fetch(result);
+                const blob = await resp.blob();
+                const filename = result.split('/').pop() || 'ai_image.png';
+                const f = new File([blob], filename, { type: blob.type || 'image/png' });
+                setPostFile(f);
+                setForm(p => ({ ...p, attach_type: 'photo' }));
+                setRemoveExistingFile(false);
+              } catch (e) {
+                showToast('Не удалось приложить картинку: ' + (e.message || ''), 'error');
+              }
+            }
+          }}
         />
       </div>
     </Paywall>
