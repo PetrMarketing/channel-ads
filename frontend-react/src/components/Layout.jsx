@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect } from 'react';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import SupportChat from './SupportChat';
+import AchievementNotifier from './AchievementNotifier';
 import { ChannelProvider } from '../contexts/ChannelContext';
 import { ToastProvider } from './Toast';
 import { OnboardingProvider } from './OnboardingTour';
@@ -84,6 +85,7 @@ export default function Layout() {
           </div>
         </div>
         <SupportChat />
+        <AchievementNotifier />
         </OnboardingProvider>
       </ToastProvider>
     </ChannelProvider>

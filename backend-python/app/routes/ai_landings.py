@@ -392,6 +392,12 @@ async def generate_landing(tc: str, landing_id: int, user: Dict[str, Any] = Depe
             await track_skill(channel["id"], "landing", 1)
         except Exception as e:
             print(f"[Levels] track landing skip: {e}")
+        try:
+            from ..services.achievements import track_event
+            await track_event(channel["id"], "link_landing", 1)
+            await track_event(channel["id"], "link_create", 1)
+        except Exception as e:
+            print(f"[Achievements] track landing skip: {e}")
     return {"success": True, "html": html, "regen_count": new_regen}
 
 

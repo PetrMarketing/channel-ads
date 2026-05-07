@@ -78,6 +78,16 @@ async def create_link(tracking_code: str, body: dict, user: Dict[str, Any] = Dep
         int(body["lm_lead_magnet_id"]) if body.get("lm_lead_magnet_id") else None,
     )
     link = await fetch_one("SELECT * FROM tracking_links WHERE id = $1", link_id)
+    # Достижения: «Создать ссылку» (любую) + по типу.
+    try:
+        from ..services.achievements import track_event
+        await track_event(channel["id"], "link_create", 1)
+        if link_type == "direct":
+            await track_event(channel["id"], "link_direct", 1)
+        elif link_type == "lm_landing":
+            await track_event(channel["id"], "link_lead_magnet", 1)
+    except Exception as e:
+        print(f"[Achievements] track link skip: {e}")
     return {"success": True, "link": link}
 
 

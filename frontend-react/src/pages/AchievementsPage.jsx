@@ -2,6 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useChannels } from '../contexts/ChannelContext';
 import { api } from '../services/api';
 
+const TIER_COLORS = {
+  bronze:   { bg: '#cd7f32', glow: 'rgba(205,127,50,0.45)', label: 'Бронза' },
+  silver:   { bg: '#c0c0c0', glow: 'rgba(192,192,192,0.45)', label: 'Серебро' },
+  gold:     { bg: '#ffd700', glow: 'rgba(255,215,0,0.50)', label: 'Золото' },
+  platinum: { bg: 'linear-gradient(135deg, #e5e4e2 0%, #b0c4de 100%)', glow: 'rgba(176,196,222,0.50)', label: 'Платина' },
+};
+const TIER_ORDER = ['bronze', 'silver', 'gold', 'platinum'];
+
 const ACCENT = '#4361ee';
 const ACCENT2 = '#7b68ee';
 const SUCCESS = '#10b981';
@@ -119,7 +127,7 @@ export default function AchievementsPage() {
         : loading ? <ComingSoon emoji="⏳" title="Загружаем" desc="Минутку…" />
         : data ? <ProgressTab data={data} /> : <ComingSoon emoji="📈" title="Прогресс канала" desc="Не удалось загрузить данные." />
       )}
-      {tab === 'badges' && <ComingSoon emoji="🏅" title="Достижения" desc="Награды за активность канала." />}
+      {tab === 'badges' && <BadgesTab tc={tc} />}
       {tab === 'race' && <ComingSoon emoji="🏁" title="Гонка каналов" desc="Сезонный рейтинг лучших каналов сервиса." />}
     </div>
   );
@@ -285,6 +293,180 @@ function pluralize(word, n) {
   if (last === 1) return word;
   if (word === 'картинка') return last >= 2 && last <= 4 ? 'картинки' : 'картинок';
   return last >= 2 && last <= 4 ? word + 'а' : word + 'ов';
+}
+
+function BadgesTab({ tc }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!tc) return;
+    setLoading(true);
+    try {
+      const res = await api.get(`/channels/${tc}/achievements`);
+      if (res.success) setData(res);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [tc]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (!tc) return <ComingSoon emoji="📺" title="Выберите канал" desc="В шапке выберите канал." />;
+  if (loading && !data) return <ComingSoon emoji="⏳" title="Загружаем" desc="Минутку…" />;
+  if (!data) return <ComingSoon emoji="🏅" title="Достижения" desc="Не удалось загрузить." />;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{
+        padding: '14px 18px',
+        borderRadius: 14,
+        background: `linear-gradient(135deg, ${ACCENT}10 0%, ${ACCENT2}14 100%)`,
+        border: `1px solid ${ACCENT2}30`,
+        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+      }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ fontSize: '0.74rem', fontWeight: 700, color: MUTED, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Текущий сезон
+          </div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 800, color: DARK }}>{data.season_label}</div>
+        </div>
+        <div style={{
+          padding: '8px 16px', borderRadius: 12,
+          background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})`,
+          color: '#fff', fontSize: '0.95rem', fontWeight: 800,
+          boxShadow: `0 3px 10px ${ACCENT}30`,
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          🏆 {data.total_points} {plurOchki(data.total_points)}
+        </div>
+      </div>
+
+      <div style={{
+        display: 'grid', gap: 12,
+        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+      }}>
+        {data.items.map((item, i) => (
+          <BadgeCard key={item.code} item={item} delay={`${0.05 + i * 0.03}s`} />
+        ))}
+      </div>
+
+      <div style={{
+        marginTop: 6, padding: '12px 16px', borderRadius: 12,
+        background: SOFT_BG, border: `1px dashed ${BORDER}`,
+        fontSize: '0.84rem', color: MUTED, lineHeight: 1.5,
+      }}>
+        💡 Бронза +1 очко · Серебро +3 · Золото +5 · Платина +10. Каждый сезон прогресс
+        обнуляется, но полученные ачивки сохраняются в истории канала.
+      </div>
+    </div>
+  );
+}
+
+function BadgeCard({ item, delay }) {
+  const next = item.next_tier ? {
+    tier: item.next_tier,
+    threshold: item.next_threshold,
+    remaining: Math.max(0, (item.next_threshold || 0) - (item.count || 0)),
+    pct: item.next_threshold ? Math.min(100, Math.round((item.count / item.next_threshold) * 100)) : 100,
+  } : null;
+  return (
+    <div style={{
+      padding: '16px 16px 14px',
+      borderRadius: 14,
+      background: '#fff',
+      border: `1px solid ${BORDER}`,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+      display: 'flex', flexDirection: 'column', gap: 10,
+      animation: `achFadeUp 0.4s ease ${delay} both`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ fontSize: '1.5rem' }}>{item.emoji}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '0.94rem', fontWeight: 800, color: DARK, letterSpacing: '-0.01em' }}>
+            {item.label}
+          </div>
+          <div style={{ fontSize: '0.74rem', color: MUTED }}>
+            Сделано: <b style={{ color: DARK }}>{item.count}</b>
+          </div>
+        </div>
+      </div>
+
+      {/* 4 медали */}
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'space-between' }}>
+        {TIER_ORDER.map((tier, idx) => {
+          const unlocked = item.unlocked_tiers.includes(tier);
+          const meta = TIER_COLORS[tier];
+          const threshold = item.thresholds[idx];
+          return (
+            <div
+              key={tier}
+              title={`${meta.label} — ${threshold} ${threshold === 1 ? 'шт' : 'шт'}${unlocked ? ' ✓' : ''}`}
+              style={{
+                flex: 1,
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                opacity: unlocked ? 1 : 0.32,
+                transition: 'opacity .2s ease',
+              }}
+            >
+              <div style={{
+                width: 30, height: 30, borderRadius: '50%',
+                background: meta.bg,
+                boxShadow: unlocked ? `0 2px 8px ${meta.glow}` : 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '0.7rem', color: tier === 'gold' ? '#1a1a2e' : '#fff', fontWeight: 800,
+                border: '2px solid #fff',
+              }}>
+                {unlocked ? '✓' : threshold}
+              </div>
+              <div style={{ fontSize: '0.62rem', color: MUTED, marginTop: 3, fontWeight: 600 }}>
+                {threshold}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Прогресс к следующему тиру */}
+      {next ? (
+        <div>
+          <div style={{
+            position: 'relative', width: '100%', height: 6, borderRadius: 999,
+            background: SOFT_BG, overflow: 'hidden', marginBottom: 4,
+          }}>
+            <div style={{
+              position: 'absolute', top: 0, left: 0, bottom: 0,
+              width: `${next.pct}%`,
+              background: TIER_COLORS[next.tier].bg,
+              borderRadius: 999,
+              transition: 'width 0.4s ease',
+            }} />
+          </div>
+          <div style={{ fontSize: '0.72rem', color: MUTED }}>
+            До {TIER_COLORS[next.tier].label.toLowerCase()}: <b style={{ color: DARK }}>{next.remaining}</b>
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize: '0.78rem', color: SUCCESS, fontWeight: 700, marginTop: 2 }}>
+          🎉 Все тиры собраны
+        </div>
+      )}
+
+      {item.history && item.history.length > 0 && (
+        <div style={{ fontSize: '0.7rem', color: MUTED, marginTop: 4, paddingTop: 8, borderTop: `1px dashed ${BORDER}` }}>
+          История: {item.history.length} {item.history.length === 1 ? 'тир' : 'тира'} в прошлых сезонах
+        </div>
+      )}
+    </div>
+  );
+}
+
+function plurOchki(n) {
+  const last = n % 10;
+  const teen = n % 100;
+  if (teen >= 11 && teen <= 14) return 'очков';
+  if (last === 1) return 'очко';
+  if (last >= 2 && last <= 4) return 'очка';
+  return 'очков';
 }
 
 function ComingSoon({ emoji, title, desc }) {

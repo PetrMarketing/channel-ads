@@ -458,6 +458,22 @@ async def claim_subscription_bonus(key: str, user=Depends(get_current_user)):
     return {"success": True, "tokens_granted": tokens}
 
 
+# --- Achievements notifications ---
+@app.get("/api/achievements/notifications")
+async def list_achievement_notifications(user=Depends(get_current_user)):
+    """Новые ачивки пользователя — для модалки."""
+    from .services.achievements import fetch_pending_notifications
+    items = await fetch_pending_notifications(user["id"])
+    return {"success": True, "items": items}
+
+
+@app.post("/api/achievements/notifications/{aid}/seen")
+async def mark_achievement_seen(aid: int, user=Depends(get_current_user)):
+    from .services.achievements import mark_notification_seen
+    await mark_notification_seen(user["id"], aid)
+    return {"success": True}
+
+
 @app.get("/api/modules/{tracking_code}")
 async def get_module_settings(tracking_code: str):
     """Get enabled modules for a channel."""

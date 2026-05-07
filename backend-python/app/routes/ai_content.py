@@ -917,6 +917,11 @@ async def generate_posts(tc: str, session_id: int, user: Dict[str, Any] = Depend
                         await _track_skill(channel["id"], "text", 1)
                     except Exception as te:
                         print(f"[Levels] track text skip: {te}")
+                    try:
+                        from ..services.achievements import track_event as _ach_track
+                        await _ach_track(channel["id"], "ai_text", 1)
+                    except Exception as ae:
+                        print(f"[Achievements] track text skip: {ae}")
                     charged_total += cost_per_post
                     gen_count += 1
                     prior_outlines.append({
@@ -1738,6 +1743,11 @@ async def generate_image_for_post(
         await _track_skill(channel["id"], "image", 1)
     except Exception as te:
         print(f"[Levels] track image skip: {te}")
+    try:
+        from ..services.achievements import track_event as _ach_track
+        await _ach_track(channel["id"], "ai_image", 1)
+    except Exception as ae:
+        print(f"[Achievements] track image skip: {ae}")
 
     # Запоминаем палитру в сессии — подставится в следующие генерации
     if palette:
@@ -1907,6 +1917,11 @@ async def generate_images_all(
                     await _track_skill(channel["id"], "image", 1)
                 except Exception as te:
                     print(f"[Levels] track image batch skip: {te}")
+                try:
+                    from ..services.achievements import track_event as _ach_track
+                    await _ach_track(channel["id"], "ai_image", 1)
+                except Exception as ae:
+                    print(f"[Achievements] track image batch skip: {ae}")
                 total_charged += img_cost
                 generated += 1
                 results.append({"post_id": post_id, "image_url": image_url, "mode": mode})

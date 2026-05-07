@@ -309,6 +309,13 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
         "UPDATE content_posts SET status = 'published', published_at = NOW(), scheduled_at = NULL, telegram_message_id = $1 WHERE id = $2",
         msg_id_str, post_id,
     )
+    # Достижение «Опубликовать постов» — только за свежую публикацию (не за edit).
+    if not edited:
+        try:
+            from ..services.achievements import track_event
+            await track_event(channel["id"], "post_publish", 1)
+        except Exception as e:
+            print(f"[Achievements] track post_publish skip: {e}")
     return {"success": True, "messageId": msg_id_str, "edited": edited}
 
 
