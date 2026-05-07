@@ -802,8 +802,22 @@ export default function ContentPage() {
             data-tour-page="content-ai"
             className={`cp-tab${viewMode === 'ai-content' ? ' active' : ''}`}
             onClick={() => setViewMode('ai-content')}
+            style={{ position: 'relative' }}
           >
             <AiIcon /> ИИ Контент
+            <span style={{
+              position: 'absolute',
+              top: -7, right: -10,
+              fontSize: '0.62rem', fontWeight: 800,
+              letterSpacing: '0.08em',
+              color: '#fff',
+              background: 'linear-gradient(135deg, #ef4444 0%, #f97316 100%)',
+              padding: '2px 7px',
+              borderRadius: 8,
+              boxShadow: '0 2px 6px rgba(239,68,68,0.40)',
+              textTransform: 'uppercase',
+              pointerEvents: 'none',
+            }}>Хит</span>
           </button>
         </div>
 

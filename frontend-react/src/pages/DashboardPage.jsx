@@ -22,9 +22,6 @@ export default function DashboardPage() {
   const { showToast } = useToast();
   const [stats, setStats] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [editChannel, setEditChannel] = useState(null);
-  const [saving, setSaving] = useState(false);
   const [, setAddPlatform] = useState('max');
   const [unclaimedChannels, setUnclaimedChannels] = useState([]);
   const [bonuses, setBonuses] = useState([]);
@@ -117,25 +114,6 @@ export default function DashboardPage() {
     }
   }, [showAddModal, loadUnclaimedChannels, loadChannels]);
 
-  const handleSaveSettings = async () => {
-    if (!editChannel) return;
-    setSaving(true);
-    try {
-      const data = await api.put(`/channels/${editChannel.tracking_code}`, {
-        yandex_metrika_id: editChannel.yandex_metrika_id,
-        vk_pixel_id: editChannel.vk_pixel_id,
-        ym_oauth_token: editChannel.ym_oauth_token,
-        join_link: editChannel.join_link,
-      });
-      if (data.success) {
-        showToast('Настройки сохранены');
-        setShowSettingsModal(false);
-        loadChannels();
-      } else showToast(data.error || 'Ошибка', 'error');
-    } catch { showToast('Ошибка сохранения', 'error'); }
-    finally { setSaving(false); }
-  };
-
   const handleDeleteChannel = async (trackingCode) => {
     if (!window.confirm('Удалить канал? Все данные будут потеряны.')) return;
     try {
@@ -143,8 +121,6 @@ export default function DashboardPage() {
       if (data.success) { showToast('Канал удалён'); loadChannels(); }
     } catch { showToast('Ошибка удаления', 'error'); }
   };
-
-  const openSettings = (ch) => { setEditChannel({ ...ch }); setShowSettingsModal(true); };
 
   // Smart context — что показать в hero
   const noChannels = channels.length === 0;
@@ -188,7 +164,7 @@ export default function DashboardPage() {
                 Добавить канал
               </button>
               {!noChannels && (
-                <button className="dash-hero-cta" onClick={() => navigate('/links')} style={ghostBtn}>Перейти к ссылкам →</button>
+                <button className="dash-hero-cta" onClick={() => navigate('/achievements')} style={ghostBtn}>🏆 Достижения канала</button>
               )}
             </div>
           </div>
@@ -340,7 +316,6 @@ export default function DashboardPage() {
                   channel={ch}
                   isSelected={currentChannel?.tracking_code === ch.tracking_code}
                   onSelect={() => selectChannel(ch)}
-                  onSettings={() => openSettings(ch)}
                   onDelete={() => handleDeleteChannel(ch.tracking_code)}
                 />
               </div>
@@ -430,41 +405,6 @@ export default function DashboardPage() {
             <button className="btn btn-outline" onClick={() => setShowAddModal(false)}>Закрыть</button>
           </div>
         </div>
-      </Modal>
-
-      {/* SETTINGS MODAL */}
-      <Modal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} title="Настройки канала">
-        {editChannel && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div>
-              <label className="form-label">Яндекс.Метрика ID</label>
-              <input className="form-input" placeholder="12345678"
-                value={editChannel.yandex_metrika_id || ''}
-                onChange={e => setEditChannel(p => ({ ...p, yandex_metrika_id: e.target.value }))} />
-              <div className="form-hint">Числовой ID счётчика Метрики.</div>
-            </div>
-            <div>
-              <label className="form-label">VK Pixel ID</label>
-              <input className="form-input" placeholder="VK-RTRG-xxxxxx-xxxxx"
-                value={editChannel.vk_pixel_id || ''}
-                onChange={e => setEditChannel(p => ({ ...p, vk_pixel_id: e.target.value }))} />
-              <div className="form-hint">Формат: VK-RTRG-XXXXXX-XXXXX.</div>
-            </div>
-            <div>
-              <label className="form-label">Ссылка для подписки</label>
-              <input className="form-input" placeholder="https://t.me/+xxxx или https://max.ru/join/xxxx"
-                value={editChannel.join_link || ''}
-                onChange={e => setEditChannel(p => ({ ...p, join_link: e.target.value }))} />
-              <div className="form-hint">Invite-ссылка канала.</div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button className="btn btn-outline" onClick={() => setShowSettingsModal(false)}>Отмена</button>
-              <button className="btn btn-primary" onClick={handleSaveSettings} disabled={saving}>
-                {saving ? 'Сохранение...' : 'Сохранить'}
-              </button>
-            </div>
-          </div>
-        )}
       </Modal>
 
       <style>{`
@@ -605,7 +545,7 @@ function EmptyState({ onAdd }) {
   );
 }
 
-function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
+function ChannelCard({ channel, isSelected, onSelect, onDelete }) {
   const ch = channel;
   const isDisconnected = ch.is_active === 0 || ch.is_active === false;
   const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
@@ -699,9 +639,6 @@ function ChannelCard({ channel, isSelected, onSelect, onSettings, onDelete }) {
 
       {!isDisconnected && (
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <button title="Настройки" style={iconBtn} onClick={(e) => { e.stopPropagation(); onSettings(); }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-          </button>
           <button title="Удалить" style={{ ...iconBtn, color: DANGER }} onClick={(e) => { e.stopPropagation(); onDelete(); }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 01-2 2H9a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
           </button>

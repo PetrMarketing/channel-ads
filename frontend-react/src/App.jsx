@@ -22,6 +22,7 @@ import AiLandingPage from './pages/AiLandingPage';
 import AiTokensPage from './pages/AiTokensPage';
 import CommentsPage from './pages/CommentsPage';
 import OrdPage from './pages/OrdPage';
+import AchievementsPage from './pages/AchievementsPage';
 import ReferralPage from './pages/ReferralPage';
 
 // Public pages (standalone, no layout)
@@ -270,6 +271,7 @@ export default function App() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="comments" element={<CommentsPage />} />
         <Route path="ord" element={<OrdPage />} />
+        <Route path="achievements" element={<AchievementsPage />} />
       </Route>
     </Routes>
   );
