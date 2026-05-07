@@ -369,6 +369,7 @@ export default function ContentPage() {
   });
   const [stripOffset, setStripOffset] = useState(0); // сдвиг 14-дневной полосы
   const [aiGenMode, setAiGenMode] = useState(null); // 'text' | 'image' | null
+  const [listStatus, setListStatus] = useState('scheduled'); // 'scheduled' | 'published' | 'draft'
 
   const { overlay: pageTour } = usePageOnboarding('content', [
     { selector: '[data-tour-page="content-day"]', title: 'Календарь публикаций', text: 'Нажмите на любую свободную дату — откроется форма создания запланированного поста с выбранной датой.', placement: 'bottom' },
@@ -1171,23 +1172,102 @@ export default function ContentPage() {
               </>
             )}
 
-            {viewMode === 'list' && (
-              <section>
-                <div style={sectionHeaderRow}>
-                  <div>
-                    <h2 style={sectionTitleStyle}>Все публикации</h2>
-                    <p style={sectionSubStyle}>{posts.length === 0 ? 'Создайте первую публикацию' : `Всего: ${posts.length}`}</p>
+            {viewMode === 'list' && (() => {
+              const counts = {
+                scheduled: posts.filter(p => p.status === 'scheduled').length,
+                published: posts.filter(p => p.status === 'published').length,
+                draft:     posts.filter(p => p.status === 'draft').length,
+              };
+              const STATUS_TABS = [
+                { id: 'scheduled', label: 'Ожидание',   emoji: '📅', color: ACCENT },
+                { id: 'published', label: 'Опубликовано', emoji: '✓',  color: SUCCESS },
+                { id: 'draft',     label: 'Черновики',  emoji: '📝', color: WARNING },
+              ];
+              const filtered = posts
+                .filter(p => p.status === listStatus)
+                .sort((a, b) => {
+                  // Ожидание: ближайшая дата сверху; Опубликовано/Черновик: новые сверху
+                  if (listStatus === 'scheduled') {
+                    return new Date(a.scheduled_at || 0) - new Date(b.scheduled_at || 0);
+                  }
+                  return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+                });
+              const emptyByStatus = {
+                scheduled: 'Нет запланированных постов',
+                published: 'Здесь появятся опубликованные посты',
+                draft:     'Черновики появятся, как только начнёте писать новый пост',
+              };
+              return (
+                <section>
+                  <div style={{ ...sectionHeaderRow, marginBottom: 14 }}>
+                    <div>
+                      <h2 style={sectionTitleStyle}>Все публикации</h2>
+                      <p style={sectionSubStyle}>
+                        {posts.length === 0 ? 'Создайте первую публикацию' : `Всего: ${posts.length}`}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                {posts.length === 0 ? (
-                  <EmptyContent onCreate={openCreate} />
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {posts.map((p, i) => renderDayCard(p, i))}
+
+                  {/* Status sub-tabs */}
+                  <div role="tablist" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: 4, borderRadius: 12,
+                    background: SOFT_BG, border: `1px solid ${BORDER}`,
+                    marginBottom: 16, flexWrap: 'wrap',
+                  }}>
+                    {STATUS_TABS.map(t => {
+                      const active = listStatus === t.id;
+                      const cnt = counts[t.id];
+                      return (
+                        <button
+                          key={t.id}
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setListStatus(t.id)}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                            padding: '8px 14px', borderRadius: 8, border: 'none',
+                            cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600,
+                            color: active ? '#fff' : DARK,
+                            background: active ? t.color : 'transparent',
+                            boxShadow: active ? `0 3px 10px ${t.color}40` : 'none',
+                            transition: 'all .15s ease',
+                          }}
+                        >
+                          <span>{t.emoji}</span>
+                          {t.label}
+                          <span style={{
+                            minWidth: 22, padding: '1px 7px', borderRadius: 10,
+                            fontSize: '0.72rem', fontWeight: 700,
+                            background: active ? 'rgba(255,255,255,0.25)' : `${t.color}15`,
+                            color: active ? '#fff' : t.color,
+                          }}>{cnt}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                )}
-              </section>
-            )}
+
+                  {filtered.length === 0 ? (
+                    posts.length === 0
+                      ? <EmptyContent onCreate={openCreate} />
+                      : <div style={{
+                          padding: '40px 24px', textAlign: 'center',
+                          borderRadius: 14, background: '#fff', border: `1px solid ${BORDER}`,
+                        }}>
+                          <div style={{ fontSize: '2.4rem', marginBottom: 10 }}>{STATUS_TABS.find(t => t.id === listStatus)?.emoji}</div>
+                          <div style={{ fontSize: '0.92rem', color: MUTED, marginBottom: 16 }}>{emptyByStatus[listStatus]}</div>
+                          <button className="cp-primary" style={primaryBtn} onClick={() => openCreate()}>
+                            <PlusIcon /> Создать пост
+                          </button>
+                        </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {filtered.map((p, i) => renderDayCard(p, i))}
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
 
             {viewMode === 'ai-content' && (
               <AiContentTab
