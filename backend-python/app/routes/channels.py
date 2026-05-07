@@ -215,6 +215,20 @@ async def update_channel(tracking_code: str, request_body: dict, user: Dict[str,
     return {"success": True, "channel": mask_channel(updated)}
 
 
+@router.get("/{tracking_code}/levels")
+async def get_channel_levels(
+    tracking_code: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Снимок уровней по 3 ИИ-навыкам для страницы /achievements."""
+    channel = await get_channel_for_user(tracking_code, user["id"], "analytics")
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    from ..services.channel_levels import get_levels_summary
+    data = await get_levels_summary(channel["id"])
+    return {"success": True, **data}
+
+
 @router.get("/{tracking_code}/stats")
 async def get_channel_stats(
     tracking_code: str,
