@@ -9,7 +9,7 @@
 """
 import os
 import secrets
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
@@ -170,21 +170,38 @@ async def generate_post_text(
 @router.post("/{tc}/generate-image")
 async def generate_post_image(
     tc: str,
-    body: dict,
+    prompt: str = Form(...),
+    format: str = Form("1:1"),
+    refs: Optional[List[UploadFile]] = File(None),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Сгенерировать картинку для поста. Возвращает URL в /uploads."""
+    """Сгенерировать картинку для поста. Опционально до 4 референс-фото
+    (multipart, поле `refs` повторяется). Возвращает URL в /uploads."""
     channel = await _get_owned_channel(tc, user["id"])
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
-    prompt = (body.get("prompt") or "").strip()
+    prompt = (prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Промт обязателен")
 
-    image_format = (body.get("format") or "1:1").strip()
+    image_format = (format or "1:1").strip()
     if image_format not in ("1:1", "4:3", "3:4"):
         image_format = "1:1"
+
+    # Читаем референс-фото в base64 (макс 4)
+    import base64 as _b64
+    ref_b64_list: list = []
+    if refs:
+        for rf in refs[:4]:
+            if not rf or not rf.filename:
+                continue
+            data = await rf.read()
+            if not data:
+                continue
+            if len(data) > 10 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail=f"Файл «{rf.filename}» больше 10 МБ")
+            ref_b64_list.append(_b64.b64encode(data).decode("ascii"))
 
     fmt_hint = {
         "1:1": "Square 1:1 aspect ratio composition.",
@@ -192,8 +209,16 @@ async def generate_post_image(
         "3:4": "Portrait 3:4 aspect ratio composition.",
     }[image_format]
 
+    refs_hint = ""
+    if ref_b64_list:
+        refs_hint = (
+            f"\n\nUse the {len(ref_b64_list)} reference image(s) above as visual anchor: "
+            f"match the style, mood, lighting, color palette and composition. "
+            f"Combine elements from them where it makes sense."
+        )
+
     enhanced = (
-        f"{prompt}\n\n{fmt_hint}\n\n"
+        f"{prompt}\n\n{fmt_hint}{refs_hint}\n\n"
         "Photographic realism is mandatory: natural lighting, sharp focus, "
         "real-world environment, hyperrealistic 8k. NO cartoon, NO 3D render, "
         "NO illustration unless explicitly requested.\n\n"
@@ -206,7 +231,7 @@ async def generate_post_image(
     await _charge(user["id"], cost, "ai_post_image", f"Генерация изображения для поста «{channel.get('title', tc)}»")
 
     try:
-        image_result = await openrouter_image_gen(enhanced, None)
+        image_result = await openrouter_image_gen(enhanced, ref_b64_list or None)
         os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
         out_name = f"ai_post_img_{secrets.token_hex(10)}.png"
         out_path = os.path.join(settings.UPLOAD_DIR, out_name)

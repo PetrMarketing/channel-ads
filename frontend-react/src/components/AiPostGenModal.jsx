@@ -37,11 +37,13 @@ export default function AiPostGenModal({ isOpen, onClose, mode = 'text', tc, onS
   const [format, setFormat] = useState('1:1');
   const [busy, setBusy] = useState(false);
   const [skill, setSkill] = useState({ current_cost: mode === 'text' ? 10 : 10, next_cost: null, period_count: 0, next_threshold: null, is_max: false });
+  const [refs, setRefs] = useState([]); // референс-фото для image mode (до 4)
   const fileRef = useRef(null);
+  const refsInputRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) {
-      setPrompt(''); setDescription(''); setFile(null); setBusy(false);
+      setPrompt(''); setDescription(''); setFile(null); setBusy(false); setRefs([]);
       return;
     }
     let cancelled = false;
@@ -84,7 +86,11 @@ export default function AiPostGenModal({ isOpen, onClose, mode = 'text', tc, onS
         onSuccess && onSuccess(res.message_text);
         onClose && onClose();
       } else {
-        const res = await api.post(`/ai-post/${tc}/generate-image`, { prompt: p, format });
+        const fd = new FormData();
+        fd.append('prompt', p);
+        fd.append('format', format);
+        for (const r of refs) fd.append('refs', r);
+        const res = await api.upload(`/ai-post/${tc}/generate-image`, fd, 'POST');
         if (!res?.success) throw new Error(res?.error || 'Ошибка генерации');
         showToast(`Картинка готова (-${res.tokens_charged} ИИт)`, 'success');
         onSuccess && onSuccess(res.image_url);
@@ -105,9 +111,9 @@ export default function AiPostGenModal({ isOpen, onClose, mode = 'text', tc, onS
 
   const node = (
     <div onClick={() => !busy && onClose && onClose()} style={{
-      position: 'fixed', inset: 0, zIndex: 9998,
-      background: 'rgba(26, 26, 46, 0.55)',
-      backdropFilter: 'blur(4px)',
+      position: 'fixed', inset: 0, zIndex: 10001,
+      background: 'rgba(26, 26, 46, 0.65)',
+      backdropFilter: 'blur(6px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: 16, animation: 'apFade 0.25s ease',
     }}>
@@ -231,26 +237,87 @@ export default function AiPostGenModal({ isOpen, onClose, mode = 'text', tc, onS
           )}
 
           {isImage && (
-            <div>
-              <label style={labelStyle}>Формат</label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {['1:1', '4:3', '3:4'].map(f => {
-                  const active = format === f;
-                  return (
-                    <button key={f} type="button" onClick={() => setFormat(f)} style={{
-                      flex: 1, padding: '8px 12px', borderRadius: 10, cursor: 'pointer',
-                      border: active ? 'none' : `1.5px solid ${BORDER}`,
-                      background: active ? `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})` : '#fff',
-                      color: active ? '#fff' : DARK,
-                      fontSize: '0.86rem', fontWeight: 700,
-                      boxShadow: active ? `0 3px 10px ${ACCENT}30` : 'none',
-                    }}>
-                      {f}
-                    </button>
-                  );
-                })}
+            <>
+              <div>
+                <label style={labelStyle}>Формат</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {['1:1', '4:3', '3:4'].map(f => {
+                    const active = format === f;
+                    return (
+                      <button key={f} type="button" onClick={() => setFormat(f)} style={{
+                        flex: 1, padding: '8px 12px', borderRadius: 10, cursor: 'pointer',
+                        border: active ? 'none' : `1.5px solid ${BORDER}`,
+                        background: active ? `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})` : '#fff',
+                        color: active ? '#fff' : DARK,
+                        fontSize: '0.86rem', fontWeight: 700,
+                        boxShadow: active ? `0 3px 10px ${ACCENT}30` : 'none',
+                      }}>
+                        {f}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+
+              <div>
+                <label style={labelStyle}>Референс-фото (опц., до 4 шт)</label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {refs.map((r, idx) => (
+                    <div key={idx} style={{
+                      position: 'relative', width: 80, height: 80, borderRadius: 10,
+                      overflow: 'hidden', border: `1px solid ${BORDER}`,
+                    }}>
+                      <img src={URL.createObjectURL(r)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <button type="button" onClick={() => setRefs(prev => prev.filter((_, i) => i !== idx))}
+                        style={{
+                          position: 'absolute', top: 4, right: 4,
+                          width: 22, height: 22, borderRadius: '50%',
+                          background: 'rgba(26,26,46,0.85)', color: '#fff', border: 'none',
+                          cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>×</button>
+                    </div>
+                  ))}
+                  {refs.length < 4 && (
+                    <label style={{
+                      width: 80, height: 80, borderRadius: 10,
+                      border: `2px dashed ${BORDER}`,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', color: MUTED, fontSize: '0.74rem', fontWeight: 600,
+                      background: SOFT_BG,
+                    }}>
+                      <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>+</span>
+                      <span style={{ marginTop: 2 }}>Фото</span>
+                      <input
+                        ref={refsInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (!files.length) return;
+                          const slotsLeft = 4 - refs.length;
+                          const accepted = [];
+                          for (const f of files.slice(0, slotsLeft)) {
+                            if (f.size > 10 * 1024 * 1024) {
+                              showToast(`«${f.name}» больше 10 МБ — пропущен`, 'error');
+                              continue;
+                            }
+                            accepted.push(f);
+                          }
+                          if (accepted.length) setRefs(prev => [...prev, ...accepted].slice(0, 4));
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: MUTED, marginTop: 6 }}>
+                  ИИ возьмёт референсы как стиль/настроение/композицию. До 4 фото, каждое до 10 МБ.
+                </div>
+              </div>
+            </>
           )}
         </div>
 

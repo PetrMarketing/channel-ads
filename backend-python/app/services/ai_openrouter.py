@@ -41,19 +41,30 @@ async def openrouter_chat_messages(messages: list, model: str = None) -> str:
     return result.get("choices", [{}])[0].get("message", {}).get("content", "")
 
 
-async def openrouter_image_gen(prompt: str, photo_base64: str = None) -> str:
-    """Генерация изображения через OpenRouter. Возвращает data URL или http URL."""
+async def openrouter_image_gen(prompt: str, photo_base64=None) -> str:
+    """Генерация изображения через OpenRouter. Возвращает data URL или http URL.
+    photo_base64 может быть строкой (одно фото-референс) или списком строк
+    (до нескольких референсов)."""
     api_key = settings.OPENROUTER_API_KEY
     if not api_key:
         raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    # Формируем сообщение: опционально фото + текст
+    # Нормализуем: список base64-строк (могут быть None)
+    photos: list = []
+    if photo_base64 is None:
+        pass
+    elif isinstance(photo_base64, list):
+        photos = [p for p in photo_base64 if p]
+    elif isinstance(photo_base64, str) and photo_base64:
+        photos = [photo_base64]
+
+    # Формируем сообщение: фото-референсы (если есть) + текст
     messages_content = []
-    if photo_base64:
+    for p in photos:
         messages_content.append({
             "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{photo_base64}"}
+            "image_url": {"url": f"data:image/png;base64,{p}"}
         })
     messages_content.append({"type": "text", "text": prompt})
 
