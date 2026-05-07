@@ -75,7 +75,12 @@ export default function AchievementsPage() {
           </p>
         </div>
         {data && (
-          <OverallLevelBadge level={data.overall_level} price={data.subscription_price} priceDefault={data.subscription_price_default} />
+          <OverallLevelBadge
+            level={data.overall_level}
+            price={data.subscription_price}
+            priceNext={data.subscription_price_next}
+            priceDefault={data.subscription_price_default}
+          />
         )}
       </section>
 
@@ -120,7 +125,7 @@ export default function AchievementsPage() {
   );
 }
 
-function OverallLevelBadge({ level, price, priceDefault }) {
+function OverallLevelBadge({ level, price, priceNext, priceDefault }) {
   const discount = priceDefault > 0 ? Math.round(((priceDefault - price) / priceDefault) * 100) : 0;
   return (
     <div style={{
@@ -130,7 +135,7 @@ function OverallLevelBadge({ level, price, priceDefault }) {
       border: `1px solid ${ACCENT}30`,
       boxShadow: `0 4px 16px ${ACCENT}15`,
       display: 'flex', alignItems: 'center', gap: 14,
-      minWidth: 220,
+      minWidth: 240,
     }}>
       <div style={{
         width: 54, height: 54, borderRadius: 14,
@@ -139,14 +144,26 @@ function OverallLevelBadge({ level, price, priceDefault }) {
         color: '#fff', fontSize: '1.3rem', fontWeight: 800,
         boxShadow: `0 4px 12px ${ACCENT}40`,
         animation: 'achPulse 2.5s ease-in-out infinite',
+        flexShrink: 0,
       }}>
         {level}
       </div>
       <div>
         <div style={{ fontSize: '0.72rem', fontWeight: 700, color: MUTED, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Уровень канала</div>
-        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: DARK }}>{price} ₽<span style={{ fontSize: '0.78rem', fontWeight: 500, color: MUTED }}> /мес</span></div>
+        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: DARK }}>
+          {price} ₽<span style={{ fontSize: '0.78rem', fontWeight: 500, color: MUTED }}> /мес</span>
+        </div>
+        {priceNext != null ? (
+          <div style={{ fontSize: '0.74rem', color: MUTED, marginTop: 2 }}>
+            На {level + 1} уровне → <span style={{ color: SUCCESS, fontWeight: 700 }}>{priceNext} ₽/мес</span>
+          </div>
+        ) : (
+          <div style={{ fontSize: '0.74rem', fontWeight: 700, color: SUCCESS, marginTop: 2 }}>
+            🎉 Максимальный уровень
+          </div>
+        )}
         {discount > 0 && (
-          <div style={{ fontSize: '0.74rem', fontWeight: 700, color: SUCCESS, marginTop: 2 }}>−{discount}% к подписке</div>
+          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: SUCCESS, marginTop: 2 }}>−{discount}% к подписке</div>
         )}
       </div>
     </div>

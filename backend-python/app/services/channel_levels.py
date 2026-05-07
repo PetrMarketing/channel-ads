@@ -190,10 +190,12 @@ async def get_levels_summary(channel_id: int) -> Dict[str, Any]:
             "is_max": level >= 5,
         })
     overall = min(s["level"] for s in skills_data) if skills_data else 1
+    next_price = SUBSCRIPTION_PRICES.get(overall + 1) if overall < 5 else None
     return {
         "channel_id": channel_id,
         "overall_level": overall,
         "subscription_price": SUBSCRIPTION_PRICES.get(overall, SUBSCRIPTION_PRICES[1]),
+        "subscription_price_next": next_price,
         "subscription_price_default": SUBSCRIPTION_PRICES[1],
         "skills": skills_data,
     }
