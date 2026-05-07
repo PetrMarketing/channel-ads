@@ -104,6 +104,21 @@ app.add_middleware(
 # --- Static files ---
 upload_dir = settings.UPLOAD_DIR
 os.makedirs(upload_dir, exist_ok=True)
+
+# Сидим bundled-ассеты в uploads, если их там ещё нет (например после
+# пересоздания volume). Источник — backend-python/assets рядом с пакетом app/.
+_assets_src = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
+if os.path.isdir(_assets_src):
+    import shutil
+    for _name in os.listdir(_assets_src):
+        _dst = os.path.join(upload_dir, _name)
+        if not os.path.exists(_dst):
+            try:
+                shutil.copy2(os.path.join(_assets_src, _name), _dst)
+                print(f"[Assets] Seeded {_name} → uploads/")
+            except Exception as _e:
+                print(f"[Assets] Failed to seed {_name}: {_e}")
+
 app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 
 # Mount React SPA frontend (built by Vite)
