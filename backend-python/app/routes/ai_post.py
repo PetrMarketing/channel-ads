@@ -11,7 +11,7 @@ import os
 import secrets
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from ..config import settings
 from ..database import execute, fetch_one, fetch_all
@@ -170,38 +170,41 @@ async def generate_post_text(
 @router.post("/{tc}/generate-image")
 async def generate_post_image(
     tc: str,
-    prompt: str = Form(...),
-    format: str = Form("1:1"),
-    refs: Optional[List[UploadFile]] = File(None),
+    request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Сгенерировать картинку для поста. Опционально до 4 референс-фото
-    (multipart, поле `refs` повторяется). Возвращает URL в /uploads."""
+    (multipart, поле `refs` повторяется). Возвращает URL в /uploads.
+
+    Принимаем поля вручную из form() — FastAPI 422 на Optional[List[UploadFile]]
+    при пустом значении бывает капризен."""
     channel = await _get_owned_channel(tc, user["id"])
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
-    prompt = (prompt or "").strip()
+    form = await request.form()
+    prompt = (form.get("prompt") or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Промт обязателен")
 
-    image_format = (format or "1:1").strip()
+    image_format = (form.get("format") or "1:1").strip()
     if image_format not in ("1:1", "4:3", "3:4"):
         image_format = "1:1"
 
-    # Читаем референс-фото в base64 (макс 4)
+    # Читаем референс-фото в base64 (макс 4) — поле может повторяться
     import base64 as _b64
     ref_b64_list: list = []
-    if refs:
-        for rf in refs[:4]:
-            if not rf or not rf.filename:
-                continue
-            data = await rf.read()
-            if not data:
-                continue
-            if len(data) > 10 * 1024 * 1024:
-                raise HTTPException(status_code=400, detail=f"Файл «{rf.filename}» больше 10 МБ")
-            ref_b64_list.append(_b64.b64encode(data).decode("ascii"))
+    refs = form.getlist("refs")
+    print(f"[ai-post] generate-image tc={tc} prompt_len={len(prompt)} format={image_format} refs={len(refs)}")
+    for rf in refs[:4]:
+        if not hasattr(rf, "filename") or not rf.filename:
+            continue
+        data = await rf.read()
+        if not data:
+            continue
+        if len(data) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"Файл «{rf.filename}» больше 10 МБ")
+        ref_b64_list.append(_b64.b64encode(data).decode("ascii"))
 
     fmt_hint = {
         "1:1": "Square 1:1 aspect ratio composition.",
