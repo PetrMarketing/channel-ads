@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useChannels } from '../contexts/ChannelContext';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
@@ -168,7 +168,54 @@ export default function BillingPage() {
   const selectedChannels = channels?.filter(ch => channelConfigs[ch.tracking_code]?.selected) || [];
   const selectedCount = selectedChannels.length;
 
+  // Серверная цена (с учётом уровней каналов). Локальный fallback ниже.
+  const [serverPrice, setServerPrice] = useState(null);
+  const priceFetchTimer = useRef(null);
+
+  useEffect(() => {
+    if (priceFetchTimer.current) clearTimeout(priceFetchTimer.current);
+    if (selectedChannels.length === 0) {
+      setServerPrice(null);
+      return;
+    }
+    priceFetchTimer.current = setTimeout(async () => {
+      try {
+        const data = await api.post('/billing/calculate-multi', {
+          months: selectedMonths,
+          channels: selectedChannels.map(ch => ({
+            tracking_code: ch.tracking_code,
+            users: channelConfigs[ch.tracking_code]?.users || 1,
+          })),
+        });
+        if (data?.success) setServerPrice(data);
+      } catch { /* ignore */ }
+    }, 300);
+    return () => { if (priceFetchTimer.current) clearTimeout(priceFetchTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMonths, selectedChannels.length, JSON.stringify(channelConfigs)]);
+
   const calcPrice = () => {
+    // Если сервер ответил — используем его данные (учитывают уровни каналов)
+    if (serverPrice && serverPrice.items) {
+      const totalUsers = serverPrice.items.reduce((s, it) => s + (it.users || 1), 0);
+      const basePrice = serverPrice.base_price || 0;
+      const fullPrice = basePrice * totalUsers;
+      const breakdown = serverPrice.items.map(it => ({
+        title: it.title || '—',
+        level: it.level,
+        levelDiscount: it.level_multiplier_pct || 0,
+        discount: it.multi_discount_pct || 0,
+        price: it.price_per_user || 0,
+        users: it.users || 1,
+        total: it.amount || 0,
+      }));
+      return {
+        basePrice, total: serverPrice.total || 0, fullPrice,
+        savings: Math.max(0, fullPrice - (serverPrice.total || 0)),
+        totalUsers, breakdown,
+      };
+    }
+    // Fallback — локальный расчёт без знания уровня (1й уровень для всех)
     if (!durations.length) return { basePrice: 0, total: 0, fullPrice: 0, savings: 0, totalUsers: 0, breakdown: [] };
     const dur = durations.find(d => d.months === selectedMonths) || durations[0];
     const basePrice = dur.price;
@@ -180,7 +227,7 @@ export default function BillingPage() {
       const channelPrice = Math.round(basePrice * (1 - discountPct / 100));
       const channelTotal = channelPrice * users;
       total += channelTotal;
-      breakdown.push({ title: ch.title, discount: discountPct, price: channelPrice, users, total: channelTotal });
+      breakdown.push({ title: ch.title, level: 1, levelDiscount: 0, discount: discountPct, price: channelPrice, users, total: channelTotal });
     });
     const totalUsers = selectedChannels.reduce((s, ch) => s + (channelConfigs[ch.tracking_code]?.users || 1), 0);
     const fullPrice = basePrice * totalUsers;
@@ -581,14 +628,17 @@ export default function BillingPage() {
           </div>
 
           {breakdownOpen && price.breakdown.length > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${ACCENT}20`, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${ACCENT}20`, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {price.breakdown.map((b, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.84rem', flexWrap: 'wrap', gap: 8 }}>
-                  <span style={{ color: DARK, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ color: DARK, display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: ACCENT2 }} />
                     {b.title}{b.users > 1 ? ` (${b.users} п.)` : ''}
+                    {b.level && b.level > 1 && (
+                      <span style={pill('rgba(123,104,238,0.10)', ACCENT2)}>🏆 ур.{b.level} −{b.levelDiscount}%</span>
+                    )}
                     {b.discount > 0 && (
-                      <span style={pill('rgba(16,185,129,0.10)', SUCCESS)}>−{b.discount}%</span>
+                      <span style={pill('rgba(16,185,129,0.10)', SUCCESS)}>объём −{b.discount}%</span>
                     )}
                   </span>
                   <span style={{ fontWeight: 700, color: DARK, letterSpacing: '-0.01em' }}>
@@ -596,6 +646,14 @@ export default function BillingPage() {
                   </span>
                 </div>
               ))}
+              <div style={{
+                marginTop: 6, padding: '8px 12px', borderRadius: 8,
+                background: 'rgba(123,104,238,0.08)', border: `1px dashed ${ACCENT2}40`,
+                fontSize: '0.76rem', color: MUTED, lineHeight: 1.5,
+              }}>
+                💡 Чем выше уровень канала (раздел «Достижения» → «Прогресс»),
+                тем дешевле его подписка: 1 ур → 490 ₽, 5 ур → 375 ₽ за месяц.
+              </div>
             </div>
           )}
         </div>

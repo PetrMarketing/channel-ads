@@ -64,6 +64,9 @@ async def lifespan(app: FastAPI):
     from .services.draft_cleaner import start_draft_cleaner
     start_draft_cleaner()
 
+    from .services.season_rotator import start_season_rotator
+    start_season_rotator()
+
     # Start bot polling
     from .routes.telegram_bot import start_telegram_polling
     from .routes.max_webhook import start_max_polling

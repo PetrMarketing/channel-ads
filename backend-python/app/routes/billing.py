@@ -47,6 +47,9 @@ STAFF_ROLES = {
 async def calculate_price(users: int, months: int, channels: int = 1) -> dict:
     """Calculate total price for N users for M months with progressive channel discount.
     1st channel = full price, 2nd = -10%, 3rd = -20%, 4th = -30%, etc (max 90% discount).
+
+    Без знания конкретных каналов — все считаются как 1 уровень. Используется
+    в UI для приблизительной оценки, точная цена идёт через calculate_multi_price.
     """
     DURATION_OPTIONS = await get_duration_options()
     duration = DURATION_OPTIONS.get(months)
@@ -76,6 +79,70 @@ async def calculate_price(users: int, months: int, channels: int = 1) -> dict:
         "total": total,
         "label": duration["label"],
         "breakdown": breakdown,
+    }
+
+
+async def calculate_multi_price(resolved_channels: list, months: int) -> dict:
+    """Точная цена для конкретного списка каналов с учётом:
+    1) уровня каждого канала (skill min) — multiplier vs base price;
+    2) progressive multi-channel discount (1й канал full, 2й −10%, ...);
+    3) количества пользователей на канал.
+
+    resolved_channels: list[{"channel": <db row>, "users": int, "tracking_code": str}]
+    Сортируется по убыванию цены так, чтобы максимальная скидка применялась
+    к самому дорогому каналу — это даёт лучшую UX (и предсказуемо).
+    """
+    from ..services.channel_levels import channel_overall_level, SUBSCRIPTION_PRICES
+    DURATION_OPTIONS = await get_duration_options()
+    duration = DURATION_OPTIONS.get(months)
+    if not duration:
+        raise ValueError(f"Invalid duration: {months}")
+    base_price = int(duration["price"])
+    base_lvl1 = SUBSCRIPTION_PRICES.get(1, 490)
+
+    # Шаг 1: для каждого канала считаем "монопольную" цену с учётом уровня.
+    items = []
+    for r in resolved_channels:
+        ch = r["channel"]
+        lvl = await channel_overall_level(ch["id"])
+        # Множитель: цена_уровня / цена_1_уровня
+        lvl_price_month = SUBSCRIPTION_PRICES.get(lvl, base_lvl1)
+        lvl_multiplier = lvl_price_month / base_lvl1 if base_lvl1 else 1.0
+        ch_base = round(base_price * lvl_multiplier)
+        items.append({
+            "tracking_code": r.get("tracking_code"),
+            "channel_id": ch["id"],
+            "title": ch.get("title") or "—",
+            "level": lvl,
+            "level_price_month": lvl_price_month,
+            "level_multiplier_pct": round((1 - lvl_multiplier) * 100),
+            "users": int(r.get("users", 1)),
+            "base_after_level": ch_base,  # цена за 1 пользователя после level discount
+        })
+
+    # Шаг 2: сортируем по убыванию base_after_level чтобы максимальную скидку
+    # за объём отдать самому дорогому каналу — иначе пользователь чувствует
+    # себя обделённым.
+    items.sort(key=lambda x: -x["base_after_level"])
+
+    # Шаг 3: per-channel multi-discount
+    total = 0
+    for i, it in enumerate(items):
+        discount_pct = min(i * CHANNEL_DISCOUNT_PERCENT, 90)
+        per_user_price = round(it["base_after_level"] * (1 - discount_pct / 100))
+        ch_amount = per_user_price * it["users"]
+        it["multi_discount_pct"] = discount_pct
+        it["price_per_user"] = per_user_price
+        it["amount"] = ch_amount
+        total += ch_amount
+
+    return {
+        "months": months,
+        "label": duration["label"],
+        "base_price": base_price,
+        "base_lvl1_month": base_lvl1,
+        "items": items,
+        "total": total,
     }
 
 
@@ -265,6 +332,34 @@ async def calculate(request: Request, user=Depends(get_current_user)):
     return {"success": True, **price}
 
 
+@router.post("/calculate-multi")
+async def calculate_multi(request: Request, user=Depends(get_current_user)):
+    """Точная цена с учётом уровня каждого выбранного канала."""
+    body = await request.json()
+    months = int(body.get("months", 1))
+    channel_configs = body.get("channels", [])
+    durations = await get_duration_options()
+    if months not in durations:
+        raise HTTPException(status_code=400, detail="Неверный срок подписки")
+    if not channel_configs:
+        raise HTTPException(status_code=400, detail="Выберите хотя бы один канал")
+
+    resolved = []
+    for cfg in channel_configs:
+        tc = cfg.get("tracking_code")
+        ch_users = max(1, int(cfg.get("users", 1)))
+        ch = await fetch_one(
+            "SELECT id, title FROM channels WHERE tracking_code = $1 AND user_id = $2",
+            tc, user["id"],
+        )
+        if not ch:
+            raise HTTPException(status_code=404, detail=f"Канал {tc} не найден")
+        resolved.append({"channel": ch, "users": ch_users, "tracking_code": tc})
+
+    data = await calculate_multi_price(resolved, months)
+    return {"success": True, **data}
+
+
 @router.post("/pay-multi")
 async def create_multi_payment(request: Request, user=Depends(get_current_user)):
     """Create a single payment for multiple channels with per-channel user counts."""
@@ -291,18 +386,18 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
         resolved.append({"channel": channel, "users": ch_users, "tracking_code": tc})
 
     selected_count = len(resolved)
-    base_price = durations[months]["price"]
 
-    # Progressive discount per channel
-    total = 0
+    # Цены с учётом уровня канала + multi-channel discount.
+    pricing = await calculate_multi_price(resolved, months)
+    # Маппинг ch_id → amount чтобы сохранить порядок resolved
+    pricing_by_ch = {it["channel_id"]: it for it in pricing["items"]}
+    total = pricing["total"]
+
     billing_ids = []
     channel_amounts = []
-    for i, r in enumerate(resolved):
+    for r in resolved:
         ch = r["channel"]
-        discount_pct = min(i * CHANNEL_DISCOUNT_PERCENT, 90)
-        ch_price = round(base_price * (1 - discount_pct / 100))
-        ch_amount = ch_price * r["users"]
-        total += ch_amount
+        ch_amount = pricing_by_ch[ch["id"]]["amount"]
         billing = await fetch_one("SELECT * FROM channel_billing WHERE channel_id = $1", ch["id"])
         if not billing:
             billing_id = await execute_returning_id(
