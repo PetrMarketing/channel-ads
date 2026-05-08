@@ -500,9 +500,14 @@ function RaceTab({ tc }) {
         <div style={{
           padding: '10px 14px', borderRadius: 12, background: '#fff',
           border: `1px solid ${SUCCESS}30`,
-          fontSize: '0.82rem', color: DARK, maxWidth: 320, lineHeight: 1.4,
+          fontSize: '0.78rem', color: DARK, maxWidth: 360, lineHeight: 1.45,
         }}>
-          🏆 <b>Победитель сезона</b> получает 1000 ИИ-токенов и 60 дней доступа бонусом
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>🏆 Призы сезона</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span>🥇 1 место — <b>1000 ИИт</b> + 60 дней</span>
+            <span>🥈 2 место — <b>500 ИИт</b> + 30 дней</span>
+            <span>🥉 3 место — <b>250 ИИт</b> + 15 дней</span>
+          </div>
         </div>
       </div>
 

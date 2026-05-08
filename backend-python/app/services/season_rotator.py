@@ -8,15 +8,19 @@
 import asyncio
 from datetime import datetime, timedelta
 
-from ..database import fetch_one, execute, execute_returning_id
+from ..database import fetch_one, fetch_all, execute, execute_returning_id
 from .achievements import current_season_key, get_season_leaderboard, season_label
 
 
 _task = None
 _INTERVAL_SEC = 60 * 60 * 24  # раз в сутки
 
-WINNER_TOKENS = 1000
-WINNER_DAYS = 60
+# Награды по местам: 1 → 1000 ИИт + 60 дней, 2 → 500 + 30, 3 → 250 + 15
+PLACE_REWARDS = {
+    1: {"tokens": 1000, "days": 60},
+    2: {"tokens":  500, "days": 30},
+    3: {"tokens":  250, "days": 15},
+}
 
 
 def _previous_season_key(current_key: str) -> str:
@@ -38,17 +42,69 @@ def _previous_season_key(current_key: str) -> str:
     return current_key
 
 
-async def _award_season_winner(prev_season_key: str) -> bool:
-    """Если победитель прошлого сезона ещё не награждён — наградить."""
+async def _award_one_place(prev_season_key: str, place: int, channel_id: int, user_id: int, points: int, title: str) -> bool:
+    """Выдать награду одному месту (1/2/3). Идемпотентно по (season, place)."""
+    cfg = PLACE_REWARDS.get(place)
+    if not cfg:
+        return False
     existing = await fetch_one(
-        "SELECT id FROM season_rewards WHERE season_key = $1", prev_season_key,
+        "SELECT id FROM season_rewards WHERE season_key = $1 AND place = $2",
+        prev_season_key, place,
     )
     if existing:
         return False  # уже выдали
 
-    # Топ прошлого сезона. get_season_leaderboard возвращает текущий, поэтому
-    # заглядываем напрямую в БД.
-    rows = await fetch_one(
+    tokens, days = cfg["tokens"], cfg["days"]
+
+    # 1) +N токенов пользователю
+    await execute(
+        "UPDATE users SET ai_tokens = COALESCE(ai_tokens, 0) + $1 WHERE id = $2",
+        tokens, user_id,
+    )
+
+    # 2) +M дней биллинга каналу
+    billing = await fetch_one(
+        "SELECT id, expires_at FROM channel_billing WHERE channel_id = $1",
+        channel_id,
+    )
+    now = datetime.utcnow()
+    if billing:
+        base = billing.get("expires_at")
+        if base and hasattr(base, "year"):
+            try:
+                anchor = base if base > now else now
+            except TypeError:
+                anchor = now
+        else:
+            anchor = now
+        new_expires = anchor + timedelta(days=days)
+        await execute(
+            "UPDATE channel_billing SET plan = 'paid', expires_at = $1, status = 'active' WHERE id = $2",
+            new_expires, billing["id"],
+        )
+    else:
+        new_expires = now + timedelta(days=days)
+        await execute_returning_id(
+            "INSERT INTO channel_billing (channel_id, plan, status, max_users, billing_months, expires_at) "
+            "VALUES ($1, 'paid', 'active', 1, 0, $2) RETURNING id",
+            channel_id, new_expires,
+        )
+
+    # 3) Лог награды
+    await execute(
+        "INSERT INTO season_rewards (season_key, place, channel_id, user_id, points_earned, tokens_granted, days_granted) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (season_key, place) DO NOTHING",
+        prev_season_key, place, channel_id, user_id, points, tokens, days,
+    )
+    medal = "🥇" if place == 1 else "🥈" if place == 2 else "🥉"
+    print(f"[SeasonRotator] {medal} {place} место за {prev_season_key}: канал «{title}» (id={channel_id}), очков={points}, +{tokens} ИИт, +{days} дней")
+    return True
+
+
+async def _award_season_winner(prev_season_key: str) -> bool:
+    """Если победители прошлого сезона ещё не награждены — наградить топ-3."""
+    # Топ-3 прошлого сезона
+    rows = await fetch_all(
         """SELECT c.id AS channel_id, c.user_id, c.title,
                   SUM(CASE a.tier
                       WHEN 'bronze'   THEN 1
@@ -61,68 +117,35 @@ async def _award_season_winner(prev_season_key: str) -> bool:
            WHERE a.season_key = $1
            GROUP BY c.id, c.user_id, c.title
            ORDER BY points DESC
-           LIMIT 1""",
+           LIMIT 3""",
         prev_season_key,
     )
-    if not rows or not rows.get("points"):
-        # Никто не зарабатывал — фиксируем "пустой" сезон, чтобы не пытаться
-        # ещё раз
+
+    if not rows or not any(int(r.get("points") or 0) > 0 for r in rows):
+        # Пустой сезон — фиксируем place=0, чтобы не повторять обработку
         await execute(
-            "INSERT INTO season_rewards (season_key, channel_id, user_id, points_earned, tokens_granted, days_granted) "
-            "VALUES ($1, 0, 0, 0, 0, 0) ON CONFLICT (season_key) DO NOTHING",
+            "INSERT INTO season_rewards (season_key, place, channel_id, user_id, points_earned, tokens_granted, days_granted) "
+            "VALUES ($1, 0, 0, 0, 0, 0, 0) ON CONFLICT (season_key, place) DO NOTHING",
             prev_season_key,
         )
         print(f"[SeasonRotator] {prev_season_key}: победителей нет, пустой сезон")
         return False
 
-    channel_id = int(rows["channel_id"])
-    user_id = int(rows["user_id"])
-    points = int(rows["points"])
-    title = rows.get("title") or f"Канал #{channel_id}"
-
-    # 1) +1000 токенов
-    await execute(
-        "UPDATE users SET ai_tokens = COALESCE(ai_tokens, 0) + $1 WHERE id = $2",
-        WINNER_TOKENS, user_id,
-    )
-
-    # 2) +60 дней биллинга на канал-победитель.
-    billing = await fetch_one(
-        "SELECT id, expires_at FROM channel_billing WHERE channel_id = $1",
-        channel_id,
-    )
-    if billing:
-        # Если активная подписка — продлеваем от expires_at, иначе от сейчас.
-        now = datetime.utcnow()
-        base = billing.get("expires_at")
-        if base and hasattr(base, "year"):
-            try:
-                anchor = base if base > now else now
-            except TypeError:
-                anchor = now
-        else:
-            anchor = now
-        new_expires = anchor + timedelta(days=WINNER_DAYS)
-        await execute(
-            "UPDATE channel_billing SET plan = 'paid', expires_at = $1, status = 'active' WHERE id = $2",
-            new_expires, billing["id"],
+    awarded_any = False
+    for i, r in enumerate(rows):
+        place = i + 1  # 1, 2, 3
+        if int(r.get("points") or 0) <= 0:
+            continue  # без очков не награждаем
+        ok = await _award_one_place(
+            prev_season_key,
+            place,
+            int(r["channel_id"]),
+            int(r["user_id"]),
+            int(r["points"] or 0),
+            r.get("title") or f"Канал #{r['channel_id']}",
         )
-    else:
-        new_expires = datetime.utcnow() + timedelta(days=WINNER_DAYS)
-        await execute_returning_id(
-            "INSERT INTO channel_billing (channel_id, plan, status, max_users, billing_months, expires_at) "
-            "VALUES ($1, 'paid', 'active', 1, 0, $2) RETURNING id",
-            channel_id, new_expires,
-        )
-
-    # 3) Лог награды
-    await execute(
-        "INSERT INTO season_rewards (season_key, channel_id, user_id, points_earned, tokens_granted, days_granted) "
-        "VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (season_key) DO NOTHING",
-        prev_season_key, channel_id, user_id, points, WINNER_TOKENS, WINNER_DAYS,
-    )
-    print(f"[SeasonRotator] 🏆 Награда за {prev_season_key}: канал «{title}» (id={channel_id}), очков={points}, +{WINNER_TOKENS} ИИт, +{WINNER_DAYS} дней")
-    return True
+        awarded_any = awarded_any or ok
+    return awarded_any
 
 
 async def _runner():
@@ -140,7 +163,7 @@ async def _runner():
 def start_season_rotator():
     global _task
     _task = asyncio.create_task(_runner())
-    print("[SeasonRotator] Started (check daily, +1000 ИИт + 60 дней победителю прошлого сезона)")
+    print("[SeasonRotator] Started (check daily, top-3: 1000/500/250 ИИт + 60/30/15 дней)")
 
 
 def stop_season_rotator():
