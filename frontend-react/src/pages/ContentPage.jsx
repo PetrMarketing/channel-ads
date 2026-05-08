@@ -1376,7 +1376,7 @@ export default function ContentPage() {
                 existingFileUrl={!removeExistingFile && editingPost?.file_path ? '/uploads/' + editingPost.file_path.split('/uploads/').pop() : ''}
                 onRemoveExisting={editingPost?.file_path ? () => setRemoveExistingFile(true) : undefined}
               />
-              <div style={hintStyle}>Фото, видео или документ. Telegram: макс. 50 МБ, MAX: макс. 100 МБ.</div>
+              <div style={hintStyle}>Фото, видео или документ. Максимум 50 МБ.</div>
             </div>
 
             <div>

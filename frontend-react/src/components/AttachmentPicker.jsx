@@ -1,11 +1,11 @@
 import { useRef } from 'react';
 
 const ATTACH_TYPES = [
-  { id: 'photo', label: '📷 Фото', accept: 'image/jpeg,image/png,image/gif,image/webp', maxMb: 10, hint: 'JPG, PNG, GIF, WebP. До 10 МБ.' },
-  { id: 'video', label: '🎬 Видео', accept: 'video/mp4,video/quicktime,video/webm', maxMb: 20, hint: 'MP4, MOV, WebM. До 20 МБ.' },
-  { id: 'video_note', label: '⭕ Кружок', accept: 'video/mp4,video/quicktime,video/webm', maxMb: 20, hint: 'Видеосообщение (кружок). MP4, до 20 МБ. До 1 минуты.' },
+  { id: 'photo', label: '📷 Фото', accept: 'image/jpeg,image/png,image/gif,image/webp', maxMb: 50, hint: 'JPG, PNG, GIF, WebP. До 50 МБ.' },
+  { id: 'video', label: '🎬 Видео', accept: 'video/mp4,video/quicktime,video/webm', maxMb: 50, hint: 'MP4, MOV, WebM. До 50 МБ.' },
+  { id: 'video_note', label: '⭕ Кружок', accept: 'video/mp4,video/quicktime,video/webm', maxMb: 50, hint: 'Видеосообщение (кружок). MP4, до 50 МБ. До 1 минуты.' },
   { id: 'file', label: '📎 Файл', accept: '*/*', maxMb: 50, hint: 'Любой файл. До 50 МБ.' },
-  { id: 'voice', label: '🎤 Голосовое', accept: 'audio/ogg,audio/mpeg,audio/mp4,audio/*', maxMb: 10, hint: 'OGG, MP3. До 10 МБ.' },
+  { id: 'voice', label: '🎤 Голосовое', accept: 'audio/ogg,audio/mpeg,audio/mp4,audio/*', maxMb: 50, hint: 'OGG, MP3. До 50 МБ.' },
 ];
 
 export default function AttachmentPicker({ file, onFileChange, attachType, onAttachTypeChange, existingFileInfo, existingFileUrl, photoOnly, onRemoveExisting }) {
