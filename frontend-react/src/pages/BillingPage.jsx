@@ -157,11 +157,34 @@ export default function BillingPage() {
 
   useEffect(() => { loadStatuses(); }, [loadStatuses]);
 
-  const toggleChannel = (tc) => setChannelConfigs(p => ({ ...p, [tc]: { ...p[tc], selected: !p[tc]?.selected } }));
+  const MAX_PAY_CHANNELS = 10;
+  const toggleChannel = (tc) => setChannelConfigs(p => {
+    const cur = !!p[tc]?.selected;
+    if (!cur) {
+      // Хотим выделить — проверим лимит
+      const sel = Object.values(p).filter(v => v?.selected).length;
+      if (sel >= MAX_PAY_CHANNELS) {
+        showToast(`Можно выбрать максимум ${MAX_PAY_CHANNELS} каналов за один платёж`, 'error');
+        return p;
+      }
+    }
+    return { ...p, [tc]: { ...p[tc], selected: !cur } };
+  });
   const setChannelUsers = (tc, n) => setChannelConfigs(p => ({ ...p, [tc]: { ...p[tc], users: Math.max(1, Math.min(50, n)) } }));
   const toggleAll = (val) => setChannelConfigs(p => {
     const next = { ...p };
-    channels?.forEach(ch => { next[ch.tracking_code] = { ...next[ch.tracking_code], selected: val }; });
+    if (val) {
+      // "Выбрать все" — лимит 10
+      const list = (channels || []).slice(0, MAX_PAY_CHANNELS);
+      list.forEach(ch => { next[ch.tracking_code] = { ...next[ch.tracking_code], selected: true }; });
+      // Остальным выбор снимаем чтобы не быть > 10
+      (channels || []).slice(MAX_PAY_CHANNELS).forEach(ch => { next[ch.tracking_code] = { ...next[ch.tracking_code], selected: false }; });
+      if ((channels || []).length > MAX_PAY_CHANNELS) {
+        showToast(`Выбраны первые ${MAX_PAY_CHANNELS} каналов (лимит за один платёж)`, 'info');
+      }
+    } else {
+      channels?.forEach(ch => { next[ch.tracking_code] = { ...next[ch.tracking_code], selected: false }; });
+    }
     return next;
   });
 
@@ -254,16 +277,11 @@ export default function BillingPage() {
   const monthlyDur = durations.find(d => d.months === 1);
   const monthlyBase = monthlyDur?.price || 0;
 
-  const [channelsOpen, setChannelsOpen] = useState(true);
+  const [channelsOpen, setChannelsOpen] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
 
-  // Default state for channels accordion: expanded if 0/none-selected OR >1 channels
-  useEffect(() => {
-    if (!channels?.length) return;
-    const sel = channels.filter(ch => channelConfigs[ch.tracking_code]?.selected).length;
-    setChannelsOpen(sel === 0 || channels.length > 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channels?.length]);
+  // По умолчанию список каналов свёрнут — раскрывается только по клику
+  // на "Каналы для оплаты". Никаких автораскрытий.
 
   if (loading) return <Loading />;
 
@@ -489,10 +507,10 @@ export default function BillingPage() {
             </span>
             <div style={{ minWidth: 0 }}>
               <h2 style={sectionTitleStyle}>Каналы для оплаты</h2>
-              <p style={sectionSubStyle}>Каждый дополнительный — со скидкой</p>
+              <p style={sectionSubStyle}>Каждый дополнительный — со скидкой · до 10 за платёж</p>
             </div>
             <span style={{ ...pill(`${ACCENT}12`, ACCENT), marginLeft: 4 }}>
-              {selectedCount} выбрано
+              {selectedCount}/{MAX_PAY_CHANNELS} выбрано
             </span>
           </div>
           {channelsOpen && (
@@ -633,9 +651,10 @@ export default function BillingPage() {
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.84rem', flexWrap: 'wrap', gap: 8 }}>
                   <span style={{ color: DARK, display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: ACCENT2 }} />
-                    {b.title}{b.users > 1 ? ` (${b.users} п.)` : ''}
-                    {b.level && b.level > 1 && (
-                      <span style={pill('rgba(123,104,238,0.10)', ACCENT2)}>🏆 ур.{b.level} −{b.levelDiscount}%</span>
+                    {b.title} <span style={{ color: MUTED, fontWeight: 500 }}>({b.level || 1} ур.)</span>
+                    {b.users > 1 ? ` (${b.users} п.)` : ''}
+                    {b.level && b.level > 1 && b.levelDiscount > 0 && (
+                      <span style={pill('rgba(123,104,238,0.10)', ACCENT2)}>🏆 −{b.levelDiscount}%</span>
                     )}
                     {b.discount > 0 && (
                       <span style={pill('rgba(16,185,129,0.10)', SUCCESS)}>объём −{b.discount}%</span>

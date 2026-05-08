@@ -343,6 +343,8 @@ async def calculate_multi(request: Request, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Неверный срок подписки")
     if not channel_configs:
         raise HTTPException(status_code=400, detail="Выберите хотя бы один канал")
+    if len(channel_configs) > 10:
+        raise HTTPException(status_code=400, detail="Можно оплатить максимум 10 каналов за один платёж")
 
     resolved = []
     for cfg in channel_configs:
@@ -372,6 +374,8 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
         raise HTTPException(status_code=400, detail="Неверный срок подписки")
     if not channel_configs:
         raise HTTPException(status_code=400, detail="Выберите хотя бы один канал")
+    if len(channel_configs) > 10:
+        raise HTTPException(status_code=400, detail="Можно оплатить максимум 10 каналов за один платёж")
 
     resolved = []
     for cfg in channel_configs:
