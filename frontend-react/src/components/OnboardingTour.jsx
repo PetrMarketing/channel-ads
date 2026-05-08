@@ -92,8 +92,9 @@ const STEP_GROUPS = {
 
     { id: 'cat-content', selector: '[data-tour="cat-content"]', title: 'Раздел: Контент', text: 'Создание и планирование контента.', placement: 'right', expand: 'content' },
     { id: 'content-nav', selector: '[data-tour="content"]', title: 'Публикации', text: 'Календарь постов с возможностью планирования.', placement: 'right', expand: 'content', navigate: '/content' },
-    { id: 'content-day', selector: '[data-tour-page="content-day"]', title: 'Свободная дата', text: 'Нажмите на любую свободную дату — откроется форма создания поста с этой датой.', placement: 'bottom' },
-    { id: 'ai-content-tab', selector: '[data-tour-page="content-ai"]', title: 'ИИ Контент-план', text: 'ИИ создаст 15–60 постов на месяц под вашу нишу с распределением целей (продажи / прогрев / активность). Можно сгенерировать иллюстрации к каждому посту.', placement: 'bottom' },
+    { id: 'content-day', selector: '[data-tour-page="content-day"]', title: 'Свободная дата', text: 'Нажмите на любую свободную дату — откроется форма создания поста. Под календарём есть полоса 14 дней для быстрого выбора.', placement: 'bottom' },
+    { id: 'ai-content-tab', selector: '[data-tour-page="content-ai"]', title: 'ИИ Контент-план (ХИТ)', text: 'ИИ создаст 15–60 постов на месяц под вашу нишу с распределением целей (продажи / прогрев / активность). Можно сгенерировать иллюстрации к каждому посту. Чем больше пакет — тем дешевле за пост.', placement: 'bottom' },
+    { id: 'content-ai-post', selector: '[data-tour-page="content-ai"]', title: 'ИИ внутри поста', text: 'В обычном создании поста есть кнопки «🪄 Сгенерировать» (текст по промту, опц. в стиле канала) и «🖼 ИИ Картинка» (с до 4 референс-фото). По 10 ИИ-токенов, дешевле на высоких уровнях канала.', placement: 'bottom' },
 
     { id: 'giveaways-nav', selector: '[data-tour="giveaways"]', title: 'Розыгрыши', text: 'Конкурсы среди подписчиков с автоматическим выбором победителей.', placement: 'right', expand: 'content', navigate: '/giveaways' },
 
@@ -107,9 +108,11 @@ const STEP_GROUPS = {
     { id: 'staff-nav', selector: '[data-tour="staff"]', title: 'Сотрудники', text: 'Добавьте сотрудников по PKid с ролями: Рекламодатель, Редактор или Администратор.', placement: 'right', navigate: '/staff' },
 
     { id: 'cat-billing', selector: '[data-tour="cat-billing"]', title: 'Раздел: Подписка', text: 'Управление платежами: тарифы, ИИ-токены, реферальная программа.', placement: 'right', expand: 'billing' },
-    { id: 'billing-nav', selector: '[data-tour="billing"]', title: 'Тарифы', text: 'Управление подпиской на сервис. Скидки до 30% за длительный срок.', placement: 'right', expand: 'billing', navigate: '/billing' },
-    { id: 'ai-tokens-nav', selector: '[data-tour="ai-tokens"]', title: 'ИИ Токены', text: 'Валюта для ИИ-функций. 100 = 300₽. Тратятся на ИИ Оформление и Лендинги.', placement: 'right', expand: 'billing', navigate: '/ai-tokens' },
+    { id: 'billing-nav', selector: '[data-tour="billing"]', title: 'Тарифы', text: 'Управление подпиской на сервис. Цена зависит от уровня канала: 1 ур → 490 ₽/мес, 5 ур → 375 ₽/мес. До 10 каналов за один платёж.', placement: 'right', expand: 'billing', navigate: '/billing' },
+    { id: 'ai-tokens-nav', selector: '[data-tour="ai-tokens"]', title: 'ИИ Токены', text: 'Валюта для ИИ-функций. 100 = 300₽. Тратятся на ИИ Оформление, Лендинги, Тексты и Картинки. Цена за операцию падает с уровнем канала.', placement: 'right', expand: 'billing', navigate: '/ai-tokens' },
     { id: 'referrals-nav', selector: '[data-tour="referrals"]', title: 'Реферальная программа', text: 'Приглашайте друзей по реф-ссылке и получайте до 50% с их платежей.', placement: 'right', expand: 'billing', navigate: '/referrals' },
+
+    { id: 'achievements', selector: '[data-tour="dashboard"]', title: 'Достижения канала', text: 'На Обзоре есть кнопка «🏆 Достижения канала» — отдельная страница с 3 вкладками: Прогресс (5 уровней по навыкам), Достижения (бронза/серебро/золото/платина), Гонка каналов (топ-10 сезона + награды победителям).', placement: 'right', navigate: '/achievements' },
 
     { id: 'profile', selector: '[data-tour="profile"]', title: 'Профиль', text: 'Здесь ваш PKid и баланс токенов. Кнопка «Обучение» в хедере — повторный запуск тура в любой момент.', placement: 'bottom' },
   ],
