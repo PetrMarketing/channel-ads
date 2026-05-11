@@ -242,7 +242,18 @@ export default function Sidebar({ isOpen, mobileOpen, onClose }) {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="sidebar-item sub-item"
-                      onClick={onClose}
+                      onClick={(e) => {
+                        // Гарантированно открываем в новой вкладке/окне.
+                        // В MAX/Telegram in-app browser <a target="_blank"> может
+                        // игнорироваться — поэтому делаем явно через window.open.
+                        e.preventDefault();
+                        const w = window.open(sub.path, '_blank', 'noopener,noreferrer');
+                        if (!w) {
+                          // Браузер заблокировал popup — фоллбэк
+                          window.location.assign(sub.path);
+                        }
+                        if (onClose) onClose();
+                      }}
                     >
                       {sub.icon && <span className="sidebar-icon gradient-icon sub-icon">{sub.icon}</span>}
                       {sub.label}
