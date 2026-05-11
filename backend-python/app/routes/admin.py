@@ -420,6 +420,106 @@ def _token_action_label(action: str) -> str:
     }.get(action, action or "Операция")
 
 
+@router.get("/referrals/overview")
+async def admin_referrals_overview(
+    limit: int = Query(50, ge=1, le=500),
+    admin: Dict = Depends(get_current_admin),
+):
+    """Сводка по рефералам: топ-рефереров и список последних регистраций."""
+    top_referrers = await fetch_all(
+        """SELECT u.id, u.username, u.first_name, u.email, u.referral_balance,
+                  COUNT(rs.id) AS signups,
+                  COALESCE(SUM(re.commission_amount), 0)::float AS total_earned
+           FROM users u
+           LEFT JOIN referral_signups rs ON rs.referrer_user_id = u.id
+           LEFT JOIN referral_earnings re ON re.referrer_user_id = u.id
+           GROUP BY u.id, u.username, u.first_name, u.email, u.referral_balance
+           HAVING COUNT(rs.id) > 0
+           ORDER BY signups DESC, total_earned DESC
+           LIMIT $1""",
+        limit,
+    )
+    recent_signups = await fetch_all(
+        """SELECT rs.id, rs.created_at,
+                  rs.referrer_user_id, ru.username AS referrer_username, ru.first_name AS referrer_name,
+                  rs.referred_user_id, du.username AS referred_username, du.first_name AS referred_name,
+                  EXISTS(SELECT 1 FROM referral_earnings re WHERE re.referred_user_id = rs.referred_user_id) AS has_paid
+           FROM referral_signups rs
+           LEFT JOIN users ru ON ru.id = rs.referrer_user_id
+           LEFT JOIN users du ON du.id = rs.referred_user_id
+           ORDER BY rs.created_at DESC
+           LIMIT $1""",
+        limit,
+    )
+    totals = await fetch_one(
+        """SELECT
+             (SELECT COUNT(*) FROM referral_signups) AS total_signups,
+             (SELECT COUNT(*) FROM referral_links) AS total_links,
+             (SELECT COALESCE(SUM(commission_amount), 0) FROM referral_earnings)::float AS total_paid_out,
+             (SELECT COUNT(DISTINCT referred_user_id) FROM referral_earnings) AS converted_signups"""
+    )
+    return {
+        "success": True,
+        "top_referrers": [dict(r) for r in top_referrers],
+        "recent_signups": [dict(r) for r in recent_signups],
+        "totals": dict(totals) if totals else {},
+    }
+
+
+@router.get("/funnel/registrations")
+async def admin_registration_funnel(
+    days: int = Query(30, ge=1, le=365),
+    admin: Dict = Depends(get_current_admin),
+):
+    """Воронка пользователей за последние N дней:
+    1) Регистрация (users.created_at)
+    2) Подключили канал (есть запись в channels)
+    3) Оплатили тариф (есть paid в billing_payments)
+    4) Активны сейчас (channel_billing.status='active')
+    """
+    rows = await fetch_one(
+        f"""WITH recent_users AS (
+              SELECT id FROM users WHERE created_at >= NOW() - INTERVAL '{int(days)} days'
+            )
+            SELECT
+              (SELECT COUNT(*) FROM recent_users) AS step_register,
+              (SELECT COUNT(DISTINCT u.id) FROM recent_users u
+                 JOIN channels c ON c.user_id = u.id) AS step_channel,
+              (SELECT COUNT(DISTINCT u.id) FROM recent_users u
+                 JOIN channels c ON c.user_id = u.id
+                 JOIN channel_billing cb ON cb.channel_id = c.id
+                 JOIN billing_payments bp ON bp.channel_billing_id = cb.id
+                 WHERE bp.status = 'paid') AS step_paid,
+              (SELECT COUNT(DISTINCT u.id) FROM recent_users u
+                 JOIN channels c ON c.user_id = u.id
+                 JOIN channel_billing cb ON cb.channel_id = c.id
+                 WHERE cb.status = 'active' AND cb.expires_at > NOW()) AS step_active"""
+    )
+    by_day = await fetch_all(
+        f"""SELECT DATE(created_at)::TEXT AS day, COUNT(*)::int AS n
+            FROM users
+            WHERE created_at >= NOW() - INTERVAL '{int(days)} days'
+            GROUP BY DATE(created_at) ORDER BY day"""
+    )
+    s_reg = (rows.get("step_register") if rows else 0) or 0
+    s_ch  = (rows.get("step_channel") if rows else 0) or 0
+    s_paid = (rows.get("step_paid") if rows else 0) or 0
+    s_act = (rows.get("step_active") if rows else 0) or 0
+    pct = lambda a, b: round(a * 100 / b, 1) if b else 0
+    funnel = [
+        {"key": "register", "label": "Регистрации",        "count": s_reg,  "pct_of_prev": 100, "pct_of_total": 100},
+        {"key": "channel",  "label": "Подключили канал",    "count": s_ch,   "pct_of_prev": pct(s_ch, s_reg),  "pct_of_total": pct(s_ch, s_reg)},
+        {"key": "paid",     "label": "Оплатили тариф",      "count": s_paid, "pct_of_prev": pct(s_paid, s_ch), "pct_of_total": pct(s_paid, s_reg)},
+        {"key": "active",   "label": "Активны сейчас",      "count": s_act,  "pct_of_prev": pct(s_act, s_paid), "pct_of_total": pct(s_act, s_reg)},
+    ]
+    return {
+        "success": True,
+        "days": days,
+        "funnel": funnel,
+        "by_day": [{"day": r["day"], "n": int(r.get("n") or 0)} for r in by_day],
+    }
+
+
 @router.get("/action-log")
 async def admin_action_log_list(
     limit: int = Query(100, ge=1, le=500),
@@ -638,36 +738,110 @@ async def list_channels(
     limit: int = Query(20, ge=1, le=100),
     search: str = Query(""),
     platform: str = Query(""),
+    billing_status: str = Query(""),
     admin: Dict = Depends(get_current_admin),
 ):
+    """Список каналов с фильтрами:
+    - search: по title/username/owner email/owner name
+    - platform: 'max'/'telegram'
+    - billing_status: 'active' | 'expired' | 'trial' | 'none' (нет записи в channel_billing)
+    """
     offset = (page - 1) * limit
     conditions = []
     params = []
     idx = 1
 
+    join_billing = "LEFT JOIN channel_billing cb ON cb.channel_id = c.id"
+
     if search:
-        conditions.append(f"(c.title ILIKE ${idx} OR c.username ILIKE ${idx})")
+        conditions.append(f"(c.title ILIKE ${idx} OR c.username ILIKE ${idx} OR u.email ILIKE ${idx} OR u.first_name ILIKE ${idx})")
         params.append(f"%{search}%")
         idx += 1
     if platform:
         conditions.append(f"c.platform = ${idx}")
         params.append(platform)
         idx += 1
+    if billing_status:
+        if billing_status == "none":
+            conditions.append("cb.id IS NULL")
+        else:
+            conditions.append(f"cb.status = ${idx}")
+            params.append(billing_status)
+            idx += 1
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
-    total = await fetch_one(f"SELECT COUNT(*) as c FROM channels c {where}", *params)
+    total = await fetch_one(
+        f"""SELECT COUNT(*) as c FROM channels c
+            LEFT JOIN users u ON u.id = c.user_id
+            {join_billing} {where}""",
+        *params,
+    )
     params.extend([limit, offset])
     rows = await fetch_all(
         f"""SELECT c.*, u.username as owner_username, u.first_name as owner_name,
-                   cb.status as billing_status, cb.expires_at as billing_expires
+                   u.email as owner_email,
+                   cb.status as billing_status, cb.expires_at as billing_expires,
+                   cb.max_users as billing_max_users, cb.plan as billing_plan
             FROM channels c
             LEFT JOIN users u ON u.id = c.user_id
-            LEFT JOIN channel_billing cb ON cb.channel_id = c.id
+            {join_billing}
             {where} ORDER BY c.created_at DESC LIMIT ${idx} OFFSET ${idx+1}""",
         *params,
     )
     return {"success": True, "channels": rows, "total": total["c"] if total else 0, "page": page, "limit": limit}
+
+
+@router.put("/channels/{channel_id}/billing-status")
+async def admin_set_billing_status(
+    channel_id: int, request: Request,
+    admin: Dict = Depends(get_current_admin),
+):
+    """Заморозка / разморозка / отметить как trial для канала."""
+    body = await request.json()
+    new_status = (body.get("status") or "").strip()
+    reason = (body.get("reason") or "").strip() or "Изменение статуса админом"
+    if new_status not in ("active", "expired", "trial", "frozen"):
+        raise HTTPException(status_code=400, detail="status: active|expired|trial|frozen")
+    ch = await fetch_one("SELECT id, title FROM channels WHERE id = $1", channel_id)
+    if not ch:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    billing = await fetch_one("SELECT id, status FROM channel_billing WHERE channel_id = $1", channel_id)
+    if billing:
+        before = billing.get("status")
+        await execute("UPDATE channel_billing SET status = $1 WHERE id = $2", new_status, billing["id"])
+    else:
+        before = None
+        await execute_returning_id(
+            "INSERT INTO channel_billing (channel_id, plan, status, max_users) VALUES ($1, 'paid', $2, 1) RETURNING id",
+            channel_id, new_status,
+        )
+    await log_admin_action(
+        admin, "channel_status_change", "channel", channel_id,
+        {"channel_title": ch.get("title"), "before": before, "after": new_status, "reason": reason},
+    )
+    return {"success": True, "before": before, "after": new_status}
+
+
+@router.delete("/channels/{channel_id}")
+async def admin_delete_channel(
+    channel_id: int, request: Request,
+    admin: Dict = Depends(get_current_admin),
+):
+    """Удалить канал (каскадно — биллинг/контент уйдут по FK ON DELETE CASCADE)."""
+    body = {}
+    try: body = await request.json()
+    except Exception: pass
+    reason = (body.get("reason") or "").strip() or "Удаление админом"
+    ch = await fetch_one("SELECT id, title FROM channels WHERE id = $1", channel_id)
+    if not ch:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    await execute("DELETE FROM channels WHERE id = $1", channel_id)
+    await log_admin_action(
+        admin, "channel_delete", "channel", channel_id,
+        {"channel_title": ch.get("title"), "reason": reason},
+    )
+    return {"success": True}
 
 
 @router.get("/channels/{channel_id}")

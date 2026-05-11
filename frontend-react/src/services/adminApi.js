@@ -27,7 +27,11 @@ class AdminApiService {
   get(url) { return this.request(url); }
   post(url, body) { return this.request(url, { method: 'POST', body: JSON.stringify(body) }); }
   put(url, body) { return this.request(url, { method: 'PUT', body: JSON.stringify(body) }); }
-  delete(url) { return this.request(url, { method: 'DELETE' }); }
+  delete(url, body) {
+    const opts = { method: 'DELETE' };
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    return this.request(url, opts);
+  }
 }
 
 export const adminApi = new AdminApiService();

@@ -51,6 +51,8 @@ import AdminTariffsPage from './pages/admin/AdminTariffsPage';
 import AdminFinancePage from './pages/admin/AdminFinancePage';
 import AdminLandingsPage from './pages/admin/AdminLandingsPage';
 import AdminActionLogPage from './pages/admin/AdminActionLogPage';
+import AdminReferralsPage from './pages/admin/AdminReferralsPage';
+import AdminFunnelPage from './pages/admin/AdminFunnelPage';
 import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
 import AdminSupportPage from './pages/admin/AdminSupportPage';
 
@@ -250,6 +252,8 @@ export default function App() {
         <Route path="support" element={<AdminSupportPage />} />
         <Route path="landings" element={<AdminLandingsPage />} />
         <Route path="action-log" element={<AdminActionLogPage />} />
+        <Route path="referrals" element={<AdminReferralsPage />} />
+        <Route path="funnel" element={<AdminFunnelPage />} />
       </Route>
 
       {/* Dashboard (protected) */}
