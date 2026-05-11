@@ -171,29 +171,41 @@ async def use_balance(request: Request, user: Dict = Depends(get_current_user)):
 
 # ─── Process referral commission (called from billing webhook) ───
 
-async def process_referral_commission(referred_user_id: int, payment_amount: float, months: int):
-    """Award commission to referrer when referred user pays."""
+async def process_referral_commission(referred_user_id: int, payment_amount: float, months: int, payment_id: int = None):
+    """Award commission to referrer when referred user pays.
+    Идемпотентно по payment_id: если для этого платежа комиссия уже начислена,
+    повторно ничего не делаем (защита от ретраев вебхука)."""
     signup = await fetch_one(
         "SELECT referrer_user_id FROM referral_signups WHERE referred_user_id = $1", referred_user_id
     )
     if not signup:
         return
 
+    # Idempotency: если этот payment_id уже породил начисление — выходим.
+    if payment_id is not None:
+        existing = await fetch_one(
+            "SELECT id FROM referral_earnings WHERE payment_id = $1", int(payment_id),
+        )
+        if existing:
+            print(f"[Referral] Commission for payment {payment_id} already processed, skipping")
+            return
+
     referrer_id = signup["referrer_user_id"]
     commission_pct = COMMISSION_TIERS.get(months, 10)
     commission = round(payment_amount * commission_pct / 100, 2)
 
     await execute_returning_id(
-        """INSERT INTO referral_earnings (referrer_user_id, referred_user_id, amount, commission_percent, commission_amount)
-           VALUES ($1, $2, $3, $4, $5) RETURNING id""",
-        referrer_id, referred_user_id, payment_amount, commission_pct, commission,
+        """INSERT INTO referral_earnings (referrer_user_id, referred_user_id, payment_id, amount, commission_percent, commission_amount)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id""",
+        referrer_id, referred_user_id, int(payment_id) if payment_id is not None else None,
+        payment_amount, commission_pct, commission,
     )
 
     await execute(
         "UPDATE users SET referral_balance = COALESCE(referral_balance, 0) + $1 WHERE id = $2",
         commission, referrer_id,
     )
-    print(f"[Referral] User {referrer_id} earned {commission} RUB ({commission_pct}%) from user {referred_user_id}")
+    print(f"[Referral] User {referrer_id} earned {commission} RUB ({commission_pct}%) from user {referred_user_id} payment={payment_id}")
 
 
 # ─── Register referral signup ───

@@ -409,12 +409,15 @@ export default function ContentPage() {
     setRemoveExistingFile(false);
     setErrors({});
     let scheduledAt;
+    // Дефолт по МСК (UTC+3): now+30 минут — чтобы валидация "не в прошлом"
+    // не срабатывала сразу при открытии модалки.
+    const mskNow = new Date();
+    mskNow.setMinutes(mskNow.getMinutes() - mskNow.getTimezoneOffset() + 180 + 30);
+    const mskFmt = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}T${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
     if (prefillDate) {
       scheduledAt = `${prefillDate}T10:00`;
     } else {
-      const now = new Date();
-      now.setMinutes(now.getMinutes() + 30);
-      scheduledAt = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}T${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      scheduledAt = mskFmt(mskNow);
     }
     setForm({ title: '', message_text: '', scheduled_at: scheduledAt, inline_buttons: '', attach_type: '', erid: '' });
     setShowModal(true);
@@ -440,9 +443,27 @@ export default function ContentPage() {
     setShowModal(true);
   };
 
+  // Текущее время по МСК (UTC+3) в формате datetime-local строки.
+  // Используем для сравнения и валидации поля scheduled_at.
+  const nowMskString = () => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset() + 180); // → MSK
+    return d.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+  };
+
+  const isScheduledInPast = () => {
+    if (!form.scheduled_at) return false;
+    return form.scheduled_at < nowMskString();
+  };
+
   const validate = () => {
     const newErrors = {};
     if (!form.message_text.trim()) newErrors.message_text = 'Текст поста обязателен';
+    if (!form.scheduled_at) {
+      newErrors.scheduled_at = 'Укажите дату публикации';
+    } else if (isScheduledInPast()) {
+      newErrors.scheduled_at = 'Нельзя запланировать в прошедшем времени (МСК)';
+    }
     setErrors(newErrors);
     if (newErrors.message_text) scrollToRef(messageRef);
     return Object.keys(newErrors).length === 0;
@@ -465,13 +486,21 @@ export default function ContentPage() {
       }
 
       let data;
-      const scheduledUtc = form.scheduled_at ? new Date(form.scheduled_at).toISOString() : '';
+      // datetime-local трактуем как локальное МСК-время (UTC+3) — конвертим
+      // в реальный UTC-момент явно, чтобы серверный sched чётко совпал с
+      // выбранным временем на часах пользователя.
+      const scheduledUtc = (() => {
+        if (!form.scheduled_at) return '';
+        const local = new Date(form.scheduled_at + ':00+03:00');
+        return local.toISOString();
+      })();
 
       if (postFile) {
         const fd = new FormData();
         fd.append('title', defaultTitle);
         fd.append('message_text', form.message_text);
         fd.append('scheduled_at', scheduledUtc);
+        fd.append('status', 'scheduled');
         if (parsedButtons) fd.append('inline_buttons', JSON.stringify(parsedButtons));
         if (form.attach_type) fd.append('attach_type', form.attach_type);
         fd.append('file', postFile);
@@ -486,6 +515,7 @@ export default function ContentPage() {
           title: defaultTitle,
           message_text: form.message_text,
           scheduled_at: scheduledUtc || null,
+          status: 'scheduled',
         };
         if (parsedButtons) payload.inline_buttons = parsedButtons;
         if (form.attach_type) payload.attach_type = form.attach_type;
@@ -500,7 +530,7 @@ export default function ContentPage() {
       }
 
       if (data.success) {
-        showToast(editingPost ? 'Пост обновлён' : 'Пост создан');
+        showToast(editingPost ? 'Пост обновлён, ждёт публикации' : 'Пост запланирован');
         setShowModal(false);
         loadPosts();
       } else {
@@ -1380,10 +1410,29 @@ export default function ContentPage() {
             </div>
 
             <div>
-              <label style={labelStyle}>Дата публикации</label>
-              <input className="cp-input" style={inputStyle} type="datetime-local" value={form.scheduled_at}
-                onChange={e => setForm(p => ({ ...p, scheduled_at: e.target.value }))} />
-              <div style={hintStyle}>Пост будет опубликован автоматически в указанное время. Оставьте пустым для публикации вручную.</div>
+              <label style={labelStyle}>Дата публикации (МСК)</label>
+              <input
+                className="cp-input"
+                type="datetime-local"
+                value={form.scheduled_at}
+                min={nowMskString()}
+                onChange={e => {
+                  setForm(p => ({ ...p, scheduled_at: e.target.value }));
+                  if (e.target.value) setErrors(er => ({ ...er, scheduled_at: '' }));
+                }}
+                style={{
+                  ...inputStyle,
+                  borderColor: (errors.scheduled_at || isScheduledInPast()) ? '#e63946' : inputStyle.border?.split(' ')[2] || '#f0f0f0',
+                  boxShadow: (errors.scheduled_at || isScheduledInPast()) ? '0 0 0 3px rgba(230,57,70,0.12)' : 'none',
+                }}
+              />
+              {(errors.scheduled_at || isScheduledInPast()) ? (
+                <div style={{ ...hintStyle, color: '#e63946', fontWeight: 600 }}>
+                  ⚠️ {errors.scheduled_at || 'Нельзя запланировать в прошедшем времени (МСК)'}
+                </div>
+              ) : (
+                <div style={hintStyle}>Пост будет опубликован автоматически в указанное время по МСК.</div>
+              )}
             </div>
 
             <div>
@@ -1426,8 +1475,14 @@ export default function ContentPage() {
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
               <button className="cp-ghost" style={ghostBtn} onClick={() => setShowModal(false)}>Отмена</button>
-              <button className="cp-primary" style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }} onClick={handleSave} disabled={saving}>
-                {saving ? 'Сохранение...' : 'Сохранить'}
+              <button
+                className="cp-primary"
+                style={{ ...primaryBtn, opacity: saving || isScheduledInPast() ? 0.6 : 1, cursor: saving || isScheduledInPast() ? 'not-allowed' : 'pointer' }}
+                onClick={handleSave}
+                disabled={saving || isScheduledInPast()}
+                title={isScheduledInPast() ? 'Нельзя запланировать в прошедшем времени' : ''}
+              >
+                {saving ? 'Сохранение...' : 'Запланировать'}
               </button>
             </div>
           </div>

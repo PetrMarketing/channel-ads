@@ -195,6 +195,22 @@ if os.path.isdir(frontend_dist):
 
     @app.get("/_vkp/{path:path}", include_in_schema=False)
     async def vk_pixel_proxy(path: str, request: Request):
+        # Лог чтобы видеть, что прилетает (кратко: только тип и goal из data)
+        try:
+            qs = dict(request.query_params)
+            pid = qs.get("id", "?")
+            data_b64 = qs.get("data", "")
+            goal_label = ""
+            if data_b64:
+                import base64 as _b, json as _j
+                try:
+                    decoded = _b.b64decode(data_b64 + "==").decode("utf-8", errors="ignore")
+                    goal_label = decoded[:120]
+                except Exception:
+                    goal_label = f"<bad b64>"
+            print(f"[VK-pixel] /_vkp/{path} id={pid} data={goal_label}")
+        except Exception:
+            pass
         return await _pixel_proxy("https://top-fwz1.mail.ru", path, request)
 
     # Serve assets

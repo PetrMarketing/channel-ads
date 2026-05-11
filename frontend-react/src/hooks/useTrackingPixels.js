@@ -210,14 +210,27 @@ export function useTrackingPixels(info) {
     } catch (e) {
       console.info('[track] VK reachGoal (js) failed', e);
     }
-    // 2. Image beacon via /_vkp proxy — works in MAX in-app browser too.
+    // 2. Image beacon via /_vkp proxy — формат имитирует то, что делает code.js
+    // изнутри: data=base64(JSON), pid=top@mail.ru, js=11, p, domain, urlref.
+    // Без этих полей VK может не зачесть событие как goal.
     try {
-      const url = `/_vkp/counter?id=${encodeURIComponent(pixelId)}` +
-        `&type=reachGoal&goal=${encodeURIComponent(goal)}&js=na&t=${Date.now()}`;
+      const dataObj = { type: 'reachGoal', goal };
+      const data = btoa(unescape(encodeURIComponent(JSON.stringify(dataObj))));
+      const params = [
+        `id=${encodeURIComponent(pixelId)}`,
+        `pid=top%40mail.ru`,
+        `js=11`,
+        `_=${Date.now()}`,
+        `data=${encodeURIComponent(data)}`,
+        `p=${encodeURIComponent(window.location.href)}`,
+        `domain=${encodeURIComponent(window.location.hostname)}`,
+        `urlref=${encodeURIComponent(document.referrer || '')}`,
+      ].join('&');
+      const url = `/_vkp/counter?${params}`;
       const img = new Image(1, 1);
       img.referrerPolicy = 'no-referrer-when-downgrade';
       img.src = url;
-      console.info('[track] VK reachGoal (proxy beacon)', pixelId, goal);
+      console.info('[track] VK reachGoal (proxy beacon)', pixelId, goal, 'data=', data);
     } catch (e) {
       console.info('[track] VK reachGoal (beacon) failed', e);
     }

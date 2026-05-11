@@ -205,21 +205,37 @@ async def tinkoff_webhook(request: Request):
         return {"success": True}
 
     if status == "CONFIRMED":
+        # IDEMPOTENCY GUARD — Tinkoff может ретраить вебхук много раз пока
+        # не получит успешный 200, даже после первого CONFIRMED. Без этой
+        # проверки каждый ретрай продлевал expires_at ещё на N месяцев и
+        # повторно начислял реферальную комиссию.
+        if payment.get("status") == "paid":
+            return {"success": True}
+
         # For multi-channel payments, update ALL payment records with the same payment_id
         all_payments = await fetch_all(
             "SELECT * FROM billing_payments WHERE payment_id = $1", order_id
         )
         if not all_payments:
             all_payments = [payment]
+
+        # Доп guard: если хоть один из multi-payment строк уже paid — выходим.
+        # Это защищает от партиальной обработки (если предыдущий вебхук
+        # успел обновить часть, но упал на середине).
+        if any(p.get("status") == "paid" for p in all_payments):
+            return {"success": True}
+
+        # Собираем (pay, billing) пары один раз чтобы потом передать в реферальную
+        # логику, без scope-leak'а billing из предыдущей итерации.
+        pay_with_billing = []
         for pay in all_payments:
             await execute(
                 "UPDATE billing_payments SET status = 'paid', gateway_response = $1 WHERE id = $2",
                 json.dumps(body), pay["id"],
             )
-            billing_ref = pay.get("channel_billing_id") or pay.get("channel_id")
             billing = None
             if pay.get("channel_billing_id"):
-                billing = await fetch_one("SELECT * FROM channel_billing WHERE id = $1", billing_ref)
+                billing = await fetch_one("SELECT * FROM channel_billing WHERE id = $1", pay["channel_billing_id"])
             if not billing and pay.get("channel_id"):
                 billing = await fetch_one("SELECT * FROM channel_billing WHERE channel_id = $1", pay["channel_id"])
             if billing:
@@ -233,17 +249,22 @@ async def tinkoff_webhook(request: Request):
                        WHERE id = $2""",
                     new_expires, billing["id"],
                 )
-        # Process referral commission
+            pay_with_billing.append((pay, billing))
+
+        # Process referral commission — каждое начисление привязано к
+        # конкретному payment_id, повторно не начислится (см. UNIQUE индекс
+        # в миграции).
         try:
             from .referrals import process_referral_commission
-            for pay in all_payments:
-                if billing:
-                    months = billing.get("billing_months") or 1
-                    amount = float(pay.get("amount", 0))
-                    ch = await fetch_one("SELECT user_id FROM channels WHERE id = $1",
-                                         billing.get("channel_id") or pay.get("channel_id"))
-                    if ch and amount > 0:
-                        await process_referral_commission(ch["user_id"], amount, months)
+            for pay, billing in pay_with_billing:
+                if not billing:
+                    continue
+                months = billing.get("billing_months") or 1
+                amount = float(pay.get("amount", 0))
+                ch = await fetch_one("SELECT user_id FROM channels WHERE id = $1",
+                                     billing.get("channel_id") or pay.get("channel_id"))
+                if ch and amount > 0:
+                    await process_referral_commission(ch["user_id"], amount, months, payment_id=pay["id"])
         except Exception as e:
             print(f"[Billing] Referral commission error: {e}")
 
