@@ -664,9 +664,11 @@ export default function PinsPage() {
           const updatedLms = lmData.leadMagnets || [];
           setLeadMagnets(updatedLms);
           // Auto-select the newly created lead magnet (list is DESC by created_at)
+          // и сразу подложить кнопку "Лид-магнит" в инлайн-кнопки.
           if (updatedLms.length > 0) {
             const newLm = updatedLms[0];
-            setPinForm(p => ({ ...p, lead_magnet_id: String(newLm.id) }));
+            const newButtons = _ensureLeadMagnetButton(newLm.id, newLm.title);
+            setPinForm(p => ({ ...p, lead_magnet_id: String(newLm.id), inline_buttons: newButtons }));
           }
         }
         setShowInlineLm(false);
@@ -683,13 +685,39 @@ export default function PinsPage() {
     }
   };
 
+  // Когда юзер выбирает (или меняет) лид-магнит в дропдауне — автоматически
+  // подкладываем кнопку типа "Лид-магнит" с этим id (или обновляем
+  // существующую) чтобы не нужно было вручную идти в ButtonBuilder.
+  const _ensureLeadMagnetButton = (lmId, lmTitle) => {
+    let btns = [];
+    try {
+      btns = pinForm.inline_buttons ? JSON.parse(pinForm.inline_buttons) : [];
+      if (!Array.isArray(btns)) btns = [];
+    } catch { btns = []; }
+    const existingIdx = btns.findIndex(b => b && b.type === 'lead_magnet');
+    const text = lmTitle || (btns[existingIdx]?.text) || 'Получить материал';
+    const patch = { text, type: 'lead_magnet', url: '', lead_magnet_id: String(lmId) };
+    if (existingIdx >= 0) {
+      btns[existingIdx] = { ...btns[existingIdx], ...patch };
+    } else {
+      btns = [patch, ...btns];
+    }
+    return JSON.stringify(btns);
+  };
+
   const handleLeadMagnetDropdownChange = (val) => {
     if (val === 'create_new') {
       setShowInlineLm(true);
       setPinForm(p => ({ ...p, lead_magnet_id: '' }));
-    } else {
+    } else if (val) {
       setShowInlineLm(false);
-      setPinForm(p => ({ ...p, lead_magnet_id: val }));
+      const lm = leadMagnets.find(x => String(x.id) === String(val));
+      const newButtons = _ensureLeadMagnetButton(val, lm?.title);
+      setPinForm(p => ({ ...p, lead_magnet_id: val, inline_buttons: newButtons }));
+    } else {
+      // Сняли выбор → просто обнуляем lead_magnet_id, кнопку оставляем как есть.
+      setShowInlineLm(false);
+      setPinForm(p => ({ ...p, lead_magnet_id: '' }));
     }
   };
 
