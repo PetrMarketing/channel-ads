@@ -2250,6 +2250,12 @@ async def process_max_update(body: dict):
                 max_chat_id,
             )
             if paid_chat and user_id:
+                # Не кикаем самого бота
+                bot_me = await max_api.get_me() if max_api else None
+                bot_user_id = str(bot_me.get("data", {}).get("user_id") or "") if (bot_me and bot_me.get("success")) else ""
+                if bot_user_id and str(user_id) == bot_user_id:
+                    print(f"[MAX Bot] Self-add to paid chat {max_chat_id} — skipping kick")
+                    return
                 # Check if user has active membership
                 member = await fetch_one(
                     "SELECT id FROM paid_chat_members WHERE paid_chat_id = $1 AND max_user_id = $2 AND status = 'active'",
@@ -2259,13 +2265,19 @@ async def process_max_update(body: dict):
                     # Not paid — kick
                     if max_api:
                         try:
-                            await max_api.remove_chat_member(max_chat_id, user_id)
-                            print(f"[MAX Bot] Kicked unpaid user {user_id} from paid chat {max_chat_id}")
-                            # Notify user
-                            await _send_to_user_by_id(max_api, user_id,
-                                f"⚠️ Для доступа к этому чату необходима оплата.\n\nОплатите подписку, чтобы получить доступ.")
+                            resp = await max_api.remove_chat_member(max_chat_id, user_id)
+                            if resp and resp.get("success"):
+                                print(f"[MAX Bot] Kicked unpaid user {user_id} from paid chat {max_chat_id}")
+                            else:
+                                print(f"[MAX Bot] remove_chat_member FAILED for user {user_id} chat {max_chat_id}: {resp.get('error') if resp else 'no response'}")
+                            # Notify user (best-effort)
+                            try:
+                                await _send_to_user_by_id(max_api, user_id,
+                                    f"⚠️ Для доступа к этому чату необходима оплата.\n\nОплатите подписку, чтобы получить доступ.")
+                            except Exception as ne:
+                                print(f"[MAX Bot] Notify unpaid user failed: {ne}")
                         except Exception as e:
-                            print(f"[MAX Bot] Failed to kick unpaid user: {e}")
+                            print(f"[MAX Bot] Exception kicking unpaid user: {e}")
                     return
 
             channel = await fetch_one(

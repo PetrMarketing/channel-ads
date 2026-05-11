@@ -182,6 +182,28 @@ class MaxApi:
         """Remove a user from a chat."""
         return await self._request("DELETE", f"chats/{chat_id}/members?user_id={user_id}")
 
+    async def get_chat_members(self, chat_id: str, marker: Optional[int] = None, count: int = 100) -> Dict[str, Any]:
+        """List members of a chat (paginated by marker). Returns {success, data: {members, marker}}."""
+        params = f"count={count}"
+        if marker:
+            params += f"&marker={marker}"
+        return await self._request("GET", f"chats/{chat_id}/members?{params}")
+
+    async def list_all_members(self, chat_id: str, max_pages: int = 30) -> List[dict]:
+        """Возвращает всех участников чата, пройдя пагинацию."""
+        members = []
+        marker = None
+        for _ in range(max_pages):
+            resp = await self.get_chat_members(chat_id, marker=marker, count=100)
+            if not resp.get("success"):
+                break
+            data = resp.get("data") or {}
+            members.extend(data.get("members") or [])
+            marker = data.get("marker")
+            if not marker:
+                break
+        return members
+
     async def get_membership(self, chat_id: str) -> Dict[str, Any]:
         return await self._request("GET", f"chats/{chat_id}/members/me")
 

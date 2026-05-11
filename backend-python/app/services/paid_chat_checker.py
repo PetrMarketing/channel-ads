@@ -168,13 +168,88 @@ async def _kick_member(member: dict):
             print(f"[PaidChatChecker] Failed to remove MAX user {max_user_id}: {result.get('error')}")
 
 
+async def sweep_unpaid_members():
+    """Идём по всем active paid_chats, тянем фактический список участников
+    из MAX API и кикаем тех, кого нет в paid_chat_members со status='active'.
+    Защищает от случая когда user_added webhook не сработал или бот был
+    подключён к чату с уже сидящими там людьми."""
+    from .max_api import get_max_api
+    max_api = get_max_api()
+    if not max_api:
+        return
+
+    chats = await fetch_all(
+        "SELECT id, chat_id, title, channel_id FROM paid_chats WHERE is_active = 1 AND platform = 'max' AND chat_id IS NOT NULL"
+    )
+    bot_me = await max_api.get_me()
+    bot_user_id = None
+    if bot_me.get("success"):
+        bot_user_id = str(bot_me.get("data", {}).get("user_id") or "")
+
+    for ch in chats:
+        chat_id = str(ch.get("chat_id") or "")
+        if not chat_id:
+            continue
+        try:
+            members = await max_api.list_all_members(chat_id)
+        except Exception as e:
+            print(f"[PaidChatChecker.sweep] Failed to list members of {chat_id}: {e}")
+            continue
+        if not members:
+            continue
+
+        # Активные оплатившие — берём за один запрос
+        paid_rows = await fetch_all(
+            "SELECT max_user_id FROM paid_chat_members WHERE paid_chat_id = $1 AND status = 'active' AND max_user_id IS NOT NULL",
+            ch["id"],
+        )
+        paid_set = {str(r["max_user_id"]) for r in paid_rows if r.get("max_user_id")}
+
+        for m in members:
+            uid = str(m.get("user_id") or "")
+            if not uid or uid == bot_user_id:
+                continue
+            if uid in paid_set:
+                continue
+            # Не оплачивал — кикаем
+            try:
+                resp = await max_api.remove_chat_member(chat_id, uid)
+                if resp.get("success"):
+                    print(f"[PaidChatChecker.sweep] Kicked unpaid uid={uid} from paid chat {chat_id} ({ch.get('title')})")
+                    # Уведомление
+                    try:
+                        await _send_to_user_safe(max_api, uid,
+                            f"⚠️ Для доступа к чату «{ch.get('title') or 'чат'}» необходима оплата подписки. Откройте бота и оплатите тариф.")
+                    except Exception:
+                        pass
+                else:
+                    print(f"[PaidChatChecker.sweep] Failed kick uid={uid} from {chat_id}: {resp.get('error')}")
+            except Exception as e:
+                print(f"[PaidChatChecker.sweep] Exception kicking uid={uid}: {e}")
+            # throttle чтобы не словить rate limit
+            await asyncio.sleep(0.2)
+
+
+async def _send_to_user_safe(max_api, max_user_id: str, text: str):
+    from ..database import fetch_one as _fo
+    row = await _fo("SELECT max_dialog_chat_id FROM users WHERE max_user_id = $1", str(max_user_id))
+    if row and row.get("max_dialog_chat_id"):
+        await max_api.send_message(str(row["max_dialog_chat_id"]), text, fmt="markdown")
+    else:
+        await max_api.send_direct_message(str(max_user_id), text)
+
+
 async def _paid_chat_loop():
     await asyncio.sleep(15)  # Initial delay
     while True:
         try:
             await check_paid_chat_expiry()
         except Exception as e:
-            print(f"[PaidChatChecker] {e}")
+            print(f"[PaidChatChecker] expiry: {e}")
+        try:
+            await sweep_unpaid_members()
+        except Exception as e:
+            print(f"[PaidChatChecker] sweep: {e}")
         await asyncio.sleep(3600)  # every hour
 
 
