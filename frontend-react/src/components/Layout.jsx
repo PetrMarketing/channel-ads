@@ -4,6 +4,7 @@ import Header from './Header';
 import Sidebar from './Sidebar';
 import SupportChat from './SupportChat';
 import AchievementNotifier from './AchievementNotifier';
+import AnnouncementModal from './AnnouncementModal';
 import { ChannelProvider } from '../contexts/ChannelContext';
 import { ToastProvider } from './Toast';
 import { OnboardingProvider } from './OnboardingTour';
@@ -86,6 +87,7 @@ export default function Layout() {
         </div>
         <SupportChat />
         <AchievementNotifier />
+        <AnnouncementModal />
         </OnboardingProvider>
       </ToastProvider>
     </ChannelProvider>

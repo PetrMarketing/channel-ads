@@ -67,6 +67,9 @@ async def lifespan(app: FastAPI):
     from .services.season_rotator import start_season_rotator
     start_season_rotator()
 
+    from .services.admin_broadcast_runner import start_admin_broadcast_runner
+    start_admin_broadcast_runner()
+
     # Start bot polling
     from .routes.telegram_bot import start_telegram_polling
     from .routes.max_webhook import start_max_polling
@@ -480,6 +483,38 @@ async def claim_subscription_bonus(key: str, user=Depends(get_current_user)):
         tokens, user["id"],
     )
     return {"success": True, "tokens_granted": tokens}
+
+
+# --- Admin announcements (модалки для всех юзеров) ---
+@app.get("/api/announcements/active")
+async def list_active_announcements(user=Depends(get_current_user)):
+    """Активные уведомления для текущего юзера, которые он ещё не закрывал.
+    Учитывает audience и временное окно starts_at/ends_at."""
+    rows = await fetch_all(
+        """SELECT n.*
+           FROM admin_notifications n
+           WHERE n.is_active = TRUE
+             AND (n.starts_at IS NULL OR n.starts_at <= NOW())
+             AND (n.ends_at IS NULL OR n.ends_at >= NOW())
+             AND NOT EXISTS (
+               SELECT 1 FROM user_notifications_seen s
+               WHERE s.notification_id = n.id AND s.user_id = $1
+             )
+           ORDER BY n.created_at DESC
+           LIMIT 5""",
+        user["id"],
+    )
+    return {"success": True, "items": [dict(r) for r in rows]}
+
+
+@app.post("/api/announcements/{nid}/seen")
+async def mark_announcement_seen(nid: int, user=Depends(get_current_user)):
+    await execute(
+        "INSERT INTO user_notifications_seen (user_id, notification_id) VALUES ($1, $2) "
+        "ON CONFLICT (user_id, notification_id) DO NOTHING",
+        user["id"], nid,
+    )
+    return {"success": True}
 
 
 # --- Achievements notifications ---

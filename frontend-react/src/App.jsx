@@ -53,6 +53,8 @@ import AdminLandingsPage from './pages/admin/AdminLandingsPage';
 import AdminActionLogPage from './pages/admin/AdminActionLogPage';
 import AdminReferralsPage from './pages/admin/AdminReferralsPage';
 import AdminFunnelPage from './pages/admin/AdminFunnelPage';
+import AdminNotificationsPage from './pages/admin/AdminNotificationsPage';
+import AdminBroadcastsUsersPage from './pages/admin/AdminBroadcastsUsersPage';
 import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
 import AdminSupportPage from './pages/admin/AdminSupportPage';
 
@@ -254,6 +256,8 @@ export default function App() {
         <Route path="action-log" element={<AdminActionLogPage />} />
         <Route path="referrals" element={<AdminReferralsPage />} />
         <Route path="funnel" element={<AdminFunnelPage />} />
+        <Route path="notifications" element={<AdminNotificationsPage />} />
+        <Route path="broadcasts-users" element={<AdminBroadcastsUsersPage />} />
       </Route>
 
       {/* Dashboard (protected) */}

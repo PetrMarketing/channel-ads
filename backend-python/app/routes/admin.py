@@ -420,6 +420,270 @@ def _token_action_label(action: str) -> str:
     }.get(action, action or "Операция")
 
 
+# ============================================================
+# Уведомления (модалки для всех пользователей при заходе)
+# ============================================================
+
+@router.get("/notifications")
+async def admin_list_notifications(admin: Dict = Depends(get_current_admin)):
+    rows = await fetch_all(
+        """SELECT n.*,
+                  (SELECT COUNT(*) FROM user_notifications_seen WHERE notification_id = n.id) AS shown_count
+           FROM admin_notifications n
+           ORDER BY n.created_at DESC"""
+    )
+    return {"success": True, "items": [dict(r) for r in rows]}
+
+
+@router.post("/notifications")
+async def admin_create_notification(request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    title = (body.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Заголовок обязателен")
+    nid = await execute_returning_id(
+        """INSERT INTO admin_notifications
+           (title, body, image_url, button_text, button_url, audience, is_active, starts_at, ends_at, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
+        title, body.get("body") or "", body.get("image_url") or None,
+        body.get("button_text") or None, body.get("button_url") or None,
+        body.get("audience") or "all",
+        bool(body.get("is_active", True)),
+        body.get("starts_at") or None, body.get("ends_at") or None,
+        admin.get("id"),
+    )
+    await log_admin_action(admin, "notification_create", "notification", nid, {"title": title})
+    return {"success": True, "id": nid}
+
+
+@router.put("/notifications/{nid}")
+async def admin_update_notification(nid: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    fields, params = [], []
+    idx = 1
+    for key in ("title", "body", "image_url", "button_text", "button_url", "audience", "is_active", "starts_at", "ends_at"):
+        if key in body:
+            fields.append(f"{key} = ${idx}")
+            params.append(body[key])
+            idx += 1
+    if not fields:
+        return {"success": True}
+    fields.append("updated_at = NOW()")
+    params.append(nid)
+    await execute(f"UPDATE admin_notifications SET {', '.join(fields)} WHERE id = ${idx}", *params)
+    await log_admin_action(admin, "notification_update", "notification", nid, body)
+    return {"success": True}
+
+
+@router.delete("/notifications/{nid}")
+async def admin_delete_notification(nid: int, admin: Dict = Depends(get_current_admin)):
+    await execute("DELETE FROM admin_notifications WHERE id = $1", nid)
+    await log_admin_action(admin, "notification_delete", "notification", nid, {})
+    return {"success": True}
+
+
+# ============================================================
+# Админ-рассылки по базе пользователей (через бота)
+# ============================================================
+
+@router.get("/broadcasts-users")
+async def admin_list_broadcasts(admin: Dict = Depends(get_current_admin)):
+    rows = await fetch_all(
+        "SELECT * FROM admin_broadcasts ORDER BY created_at DESC"
+    )
+    return {"success": True, "items": [dict(r) for r in rows]}
+
+
+@router.post("/broadcasts-users")
+async def admin_create_broadcast(request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    title = (body.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Название обязательно")
+    bid = await execute_returning_id(
+        """INSERT INTO admin_broadcasts
+           (title, message_text, image_url, media_type, button_text, button_url, audience, status, scheduled_at, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
+        title, body.get("message_text") or "", body.get("image_url") or None,
+        body.get("media_type") or None, body.get("button_text") or None,
+        body.get("button_url") or None, body.get("audience") or "all",
+        body.get("status") or "draft",
+        body.get("scheduled_at") or None,
+        admin.get("id"),
+    )
+    return {"success": True, "id": bid}
+
+
+@router.put("/broadcasts-users/{bid}")
+async def admin_update_broadcast(bid: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    fields, params = [], []
+    idx = 1
+    for key in ("title", "message_text", "image_url", "media_type", "button_text", "button_url", "audience", "status", "scheduled_at"):
+        if key in body:
+            fields.append(f"{key} = ${idx}")
+            params.append(body[key])
+            idx += 1
+    if not fields:
+        return {"success": True}
+    fields.append("updated_at = NOW()")
+    params.append(bid)
+    await execute(f"UPDATE admin_broadcasts SET {', '.join(fields)} WHERE id = ${idx}", *params)
+    return {"success": True}
+
+
+@router.delete("/broadcasts-users/{bid}")
+async def admin_delete_broadcast(bid: int, admin: Dict = Depends(get_current_admin)):
+    await execute("DELETE FROM admin_broadcasts WHERE id = $1", bid)
+    await log_admin_action(admin, "broadcast_delete", "broadcast_user", bid, {})
+    return {"success": True}
+
+
+def _audience_where(audience: str):
+    """SQL WHERE-условие для выборки получателей по audience."""
+    if audience == "max":
+        return "u.max_user_id IS NOT NULL"
+    if audience == "telegram":
+        return "u.telegram_id IS NOT NULL"
+    if audience == "paid":
+        return ("EXISTS (SELECT 1 FROM channels c JOIN channel_billing cb ON cb.channel_id = c.id "
+                "WHERE c.user_id = u.id AND cb.status = 'active')")
+    if audience == "free":
+        return ("NOT EXISTS (SELECT 1 FROM channels c JOIN channel_billing cb ON cb.channel_id = c.id "
+                "WHERE c.user_id = u.id AND cb.status = 'active')")
+    return "TRUE"
+
+
+@router.post("/broadcasts-users/preview-audience")
+async def admin_preview_audience(request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    audience = body.get("audience") or "all"
+    where = _audience_where(audience)
+    row = await fetch_one(
+        f"SELECT COUNT(*) AS n FROM users u WHERE (u.max_user_id IS NOT NULL OR u.telegram_id IS NOT NULL) AND ({where})"
+    )
+    return {"success": True, "count": int(row.get("n") or 0)}
+
+
+@router.post("/broadcasts-users/{bid}/send-test")
+async def admin_send_test(bid: int, admin: Dict = Depends(get_current_admin)):
+    """Отправить копию рассылки текущему админу — тестовая отправка.
+    Берём admin_users.username и пытаемся найти связанный с ним юзер по
+    тому же username. Если нет — пробуем по email."""
+    bc = await fetch_one("SELECT * FROM admin_broadcasts WHERE id = $1", bid)
+    if not bc:
+        raise HTTPException(status_code=404, detail="Рассылка не найдена")
+    # Найти "себя" среди обычных пользователей.
+    me = await fetch_one(
+        """SELECT * FROM users
+           WHERE (telegram_id IS NOT NULL OR max_user_id IS NOT NULL)
+             AND (username = $1 OR email = $1)
+           LIMIT 1""",
+        admin.get("username") or "",
+    )
+    if not me:
+        raise HTTPException(
+            status_code=400,
+            detail="Не нашёл вас среди пользователей сервиса. Привяжите Telegram/MAX к юзеру с таким же username/email как у админ-аккаунта.",
+        )
+    sent, failed = await _send_admin_broadcast_to_user(bc, me)
+    return {"success": True, "sent": sent, "failed": failed, "user_id": me["id"]}
+
+
+@router.post("/broadcasts-users/{bid}/send-now")
+async def admin_send_now(bid: int, admin: Dict = Depends(get_current_admin)):
+    """Запустить рассылку сейчас (фоновый таск)."""
+    bc = await fetch_one("SELECT * FROM admin_broadcasts WHERE id = $1", bid)
+    if not bc:
+        raise HTTPException(status_code=404, detail="Рассылка не найдена")
+    if bc.get("status") in ("sending", "sent"):
+        raise HTTPException(status_code=400, detail=f"Уже {bc.get('status')}")
+    import asyncio as _aio
+    await execute(
+        "UPDATE admin_broadcasts SET status='sending', started_at=NOW() WHERE id = $1", bid,
+    )
+    _aio.create_task(_run_admin_broadcast(bid))
+    await log_admin_action(admin, "broadcast_send", "broadcast_user", bid, {"title": bc.get("title")})
+    return {"success": True}
+
+
+@router.post("/broadcasts-users/{bid}/cancel")
+async def admin_cancel_broadcast(bid: int, admin: Dict = Depends(get_current_admin)):
+    bc = await fetch_one("SELECT status FROM admin_broadcasts WHERE id = $1", bid)
+    if not bc:
+        raise HTTPException(status_code=404, detail="Рассылка не найдена")
+    if bc.get("status") not in ("scheduled", "sending"):
+        raise HTTPException(status_code=400, detail="Можно отменить только scheduled/sending")
+    await execute("UPDATE admin_broadcasts SET status='cancelled' WHERE id = $1", bid)
+    return {"success": True}
+
+
+async def _send_admin_broadcast_to_user(bc: dict, user: dict):
+    """Отправка одной копии рассылки. Возвращает (sent, failed) — 1 или 0."""
+    from ..services.messenger import send_to_user
+    text = bc.get("message_text") or ""
+    if bc.get("button_text") and bc.get("button_url"):
+        # Inline-кнопка как ссылка
+        inline = [[{"text": bc["button_text"], "url": bc["button_url"]}]]
+    else:
+        inline = None
+    file_path = None
+    file_type = None
+    if bc.get("image_url"):
+        # /uploads/foo.png → /app/uploads/foo.png
+        url = bc["image_url"]
+        if url.startswith("/uploads/"):
+            file_path = "/app" + url
+            file_type = bc.get("media_type") or "photo"
+    sent, failed = 0, 0
+    # Предпочитаем MAX, если у юзера есть; иначе Telegram.
+    platforms = []
+    if user.get("max_user_id"):
+        platforms.append(("max", user["max_user_id"]))
+    elif user.get("telegram_id"):
+        platforms.append(("telegram", user["telegram_id"]))
+    for platform, uid in platforms:
+        try:
+            await send_to_user(uid, platform, text, file_path=file_path, file_type=file_type, inline_buttons=inline)
+            sent += 1
+        except Exception as e:
+            print(f"[admin-broadcast {bc['id']}] failed user={user.get('id')} platform={platform}: {e}")
+            failed += 1
+    return sent, failed
+
+
+async def _run_admin_broadcast(bid: int):
+    """Фоновая отправка рассылки всем подходящим пользователям."""
+    bc = await fetch_one("SELECT * FROM admin_broadcasts WHERE id = $1", bid)
+    if not bc:
+        return
+    audience = bc.get("audience") or "all"
+    where = _audience_where(audience)
+    users = await fetch_all(
+        f"""SELECT * FROM users u
+            WHERE (u.max_user_id IS NOT NULL OR u.telegram_id IS NOT NULL)
+              AND ({where})"""
+    )
+    sent, failed = 0, 0
+    for u in users:
+        # Проверим что не отменили
+        cur = await fetch_one("SELECT status FROM admin_broadcasts WHERE id = $1", bid)
+        if not cur or cur.get("status") == "cancelled":
+            print(f"[admin-broadcast {bid}] cancelled mid-send, sent={sent} failed={failed}")
+            return
+        s, f = await _send_admin_broadcast_to_user(bc, dict(u))
+        sent += s
+        failed += f
+        # Throttle 50ms чтобы не положить ботов
+        import asyncio as _aio
+        await _aio.sleep(0.05)
+    await execute(
+        "UPDATE admin_broadcasts SET status='sent', completed_at=NOW(), sent_count=$1, failed_count=$2, total_count=$3 WHERE id = $4",
+        sent, failed, len(users), bid,
+    )
+    print(f"[admin-broadcast {bid}] done: sent={sent} failed={failed} total={len(users)}")
+
+
 @router.get("/referrals/overview")
 async def admin_referrals_overview(
     limit: int = Query(50, ge=1, le=500),
