@@ -13,6 +13,7 @@ const navItems = [
   { to: '/admin/generations', label: 'Генерации', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   { to: '/admin/support', label: 'Обращения', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z', badge: true },
   { to: '/admin/landings', label: 'Лендинги', icon: 'M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z' },
+  { to: '/admin/action-log', label: 'Лог действий', icon: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11' },
 ];
 
 function NavIcon({ d, size = 16 }) {

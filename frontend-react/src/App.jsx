@@ -50,6 +50,7 @@ import AdminAdminsPage from './pages/admin/AdminAdminsPage';
 import AdminTariffsPage from './pages/admin/AdminTariffsPage';
 import AdminFinancePage from './pages/admin/AdminFinancePage';
 import AdminLandingsPage from './pages/admin/AdminLandingsPage';
+import AdminActionLogPage from './pages/admin/AdminActionLogPage';
 import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
 import AdminSupportPage from './pages/admin/AdminSupportPage';
 
@@ -248,6 +249,7 @@ export default function App() {
         <Route path="generations" element={<AdminGenerationsPage />} />
         <Route path="support" element={<AdminSupportPage />} />
         <Route path="landings" element={<AdminLandingsPage />} />
+        <Route path="action-log" element={<AdminActionLogPage />} />
       </Route>
 
       {/* Dashboard (protected) */}

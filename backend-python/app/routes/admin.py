@@ -14,6 +14,30 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
+# Логирование действий админа (для аудита)
+# ---------------------------------------------------------------------------
+
+async def log_admin_action(
+    admin: Dict[str, Any],
+    action: str,
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+    payload: Optional[dict] = None,
+) -> None:
+    """Запись в admin_action_log. Не должна валить вызывающий код при ошибке."""
+    try:
+        await execute(
+            """INSERT INTO admin_action_log (admin_id, admin_username, action, target_type, target_id, payload)
+               VALUES ($1, $2, $3, $4, $5, $6::jsonb)""",
+            admin.get("id"), admin.get("username") or admin.get("display_name"),
+            action, target_type, target_id,
+            json.dumps(payload or {}, ensure_ascii=False, default=str),
+        )
+    except Exception as e:
+        print(f"[Admin] log_admin_action failed: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Ensure default superadmin exists (called from lifespan)
 # ---------------------------------------------------------------------------
 
@@ -200,12 +224,35 @@ async def get_user(user_id: int, admin: Dict = Depends(get_current_admin)):
 
 @router.post("/users/{user_id}/add-tokens")
 async def add_tokens(user_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    """Изменить баланс ИИ-токенов (delta может быть положительным или отрицательным).
+    Пишет запись в ai_token_usage и admin_action_log."""
     body = await request.json()
     tokens = int(body.get("tokens", 0))
-    if not tokens:
-        raise HTTPException(status_code=400, detail="Укажите количество токенов")
-    await execute("UPDATE users SET ai_tokens = COALESCE(ai_tokens, 0) + $1 WHERE id = $2", tokens, user_id)
-    return {"success": True}
+    reason = (body.get("reason") or "").strip() or "Корректировка админом"
+    if tokens == 0:
+        raise HTTPException(status_code=400, detail="Укажите ненулевое значение")
+
+    user = await fetch_one("SELECT id, ai_tokens FROM users WHERE id = $1", user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    before = int(user.get("ai_tokens") or 0)
+    new_balance = before + tokens
+    if new_balance < 0:
+        # Не уходим в минус — обрезаем
+        tokens = -before
+        new_balance = 0
+
+    await execute("UPDATE users SET ai_tokens = $1 WHERE id = $2", new_balance, user_id)
+    await execute(
+        "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1, $2, $3, $4)",
+        user_id, tokens, "admin_adjust",
+        f"Админ {admin.get('username', '?')}: {reason}",
+    )
+    await log_admin_action(
+        admin, "tokens_adjust", "user", user_id,
+        {"before": before, "delta": tokens, "after": new_balance, "reason": reason},
+    )
+    return {"success": True, "before": before, "after": new_balance, "delta": tokens}
 
 
 @router.get("/users/{user_id}/channels")
@@ -264,6 +311,161 @@ async def user_lead_magnets(user_id: int, admin: Dict = Depends(get_current_admi
     return {"success": True, "leadMagnets": _strip_binary(rows)}
 
 
+@router.get("/users/{user_id}/balance-history")
+async def user_balance_history(
+    user_id: int,
+    limit: int = Query(100, ge=1, le=500),
+    admin: Dict = Depends(get_current_admin),
+):
+    """Объединённая история операций по пользователю:
+    - Изменения ИИ-токенов (ai_token_usage)
+    - Платежи (billing_payments → channel_billing → channels)
+    - Ручные корректировки админом (admin_action_log с target=user или channel)
+    Возвращает единый список, сортированный по дате убывания.
+    """
+    out = []
+
+    tok = await fetch_all(
+        """SELECT id, tokens_used, action, description, created_at
+           FROM ai_token_usage WHERE user_id = $1
+           ORDER BY created_at DESC LIMIT $2""",
+        user_id, limit,
+    )
+    for r in tok:
+        out.append({
+            "kind": "tokens",
+            "id": f"tok-{r['id']}",
+            "delta": int(r.get("tokens_used") or 0),
+            "label": _token_action_label(r.get("action") or ""),
+            "action": r.get("action"),
+            "description": r.get("description") or "",
+            "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+        })
+
+    pays = await fetch_all(
+        """SELECT bp.id, bp.amount, bp.status, bp.created_at,
+                  COALESCE(c.title, 'Канал') AS channel_title, c.id AS channel_id
+           FROM billing_payments bp
+           LEFT JOIN channel_billing cb ON cb.id = bp.channel_billing_id
+           LEFT JOIN channels c ON c.id = COALESCE(bp.channel_id, cb.channel_id)
+           WHERE c.user_id = $1
+           ORDER BY bp.created_at DESC LIMIT $2""",
+        user_id, limit,
+    )
+    for r in pays:
+        out.append({
+            "kind": "payment",
+            "id": f"pay-{r['id']}",
+            "amount": float(r.get("amount") or 0),
+            "status": r.get("status"),
+            "label": f"Оплата канала «{r.get('channel_title')}»" + (
+                " (ожидает)" if r.get("status") == "pending" else
+                "" if r.get("status") == "paid" else
+                f" ({r.get('status')})"
+            ),
+            "channel_id": r.get("channel_id"),
+            "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+        })
+
+    chans = await fetch_all("SELECT id FROM channels WHERE user_id = $1", user_id)
+    chan_ids = [c["id"] for c in chans]
+    admin_rows = await fetch_all(
+        """SELECT id, admin_username, action, target_type, target_id, payload, created_at
+           FROM admin_action_log
+           WHERE (target_type = 'user' AND target_id = $1)
+              OR (target_type = 'channel' AND target_id = ANY($2::int[]))
+           ORDER BY created_at DESC LIMIT $3""",
+        user_id, chan_ids or [0], limit,
+    )
+    for r in admin_rows:
+        payload = r.get("payload")
+        if isinstance(payload, str):
+            try: payload = json.loads(payload)
+            except Exception: payload = {}
+        payload = payload or {}
+        label = {
+            "tokens_adjust":  f"Админ изменил токены: {payload.get('delta', '?')}",
+            "billing_adjust": f"Админ изменил подписку: {payload.get('delta_days', '?')} дн.",
+        }.get(r.get("action") or "", f"Админ: {r.get('action')}")
+        out.append({
+            "kind": "admin",
+            "id": f"adm-{r['id']}",
+            "label": label,
+            "admin": r.get("admin_username") or "?",
+            "reason": payload.get("reason") or "",
+            "payload": payload,
+            "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+        })
+
+    out.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return {"success": True, "items": out[:limit]}
+
+
+def _token_action_label(action: str) -> str:
+    return {
+        "ai_landing":             "ИИ Лендинг",
+        "ai_design":              "ИИ Оформление",
+        "ai_content_post":        "ИИ Контент: пост",
+        "ai_content_image":       "ИИ Контент: картинка",
+        "ai_content_image_batch": "ИИ Контент: картинка (батч)",
+        "ai_content_image_prompt":"Промт для картинки",
+        "ai_post_text":           "Генерация текста поста",
+        "ai_post_image":          "Генерация картинки поста",
+        "ai_post_refund":         "Возврат токенов",
+        "purchase":               "Покупка пакета",
+        "referral_bonus":         "Реф. бонус",
+        "subscription_bonus":     "Бонус за подписку",
+        "season_winner":          "Награда сезона",
+        "admin_adjust":           "Корректировка админом",
+    }.get(action, action or "Операция")
+
+
+@router.get("/action-log")
+async def admin_action_log_list(
+    limit: int = Query(100, ge=1, le=500),
+    admin_id: Optional[int] = None,
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+    admin: Dict = Depends(get_current_admin),
+):
+    """Лог действий админов с фильтрами."""
+    conds, params = [], []
+    if admin_id is not None:
+        params.append(int(admin_id))
+        conds.append(f"admin_id = ${len(params)}")
+    if target_type:
+        params.append(target_type)
+        conds.append(f"target_type = ${len(params)}")
+    if target_id is not None:
+        params.append(int(target_id))
+        conds.append(f"target_id = ${len(params)}")
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    params.append(int(limit))
+    rows = await fetch_all(
+        f"""SELECT id, admin_id, admin_username, action, target_type, target_id, payload, created_at
+            FROM admin_action_log {where}
+            ORDER BY created_at DESC LIMIT ${len(params)}""",
+        *params,
+    )
+    items = []
+    for r in rows:
+        p = r.get("payload")
+        if isinstance(p, str):
+            try: p = json.loads(p)
+            except Exception: p = {}
+        items.append({
+            "id": r["id"],
+            "admin_id": r.get("admin_id"),
+            "admin_username": r.get("admin_username") or "?",
+            "action": r.get("action"),
+            "target_type": r.get("target_type"),
+            "target_id": r.get("target_id"),
+            "payload": p or {},
+            "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+        })
+    return {"success": True, "items": items}
+
+
 @router.get("/users/{user_id}/referrals")
 async def user_referrals(user_id: int, admin: Dict = Depends(get_current_admin)):
     # Links
@@ -294,31 +496,60 @@ async def user_referrals(user_id: int, admin: Dict = Depends(get_current_admin))
 
 @router.put("/users/{user_id}/extend-tariff")
 async def extend_tariff(user_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    """Корректировка expires_at канала. Принимает либо months (старое API),
+    либо days (новое — может быть отрицательным для уменьшения срока).
+    """
     body = await request.json()
     channel_id = body.get("channel_id")
-    months = int(body.get("months", 1))
     if not channel_id:
         raise HTTPException(status_code=400, detail="channel_id обязателен")
+
+    days = body.get("days")
+    if days is None:
+        # Обратная совместимость: months → days
+        months = int(body.get("months", 1))
+        days = 30 * months
+    days = int(days)
+    if days == 0:
+        raise HTTPException(status_code=400, detail="Укажите ненулевое значение")
+    reason = (body.get("reason") or "").strip() or "Корректировка админом"
 
     channel = await fetch_one("SELECT * FROM channels WHERE id = $1 AND user_id = $2", channel_id, user_id)
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
     billing = await fetch_one("SELECT * FROM channel_billing WHERE channel_id = $1", channel_id)
+    before_expires = None
     if not billing:
-        new_expires = datetime.utcnow() + timedelta(days=30 * months)
+        if days < 0:
+            raise HTTPException(status_code=400, detail="У канала ещё нет подписки — нечего сокращать")
+        new_expires = datetime.utcnow() + timedelta(days=days)
         await execute_returning_id(
             "INSERT INTO channel_billing (channel_id, plan, status, expires_at, max_users) VALUES ($1,'paid','active',$2,1) RETURNING id",
             channel_id, new_expires,
         )
     else:
-        base = billing["expires_at"] if billing["expires_at"] and billing["expires_at"] > datetime.utcnow() else datetime.utcnow()
-        new_expires = base + timedelta(days=30 * months)
+        before_expires = billing["expires_at"]
+        base = before_expires if before_expires and before_expires > datetime.utcnow() else datetime.utcnow()
+        new_expires = base + timedelta(days=days)
+        # Если уменьшение делает дату меньше "сейчас" — статус становится expired
+        new_status = "active" if new_expires > datetime.utcnow() else "expired"
         await execute(
-            "UPDATE channel_billing SET status = 'active', expires_at = $1 WHERE channel_id = $2",
-            new_expires, channel_id,
+            "UPDATE channel_billing SET status = $1, expires_at = $2 WHERE channel_id = $3",
+            new_status, new_expires, channel_id,
         )
-    return {"success": True, "expires_at": new_expires.isoformat()}
+    await log_admin_action(
+        admin, "billing_adjust", "channel", int(channel_id),
+        {
+            "user_id": user_id,
+            "channel_title": channel.get("title"),
+            "before": before_expires.isoformat() if before_expires and hasattr(before_expires, 'isoformat') else None,
+            "after": new_expires.isoformat(),
+            "delta_days": days,
+            "reason": reason,
+        },
+    )
+    return {"success": True, "expires_at": new_expires.isoformat(), "delta_days": days}
 
 
 @router.delete("/users/{user_id}/pins/{pin_id}")

@@ -23,7 +23,10 @@ export default function AdminUserProfilePage() {
   const [tab, setTab] = useState('channels');
   const [tabData, setTabData] = useState([]);
   const [extendModal, setExtendModal] = useState(null);
-  const [extendMonths, setExtendMonths] = useState(1);
+  const [extendDays, setExtendDays] = useState(30);
+  const [extendReason, setExtendReason] = useState('');
+  const [tokensDelta, setTokensDelta] = useState('');
+  const [tokensReason, setTokensReason] = useState('');
 
   useEffect(() => { adminApi.get(`/users/${userId}`).then(d => { if (d) setData(d); }).catch(() => {}); }, [userId]);
 
@@ -32,9 +35,10 @@ export default function AdminUserProfilePage() {
       channels: `/users/${userId}/channels`, pins: `/users/${userId}/pins`,
       broadcasts: `/users/${userId}/broadcasts`, giveaways: `/users/${userId}/giveaways`,
       leadMagnets: `/users/${userId}/lead-magnets`, referrals: `/users/${userId}/referrals`,
+      history: `/users/${userId}/balance-history`,
     };
     adminApi.get(endpoints[tab]).then(d => {
-      if (d) setTabData(d.channels || d.pins || d.broadcasts || d.giveaways || d.leadMagnets || d);
+      if (d) setTabData(d.channels || d.pins || d.broadcasts || d.giveaways || d.leadMagnets || d.items || d);
     }).catch(() => setTabData([]));
   }, [tab, userId]);
 
@@ -48,15 +52,40 @@ export default function AdminUserProfilePage() {
   };
 
   const handleExtend = async () => {
-    await adminApi.put(`/users/${userId}/extend-tariff`, { channel_id: extendModal, months: extendMonths });
-    setExtendModal(null);
-    adminApi.get(`/users/${userId}/channels`).then(d => setTabData(d.channels || []));
+    const days = parseInt(extendDays, 10);
+    if (!days) { alert('Укажите дни (можно отрицательное число для уменьшения)'); return; }
+    try {
+      await adminApi.put(`/users/${userId}/extend-tariff`, {
+        channel_id: extendModal, days, reason: extendReason,
+      });
+      setExtendModal(null);
+      setExtendReason('');
+      adminApi.get(`/users/${userId}/channels`).then(d => setTabData(d.channels || []));
+    } catch (e) {
+      alert(e?.message || 'Ошибка');
+    }
+  };
+
+  const handleAdjustTokens = async () => {
+    const val = parseInt(tokensDelta, 10);
+    if (!val) { alert('Укажите ненулевое значение'); return; }
+    try {
+      const res = await adminApi.post(`/users/${userId}/add-tokens`, {
+        tokens: val, reason: tokensReason,
+      });
+      setData(prev => ({ ...prev, user: { ...prev.user, ai_tokens: res.after } }));
+      setTokensDelta('');
+      setTokensReason('');
+    } catch (e) {
+      alert(e?.message || 'Ошибка');
+    }
   };
 
   const tabs = [
     { key: 'channels', label: 'Каналы' }, { key: 'pins', label: 'Закрепы' },
     { key: 'leadMagnets', label: 'Лид-магниты' }, { key: 'broadcasts', label: 'Рассылки' },
     { key: 'giveaways', label: 'Розыгрыши' }, { key: 'referrals', label: 'Рефералы' },
+    { key: 'history', label: '📋 История' },
   ];
 
   const statusColor = (s) => s === 'active' ? '#22c55e' : '#ef4444';
@@ -101,20 +130,28 @@ export default function AdminUserProfilePage() {
           <div style={{ gridColumn: '1 / -1' }}><span style={{ color: '#999', fontWeight: 500 }}>Email:</span> <span style={{ fontWeight: 600, color: '#1a1a2e' }}>{user.email || '—'}</span></div>
         </div>
 
-        {/* AI Tokens add */}
-        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: '#8b5cf6', fontWeight: 700 }}>Начислить токены:</span>
-          <input id="addTokens" type="number" placeholder="Кол-во"
-            style={{ width: 100, padding: '6px 12px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, outline: 'none' }} />
-          <button style={btnPrimary} onClick={async () => {
-            const val = parseInt(document.getElementById('addTokens').value);
-            if (!val) return;
-            try {
-              await adminApi.post(`/users/${userId}/add-tokens`, { tokens: val });
-              setData(prev => ({ ...prev, user: { ...prev.user, ai_tokens: (prev.user.ai_tokens || 0) + val } }));
-              document.getElementById('addTokens').value = '';
-            } catch {}
-          }}>Начислить</button>
+        {/* AI Tokens adjust (положительное и отрицательное) */}
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+          <div style={{ fontSize: 13, color: '#8b5cf6', fontWeight: 700, marginBottom: 8 }}>
+            Изменить ИИ-токены (можно отрицательное число для списания):
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              type="number"
+              value={tokensDelta}
+              onChange={e => setTokensDelta(e.target.value)}
+              placeholder="±1000"
+              style={{ width: 110, padding: '6px 12px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, outline: 'none' }}
+            />
+            <input
+              type="text"
+              value={tokensReason}
+              onChange={e => setTokensReason(e.target.value)}
+              placeholder="Причина (для лога)"
+              style={{ flex: 1, minWidth: 200, padding: '6px 12px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, outline: 'none' }}
+            />
+            <button style={btnPrimary} onClick={handleAdjustTokens}>Применить</button>
+          </div>
         </div>
       </div>
 
@@ -287,19 +324,98 @@ export default function AdminUserProfilePage() {
         </div>
       )}
 
-      {/* Extend tariff modal */}
+      {/* History tab — объединённая история токенов / платежей / админ-операций */}
+      {tab === 'history' && (
+        Array.isArray(tabData) && tabData.length === 0
+          ? <div style={emptyState}>История пуста</div>
+          : (
+            <div style={tableWrap}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr>
+                  <th style={th}>Когда</th>
+                  <th style={th}>Тип</th>
+                  <th style={th}>Изменение</th>
+                  <th style={th}>Описание</th>
+                </tr></thead>
+                <tbody>{(Array.isArray(tabData) ? tabData : []).map(it => {
+                  const kindBadge = it.kind === 'tokens'
+                    ? badge('#ede9fe', '#7c3aed')
+                    : it.kind === 'payment'
+                      ? badge('#dcfce7', '#166534')
+                      : badge('#fee2e2', '#991b1b');
+                  const kindLabel = it.kind === 'tokens' ? 'Токены' : it.kind === 'payment' ? 'Платёж' : 'Админ';
+                  let deltaCell = '—';
+                  if (it.kind === 'tokens') {
+                    const v = it.delta;
+                    const color = v > 0 ? '#16a34a' : v < 0 ? '#dc2626' : '#6b7280';
+                    deltaCell = <span style={{ color, fontWeight: 700 }}>{v > 0 ? '+' : ''}{v} ИИт</span>;
+                  } else if (it.kind === 'payment') {
+                    deltaCell = <span style={{ fontWeight: 700, color: it.status === 'paid' ? '#16a34a' : '#6b7280' }}>{it.amount.toLocaleString('ru-RU')} ₽</span>;
+                  } else if (it.kind === 'admin') {
+                    const dl = it.payload?.delta || it.payload?.delta_days;
+                    if (dl !== undefined) deltaCell = <span style={{ fontWeight: 700, color: dl >= 0 ? '#16a34a' : '#dc2626' }}>{dl >= 0 ? '+' : ''}{dl}</span>;
+                  }
+                  return (
+                    <tr key={it.id}>
+                      <td style={td}><span style={{ whiteSpace: 'nowrap' }}>{fmtDate(it.created_at)}</span></td>
+                      <td style={td}><span style={kindBadge}>{kindLabel}</span></td>
+                      <td style={td}>{deltaCell}</td>
+                      <td style={td}>
+                        <div style={{ fontWeight: 500, color: '#1a1a2e' }}>{it.label}</div>
+                        {(it.description || it.reason) && (
+                          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{it.description || it.reason}</div>
+                        )}
+                        {it.kind === 'admin' && it.admin && (
+                          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>by {it.admin}</div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            </div>
+          )
+      )}
+
+      {/* Extend tariff modal — теперь поддерживает дни (положительные и отрицательные) */}
       {extendModal && (
         <div style={modalOverlay}>
           <div style={modalBox}>
-            <h3 style={{ margin: '0 0 20px', fontSize: 18, fontWeight: 700, color: '#1a1a2e' }}>Продлить тариф</h3>
-            <select value={extendMonths} onChange={e => setExtendMonths(Number(e.target.value))}
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #e5e7eb', fontSize: 13, marginBottom: 20, outline: 'none' }}>
-              <option value={1}>1 месяц</option><option value={3}>3 месяца</option>
-              <option value={6}>6 месяцев</option><option value={12}>12 месяцев</option>
-            </select>
+            <h3 style={{ margin: '0 0 14px', fontSize: 18, fontWeight: 700, color: '#1a1a2e' }}>Изменить срок подписки</h3>
+            <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>
+              Положительное значение — продлить, отрицательное — сократить.
+              Например: <b>30</b> = +1 месяц, <b>-7</b> = убрать неделю.
+            </p>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {[7, 30, 90, 180, 365].map(d => (
+                <button key={d} type="button"
+                  onClick={() => setExtendDays(d)}
+                  style={{
+                    padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                    border: extendDays === d ? '2px solid #4361ee' : '1px solid #e5e7eb',
+                    background: extendDays === d ? '#eef2ff' : '#fff', cursor: 'pointer',
+                  }}>+{d}</button>
+              ))}
+            </div>
+            <input
+              type="number"
+              value={extendDays}
+              onChange={e => setExtendDays(e.target.value)}
+              placeholder="Дней (±)"
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #e5e7eb', fontSize: 14, marginBottom: 12, outline: 'none', boxSizing: 'border-box' }}
+            />
+            <input
+              type="text"
+              value={extendReason}
+              onChange={e => setExtendReason(e.target.value)}
+              placeholder="Причина (для лога)"
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #e5e7eb', fontSize: 14, marginBottom: 20, outline: 'none', boxSizing: 'border-box' }}
+            />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button onClick={() => setExtendModal(null)} style={btnOutline}>Отмена</button>
-              <button onClick={handleExtend} style={btnPrimary}>Продлить</button>
+              <button onClick={handleExtend} style={btnPrimary}>
+                {parseInt(extendDays, 10) >= 0 ? 'Продлить' : 'Сократить'}
+              </button>
             </div>
           </div>
         </div>
