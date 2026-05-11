@@ -58,7 +58,7 @@ const subtleTextBtn = {
   transition: 'color .15s ease',
 };
 
-const STEP_GROUPS = {
+export const STEP_GROUPS = {
   noChannel: [
     { id: 'add-channel', selector: '[data-tour="add-channel"]', title: 'Подключите канал', text: 'Чтобы начать работу, добавьте канал MAX. Нажмите «+ Канал» в правом верхнем углу или следуйте инструкции на дашборде.', placement: 'bottom' },
   ],
@@ -154,13 +154,33 @@ export function OnboardingProvider({ children }) {
   const [skipped, setSkipped] = useState(false);
   const [finished, setFinished] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [textOverrides, setTextOverrides] = useState({});
   const loadedRef = useRef(false);
+
+  // Подтянуть админ-оверрайды текстов один раз
+  useEffect(() => {
+    if (!token) return;
+    api.get('/onboarding/text-overrides').then(d => {
+      if (d?.success) setTextOverrides(d.overrides || {});
+    }).catch(() => {});
+  }, [token]);
+
+  const applyOverrides = (groupSteps) => groupSteps.map(s => {
+    const ov = textOverrides[s.id];
+    if (!ov) return s;
+    return {
+      ...s,
+      title: ov.title || s.title,
+      text: ov.text || s.text,
+    };
+  });
 
   const hasChannel = (channels?.length || 0) > 0;
   const hasActiveBilling = channels?.some(c => c.billing_active) || false;
-  const steps = !hasChannel
+  const baseSteps = !hasChannel
     ? STEP_GROUPS.noChannel
     : (!hasActiveBilling ? STEP_GROUPS.noBilling : STEP_GROUPS.full);
+  const steps = applyOverrides(baseSteps);
 
   useEffect(() => {
     if (!token || loadedRef.current) return;

@@ -45,7 +45,7 @@ async def get_or_create_ticket(user: Dict[str, Any] = Depends(get_current_user))
 @router.get("/ticket/{ticket_id}/messages")
 async def get_messages(ticket_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     ticket = await fetch_one(
-        "SELECT id FROM support_tickets WHERE id=$1 AND user_id=$2", ticket_id, user["id"]
+        "SELECT id, status, escalated FROM support_tickets WHERE id=$1 AND user_id=$2", ticket_id, user["id"]
     )
     if not ticket:
         raise HTTPException(status_code=404, detail="Тикет не найден")
@@ -54,7 +54,34 @@ async def get_messages(ticket_id: int, user: Dict[str, Any] = Depends(get_curren
         "SELECT id, role, content, image_url, created_at FROM support_messages WHERE ticket_id=$1 ORDER BY created_at",
         ticket_id,
     )
-    return {"success": True, "messages": messages}
+    return {
+        "success": True,
+        "messages": messages,
+        "status": ticket.get("status"),
+        "escalated": bool(ticket.get("escalated")),
+    }
+
+
+@router.post("/ticket/{ticket_id}/escalate")
+async def escalate_ticket(ticket_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    """Пользователь явно вызывает человека (без ожидания ответа ИИ)."""
+    ticket = await fetch_one(
+        "SELECT id, status FROM support_tickets WHERE id=$1 AND user_id=$2", ticket_id, user["id"]
+    )
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+    if ticket["status"] == "closed":
+        raise HTTPException(status_code=400, detail="Тикет закрыт")
+    await execute(
+        "UPDATE support_tickets SET escalated=TRUE, status='waiting_human', updated_at=NOW() WHERE id=$1",
+        ticket_id,
+    )
+    # Системное сообщение от ИИ для контекста админа
+    await execute(
+        "INSERT INTO support_messages (ticket_id, role, content) VALUES ($1, 'ai', $2)",
+        ticket_id, "Пользователь нажал «Позвать человека» — ожидаем подключения специалиста.",
+    )
+    return {"success": True, "status": "waiting_human"}
 
 
 # ---- Отправить сообщение (текст) ----
@@ -80,11 +107,17 @@ async def send_message(ticket_id: int, request: Request, user: Dict[str, Any] = 
     )
     await execute("UPDATE support_tickets SET updated_at=NOW() WHERE id=$1", ticket_id)
 
-    if ticket["status"] == "escalated":
-        return {"success": True, "ai_reply": None}
+    # Если человек уже подключён к диалогу — ИИ молчит, ждём админа.
+    if ticket.get("escalated") or ticket["status"] in ("escalated", "answered", "waiting_human"):
+        # Помечаем что юзер написал и ждёт ответа человека
+        await execute(
+            "UPDATE support_tickets SET status='waiting_human', updated_at=NOW() WHERE id=$1",
+            ticket_id,
+        )
+        return {"success": True, "ai_reply": None, "status": "waiting_human"}
 
     ai_text, escalated = await _generate_ai_reply(ticket_id)
-    return {"success": True, "ai_reply": ai_text, "escalated": escalated}
+    return {"success": True, "ai_reply": ai_text, "escalated": escalated, "status": "escalated" if escalated else "ai"}
 
 
 # ---- Загрузить изображение ----
@@ -124,12 +157,16 @@ async def send_photo(
     )
     await execute("UPDATE support_tickets SET updated_at=NOW() WHERE id=$1", ticket_id)
 
-    if ticket["status"] == "escalated":
-        return {"success": True, "image_url": image_url, "ai_reply": None}
+    if ticket.get("escalated") or ticket["status"] in ("escalated", "answered", "waiting_human"):
+        await execute(
+            "UPDATE support_tickets SET status='waiting_human', updated_at=NOW() WHERE id=$1",
+            ticket_id,
+        )
+        return {"success": True, "image_url": image_url, "ai_reply": None, "status": "waiting_human"}
 
     # Генерируем ответ ИИ с учётом изображения
     ai_text, escalated = await _generate_ai_reply(ticket_id, image_bytes=file_bytes, image_ext=ext)
-    return {"success": True, "image_url": image_url, "ai_reply": ai_text, "escalated": escalated}
+    return {"success": True, "image_url": image_url, "ai_reply": ai_text, "escalated": escalated, "status": "escalated" if escalated else "ai"}
 
 
 # ---- Общая функция генерации ответа ИИ ----

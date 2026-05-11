@@ -34,19 +34,35 @@ export default function SupportChat() {
   useEffect(() => { if (open && !loaded) loadTicket(); }, [open, loaded, loadTicket]);
   useEffect(() => { if (open) scrollBottom(); }, [messages, open]);
 
-  // Поллинг новых сообщений
+  // Поллинг новых сообщений + статуса (статус может смениться, если админ
+  // подключился или вернул диалог ИИ — без перезагрузки чата это не видно).
   useEffect(() => {
     if (!open || !ticketId) return;
     pollRef.current = setInterval(async () => {
       try {
         const data = await api.get(`/support/ticket/${ticketId}/messages`);
-        if (data.success && data.messages?.length > messages.length) {
-          setMessages(data.messages);
+        if (data.success) {
+          if (data.messages?.length > messages.length) setMessages(data.messages);
+          if (data.status && data.status !== ticketStatus) setTicketStatus(data.status);
         }
       } catch {}
-    }, 8000);
+    }, 6000);
     return () => clearInterval(pollRef.current);
-  }, [open, ticketId, messages.length]);
+  }, [open, ticketId, messages.length, ticketStatus]);
+
+  const handleEscalate = async () => {
+    if (!ticketId || sending) return;
+    setSending(true);
+    try {
+      await api.post(`/support/ticket/${ticketId}/escalate`);
+      setTicketStatus('waiting_human');
+      // Перезапросим сообщения — там должно появиться системное «Пользователь нажал…»
+      const d = await api.get(`/support/ticket/${ticketId}/messages`);
+      if (d?.success) setMessages(d.messages || []);
+    } catch (e) {
+      // ignore
+    } finally { setSending(false); }
+  };
 
   const handleSend = async () => {
     const text = input.trim();
@@ -136,8 +152,11 @@ export default function SupportChat() {
           }}>
             <div>
               <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Поддержка</div>
-              <div style={{ fontSize: '0.72rem', opacity: 0.8 }}>
-                {ticketStatus === 'escalated' ? 'Ожидаем специалиста...' : 'ИИ-ассистент'}
+              <div style={{ fontSize: '0.72rem', opacity: 0.85, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {ticketStatus === 'closed' ? 'Тикет закрыт'
+                  : ticketStatus === 'answered' ? <><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} /> Чат с админом</>
+                  : ticketStatus === 'escalated' || ticketStatus === 'waiting_human' ? <><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24' }} /> Ожидание человека</>
+                  : 'ИИ-ассистент'}
               </div>
             </div>
             {(ticketStatus === 'closed' || messages.length > 2) && (
@@ -172,6 +191,33 @@ export default function SupportChat() {
                 </div>
               </div>
             )}
+
+            {/* Кнопка эскалации — показывается пока разговор с ИИ и есть хоть одно сообщение */}
+            {ticketId && ticketStatus === 'ai' && messages.length >= 2 && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+                <button
+                  onClick={handleEscalate}
+                  disabled={sending}
+                  style={{
+                    background: 'rgba(251, 191, 36, 0.10)', border: '1px solid rgba(251, 191, 36, 0.40)',
+                    color: '#92400e', padding: '6px 12px', borderRadius: 8,
+                    fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+                  }}
+                >👤 Позвать человека</button>
+              </div>
+            )}
+
+            {/* Подсказка-плашка когда ждём ответа админа */}
+            {(ticketStatus === 'waiting_human' || ticketStatus === 'escalated') && (
+              <div style={{
+                marginTop: 10, padding: '10px 12px', borderRadius: 10,
+                background: 'rgba(251, 191, 36, 0.10)', border: '1px solid rgba(251, 191, 36, 0.40)',
+                fontSize: '0.78rem', color: '#92400e', textAlign: 'center', lineHeight: 1.4,
+              }}>
+                ⏳ Ожидаем ответа специалиста. Обычно отвечаем в течение нескольких часов.
+              </div>
+            )}
+
             <div ref={messagesEnd} />
           </div>
 

@@ -1,13 +1,20 @@
-"""Онбординг — прогресс обучения пользователя."""
+"""Онбординг — прогресс обучения пользователя + админ-оверрайды текстов."""
 import json as json_mod
 from typing import Dict, Any
 
 from fastapi import APIRouter, Request, Depends
 
-from ..database import fetch_one, execute
+from ..database import fetch_one, fetch_all, execute
 from ..middleware.auth import get_current_user
 
 router = APIRouter()
+
+
+@router.get("/text-overrides")
+async def get_text_overrides():
+    """Публичный эндпоинт — фронт онбординга мерджит с дефолтами в коде."""
+    rows = await fetch_all("SELECT step_id, title, text FROM onboarding_text_overrides")
+    return {"success": True, "overrides": {r["step_id"]: {"title": r.get("title"), "text": r.get("text")} for r in rows}}
 
 
 @router.get("/state")

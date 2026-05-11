@@ -14,6 +14,7 @@ const navItems = [
   { to: '/admin/referrals', label: 'Рефералы', icon: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75' },
   { to: '/admin/notifications', label: 'Уведомления', icon: 'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0' },
   { to: '/admin/broadcasts-users', label: 'Рассылка по юзерам', icon: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z' },
+  { to: '/admin/onboarding', label: 'Онбординг', icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8' },
   { to: '/admin/generations', label: 'Генерации', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   { to: '/admin/support', label: 'Обращения', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z', badge: true },
   { to: '/admin/landings', label: 'Лендинги', icon: 'M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z' },

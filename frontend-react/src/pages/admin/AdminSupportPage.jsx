@@ -7,16 +7,18 @@ import {
 
 const statusLabels = {
   ai: 'ИИ',
-  escalated: 'Эскалация',
+  escalated: 'Ожидание человека',
+  waiting_human: 'Ожидание человека',
   answered: 'Отвечен',
   closed: 'Закрыт',
 };
 
 const filterOptions = [
   { value: '', label: 'Все' },
+  { value: 'waiting_human', label: 'Ожидание человека' },
   { value: 'escalated', label: 'Эскалация' },
-  { value: 'ai', label: 'ИИ' },
   { value: 'answered', label: 'Отвечен' },
+  { value: 'ai', label: 'ИИ' },
   { value: 'closed', label: 'Закрыт' },
 ];
 
@@ -199,9 +201,19 @@ export default function AdminSupportPage() {
                     {statusLabels[selected.status] || selected.status}
                   </span>
                 </div>
-                {selected.status !== 'closed' && (
-                  <button onClick={closeTicket} style={btnOutline}>Закрыть тикет</button>
-                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(selected.escalated || ['waiting_human', 'escalated', 'answered'].includes(selected.status)) && selected.status !== 'closed' && (
+                    <button onClick={async () => {
+                      if (!confirm('Вернуть диалог ИИ-ассистенту?')) return;
+                      await adminApi.post(`/support/tickets/${selected.id}/return-to-ai`, {});
+                      openTicket(selected);
+                      loadTickets();
+                    }} style={btnOutline}>↩ Вернуть ИИ</button>
+                  )}
+                  {selected.status !== 'closed' && (
+                    <button onClick={closeTicket} style={btnOutline}>Закрыть тикет</button>
+                  )}
+                </div>
               </div>
 
               {/* Messages */}

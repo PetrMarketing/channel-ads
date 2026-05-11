@@ -421,6 +421,42 @@ def _token_action_label(action: str) -> str:
 
 
 # ============================================================
+# Онбординг — админ-оверрайды текстов
+# ============================================================
+
+@router.get("/onboarding/overrides")
+async def admin_get_onboarding_overrides(admin: Dict = Depends(get_current_admin)):
+    rows = await fetch_all(
+        """SELECT o.step_id, o.title, o.text, o.updated_at, a.username AS updated_by_username
+           FROM onboarding_text_overrides o
+           LEFT JOIN admin_users a ON a.id = o.updated_by
+           ORDER BY o.updated_at DESC"""
+    )
+    return {"success": True, "overrides": [dict(r) for r in rows]}
+
+
+@router.put("/onboarding/overrides/{step_id}")
+async def admin_set_onboarding_override(step_id: str, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    title = body.get("title")
+    text = body.get("text")
+    if (title is None or title == "") and (text is None or text == ""):
+        # Очистить оверрайд если оба пустые
+        await execute("DELETE FROM onboarding_text_overrides WHERE step_id = $1", step_id)
+        await log_admin_action(admin, "onboarding_clear", "step", None, {"step_id": step_id})
+        return {"success": True, "cleared": True}
+    await execute(
+        """INSERT INTO onboarding_text_overrides (step_id, title, text, updated_by, updated_at)
+           VALUES ($1, $2, $3, $4, NOW())
+           ON CONFLICT (step_id)
+           DO UPDATE SET title = EXCLUDED.title, text = EXCLUDED.text, updated_by = EXCLUDED.updated_by, updated_at = NOW()""",
+        step_id, title, text, admin.get("id"),
+    )
+    await log_admin_action(admin, "onboarding_override", "step", None, {"step_id": step_id, "title": title, "text": text})
+    return {"success": True}
+
+
+# ============================================================
 # Универсальная загрузка файлов из админки
 # ============================================================
 
@@ -2161,9 +2197,28 @@ async def admin_support_reply(ticket_id: int, request: Request, admin: Dict = De
         "INSERT INTO support_messages (ticket_id, role, content, admin_id) VALUES ($1, 'admin', $2, $3)",
         ticket_id, content, admin["id"],
     )
+    # Оставляем escalated=TRUE — иначе следующий вопрос юзера снова уйдёт ИИ.
+    # Status='answered' = «админ ответил, ждём пользователя».
     await execute(
-        "UPDATE support_tickets SET status='answered', escalated=FALSE, updated_at=NOW() WHERE id=$1",
+        "UPDATE support_tickets SET status='answered', escalated=TRUE, updated_at=NOW() WHERE id=$1",
         ticket_id,
+    )
+    return {"success": True}
+
+
+@router.post("/support/tickets/{ticket_id}/return-to-ai")
+async def admin_return_to_ai(ticket_id: int, admin: Dict = Depends(get_current_admin)):
+    """Вернуть тикет ИИ-ассистенту (пользователь снова получит автоответы)."""
+    ticket = await fetch_one("SELECT id FROM support_tickets WHERE id=$1", ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+    await execute(
+        "UPDATE support_tickets SET status='ai', escalated=FALSE, updated_at=NOW() WHERE id=$1",
+        ticket_id,
+    )
+    await execute(
+        "INSERT INTO support_messages (ticket_id, role, content, admin_id) VALUES ($1, 'admin', $2, $3)",
+        ticket_id, "Возвращаем диалог ИИ-ассистенту. Если возникнут вопросы — снова напишите, мы подключимся.", admin["id"],
     )
     return {"success": True}
 
