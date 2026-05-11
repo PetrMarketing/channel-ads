@@ -1,19 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 
 export default function ButtonBuilder({ value, onChange, leadMagnets = [], showLeadMagnet = true, showComments = true }) {
-  const [buttons, setButtons] = useState([]);
-
-  useEffect(() => {
+  // Controlled — buttons всегда derived из value, чтобы внешние изменения
+  // (например авто-добавление кнопки при выборе лид-магнита) сразу
+  // отображались в UI.
+  const buttons = useMemo(() => {
     try {
       const parsed = typeof value === 'string' ? JSON.parse(value || '[]') : (value || []);
-      if (Array.isArray(parsed)) setButtons(parsed);
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
-      setButtons([]);
+      return [];
     }
-  }, []);
+  }, [value]);
 
   const emit = (updated) => {
-    setButtons(updated);
     onChange(updated.length > 0 ? JSON.stringify(updated) : '');
   };
 

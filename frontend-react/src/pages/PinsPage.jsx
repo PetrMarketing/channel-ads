@@ -686,8 +686,9 @@ export default function PinsPage() {
   };
 
   // Когда юзер выбирает (или меняет) лид-магнит в дропдауне — автоматически
-  // подкладываем кнопку типа "Лид-магнит" с этим id (или обновляем
-  // существующую) чтобы не нужно было вручную идти в ButtonBuilder.
+  // подкладываем кнопку типа "Лид-магнит" с этим id. Если кнопка такого
+  // типа уже есть — только обновляем lead_magnet_id, сохраняя текст,
+  // который мог ввести пользователь.
   const _ensureLeadMagnetButton = (lmId, lmTitle) => {
     let btns = [];
     try {
@@ -695,12 +696,22 @@ export default function PinsPage() {
       if (!Array.isArray(btns)) btns = [];
     } catch { btns = []; }
     const existingIdx = btns.findIndex(b => b && b.type === 'lead_magnet');
-    const text = lmTitle || (btns[existingIdx]?.text) || 'Получить материал';
-    const patch = { text, type: 'lead_magnet', url: '', lead_magnet_id: String(lmId) };
     if (existingIdx >= 0) {
-      btns[existingIdx] = { ...btns[existingIdx], ...patch };
+      // Обновляем только id и url — текст не трогаем, пользователь сам решит.
+      btns[existingIdx] = {
+        ...btns[existingIdx],
+        type: 'lead_magnet',
+        url: '',
+        lead_magnet_id: String(lmId),
+      };
     } else {
-      btns = [patch, ...btns];
+      // Новая кнопка — текст дефолтный (title ЛМ), пользователь может изменить.
+      btns = [{
+        text: lmTitle || 'Получить материал',
+        type: 'lead_magnet',
+        url: '',
+        lead_magnet_id: String(lmId),
+      }, ...btns];
     }
     return JSON.stringify(btns);
   };
