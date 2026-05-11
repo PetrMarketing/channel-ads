@@ -179,7 +179,14 @@ async def sweep_unpaid_members():
         return
 
     chats = await fetch_all(
-        "SELECT id, chat_id, title, channel_id FROM paid_chats WHERE is_active = 1 AND platform = 'max' AND chat_id IS NOT NULL"
+        """SELECT pc.id, pc.chat_id, pc.title, pc.channel_id,
+                  c.user_id AS channel_owner_user_id,
+                  c.max_chat_id AS channel_max_chat_id,
+                  cu.max_user_id AS channel_owner_max_user_id
+           FROM paid_chats pc
+           LEFT JOIN channels c ON c.id = pc.channel_id
+           LEFT JOIN users cu ON cu.id = c.user_id
+           WHERE pc.is_active = 1 AND pc.platform = 'max' AND pc.chat_id IS NOT NULL"""
     )
     bot_me = await max_api.get_me()
     bot_user_id = None
@@ -190,6 +197,16 @@ async def sweep_unpaid_members():
         chat_id = str(ch.get("chat_id") or "")
         if not chat_id:
             continue
+
+        # Получаем инфу о чате — там есть owner_id (создатель чата в MAX)
+        chat_info = await max_api.get_chat(chat_id)
+        chat_owner_id = ""
+        if chat_info.get("success"):
+            chat_owner_id = str(chat_info.get("data", {}).get("owner_id") or "")
+
+        # Владелец канала в нашей БД (тот, кто подключил канал к сервису)
+        service_owner_max_id = str(ch.get("channel_owner_max_user_id") or "")
+
         try:
             members = await max_api.list_all_members(chat_id)
         except Exception as e:
@@ -207,16 +224,32 @@ async def sweep_unpaid_members():
 
         for m in members:
             uid = str(m.get("user_id") or "")
-            if not uid or uid == bot_user_id:
+            if not uid:
                 continue
+            # 1. Самого бота не кикаем
+            if uid == bot_user_id:
+                continue
+            # 2. Создатель чата (MAX) — никогда
+            if chat_owner_id and uid == chat_owner_id:
+                continue
+            # 3. Владелец канала в сервисе — никогда
+            if service_owner_max_id and uid == service_owner_max_id:
+                continue
+            # 4. Любой админ чата — никогда. MAX отдаёт is_admin/is_owner на members.
+            if m.get("is_owner") or m.get("is_admin"):
+                continue
+            # 5. На некоторых версиях API роль приходит как 'admin'/'owner'
+            role = str(m.get("role") or "").lower()
+            if role in ("admin", "owner", "administrator"):
+                continue
+            # 6. Уже оплатил — не трогаем
             if uid in paid_set:
                 continue
-            # Не оплачивал — кикаем
+            # Кикаем
             try:
                 resp = await max_api.remove_chat_member(chat_id, uid)
                 if resp.get("success"):
                     print(f"[PaidChatChecker.sweep] Kicked unpaid uid={uid} from paid chat {chat_id} ({ch.get('title')})")
-                    # Уведомление
                     try:
                         await _send_to_user_safe(max_api, uid,
                             f"⚠️ Для доступа к чату «{ch.get('title') or 'чат'}» необходима оплата подписки. Откройте бота и оплатите тариф.")

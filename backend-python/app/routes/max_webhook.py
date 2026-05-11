@@ -2256,6 +2256,32 @@ async def process_max_update(body: dict):
                 if bot_user_id and str(user_id) == bot_user_id:
                     print(f"[MAX Bot] Self-add to paid chat {max_chat_id} — skipping kick")
                     return
+                # Не кикаем владельца канала и админов чата
+                chat_info = await max_api.get_chat(max_chat_id) if max_api else None
+                if chat_info and chat_info.get("success"):
+                    if str(chat_info.get("data", {}).get("owner_id") or "") == str(user_id):
+                        print(f"[MAX Bot] Owner of chat {max_chat_id} joined — skipping kick")
+                        return
+                # Запрашиваем роль конкретного юзера в чате
+                if max_api:
+                    membership = await max_api._request("GET", f"chats/{max_chat_id}/members?user_ids={user_id}")
+                    if membership.get("success"):
+                        mlist = membership.get("data", {}).get("members") or []
+                        if mlist:
+                            m = mlist[0]
+                            role = str(m.get("role") or "").lower()
+                            if m.get("is_owner") or m.get("is_admin") or role in ("admin", "owner", "administrator"):
+                                print(f"[MAX Bot] Admin user {user_id} joined paid chat {max_chat_id} — skipping kick")
+                                return
+                # Владелец канала из нашей БД
+                ch_row = await fetch_one(
+                    "SELECT c.id, u.max_user_id AS owner_max_user_id FROM channels c "
+                    "LEFT JOIN users u ON u.id = c.user_id WHERE c.id = $1",
+                    paid_chat["channel_id"],
+                )
+                if ch_row and str(ch_row.get("owner_max_user_id") or "") == str(user_id):
+                    print(f"[MAX Bot] Service channel owner {user_id} — skipping kick from paid chat {max_chat_id}")
+                    return
                 # Check if user has active membership
                 member = await fetch_one(
                     "SELECT id FROM paid_chat_members WHERE paid_chat_id = $1 AND max_user_id = $2 AND status = 'active'",
