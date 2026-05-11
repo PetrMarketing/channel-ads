@@ -138,6 +138,7 @@ const menuItems = [
       { path: '/funnels', label: 'Воронки', icon: icons.funnels, tour: 'funnels' },
       { path: '/analytics', label: 'Аналитика', icon: icons.analytics, tour: 'analytics' },
       { path: '/ord', label: 'Отчёты о рекламе', icon: icons.analytics, tour: 'ord' },
+      { path: 'https://pkmarketing.ru', label: 'ПК Маркетинг', icon: icons.marketing, external: true },
     ],
   },
   {
@@ -234,7 +235,20 @@ export default function Sidebar({ isOpen, mobileOpen, onClose }) {
               </button>
               <div className="sidebar-subitems">
                 <div>
-                  {item.items.map(sub => (
+                  {item.items.map(sub => sub.external ? (
+                    <a
+                      key={sub.path}
+                      href={sub.path}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="sidebar-item sub-item"
+                      onClick={onClose}
+                    >
+                      {sub.icon && <span className="sidebar-icon gradient-icon sub-icon">{sub.icon}</span>}
+                      {sub.label}
+                      <span style={{ marginLeft: 'auto', fontSize: '0.7rem', opacity: 0.5 }}>↗</span>
+                    </a>
+                  ) : (
                     <NavLink
                       key={sub.path}
                       to={sub.path}
