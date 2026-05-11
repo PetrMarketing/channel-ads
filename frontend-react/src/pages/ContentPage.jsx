@@ -411,13 +411,13 @@ export default function ContentPage() {
     let scheduledAt;
     // Дефолт по МСК (UTC+3): now+30 минут — чтобы валидация "не в прошлом"
     // не срабатывала сразу при открытии модалки.
-    const mskNow = new Date();
-    mskNow.setMinutes(mskNow.getMinutes() - mskNow.getTimezoneOffset() + 180 + 30);
-    const mskFmt = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}T${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+    const mskNowPlus30 = new Date(Date.now() + 3 * 60 * 60 * 1000 + 30 * 60 * 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    const mskFmt = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
     if (prefillDate) {
       scheduledAt = `${prefillDate}T10:00`;
     } else {
-      scheduledAt = mskFmt(mskNow);
+      scheduledAt = mskFmt(mskNowPlus30);
     }
     setForm({ title: '', message_text: '', scheduled_at: scheduledAt, inline_buttons: '', attach_type: '', erid: '' });
     setShowModal(true);
@@ -445,10 +445,12 @@ export default function ContentPage() {
 
   // Текущее время по МСК (UTC+3) в формате datetime-local строки.
   // Используем для сравнения и валидации поля scheduled_at.
+  // ВАЖНО: считаем через UTC-компоненты сдвинутого момента (Date.now() + 3ч),
+  // независимо от того, в какой TZ сидит браузер пользователя.
   const nowMskString = () => {
-    const d = new Date();
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset() + 180); // → MSK
-    return d.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+    const m = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${m.getUTCFullYear()}-${pad(m.getUTCMonth() + 1)}-${pad(m.getUTCDate())}T${pad(m.getUTCHours())}:${pad(m.getUTCMinutes())}`;
   };
 
   const isScheduledInPast = () => {
