@@ -4,6 +4,7 @@ import {
   pageTitle, card, tableWrap, th, td, btnPrimary, btnOutline, btnDanger,
   badge, fmtDate, emptyState, modalOverlay, modalBox,
 } from './adminStyles';
+import AdminFileInput from './AdminFileInput';
 
 const STATUS_META = {
   draft:     { label: 'Черновик',     bg: '#f3f4f6', fg: '#6b7280' },
@@ -196,14 +197,27 @@ export default function AdminBroadcastsUsersPage() {
 
             <BField label="Название (внутреннее) *" v={editing.title} onChange={v => setEditing(e => ({ ...e, title: v }))} placeholder="Промо ИИ-стикеров — мартовская" />
             <BField label="Текст сообщения" v={editing.message_text} multiline onChange={v => setEditing(e => ({ ...e, message_text: v }))} placeholder="Привет! У нас новая фича — …" />
-            <BField label="Картинка/видео (URL)" v={editing.image_url} onChange={v => setEditing(e => ({ ...e, image_url: v }))} placeholder="/uploads/promo.png или https://…" />
-            <div>
-              <label style={fieldLabel}>Тип медиа</label>
-              <select value={editing.media_type || 'photo'} onChange={e => setEditing(p => ({ ...p, media_type: e.target.value }))} style={input}>
-                <option value="photo">Фото</option>
-                <option value="video">Видео</option>
-                <option value="document">Документ</option>
-              </select>
+            <div style={{ marginBottom: 12 }}>
+              <AdminFileInput
+                label="Картинка или видео (необязательно)"
+                value={editing.image_url}
+                accept="image/*,video/mp4,video/quicktime,video/webm"
+                onChange={(url, ftype) => setEditing(e => ({
+                  ...e,
+                  image_url: url,
+                  media_type: ftype === 'video' ? 'video' : (ftype === 'photo' ? 'photo' : (e.media_type || 'photo')),
+                }))}
+              />
+              {editing.image_url && (
+                <div style={{ marginTop: 6 }}>
+                  <label style={fieldLabel}>Тип медиа</label>
+                  <select value={editing.media_type || 'photo'} onChange={e => setEditing(p => ({ ...p, media_type: e.target.value }))} style={input}>
+                    <option value="photo">Фото</option>
+                    <option value="video">Видео</option>
+                    <option value="document">Документ</option>
+                  </select>
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

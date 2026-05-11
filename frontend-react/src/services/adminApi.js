@@ -32,6 +32,9 @@ class AdminApiService {
     if (body !== undefined) opts.body = JSON.stringify(body);
     return this.request(url, opts);
   }
+  upload(url, formData) {
+    return this.request(url, { method: 'POST', body: formData });
+  }
 }
 
 export const adminApi = new AdminApiService();

@@ -6,7 +6,7 @@ import {
   modalOverlay, modalBox, searchInput, fmtDate,
 } from './adminStyles';
 
-const emptyForm = { username: '', password: '', display_name: '', role: 'admin' };
+const emptyForm = { username: '', password: '', display_name: '', role: 'admin', user_pkid: '' };
 
 const roleConfig = {
   superadmin: { label: 'Суперадмин', bg: '#fef2f2', color: '#991b1b' },
@@ -30,7 +30,7 @@ export default function AdminAdminsPage() {
         if (!form.username || !form.password) { setError('Логин и пароль обязательны'); return; }
         await adminApi.post('/admins', form);
       } else {
-        const body = { display_name: form.display_name, role: form.role };
+        const body = { display_name: form.display_name, role: form.role, user_pkid: form.user_pkid || null };
         if (form.password) body.password = form.password;
         await adminApi.put(`/admins/${modal.id}`, body);
       }
@@ -44,7 +44,13 @@ export default function AdminAdminsPage() {
   };
 
   const openEdit = (a) => {
-    setForm({ username: a.username, password: '', display_name: a.display_name || '', role: a.role });
+    setForm({
+      username: a.username,
+      password: '',
+      display_name: a.display_name || '',
+      role: a.role,
+      user_pkid: a.user_pkid || '',
+    });
     setModal(a); setError('');
   };
 
@@ -79,6 +85,7 @@ export default function AdminAdminsPage() {
                 <th style={th}>Логин</th>
                 <th style={th}>Имя</th>
                 <th style={th}>Роль</th>
+                <th style={th}>PKid</th>
                 <th style={th}>Последний вход</th>
                 <th style={{ ...th, textAlign: 'right' }}>Действия</th>
               </tr>
@@ -95,6 +102,19 @@ export default function AdminAdminsPage() {
                     <td style={td}>{a.display_name || '—'}</td>
                     <td style={td}>
                       <span style={badge(rc.bg, rc.color)}>{rc.label}</span>
+                    </td>
+                    <td style={td}>
+                      {a.user_pkid ? (
+                        <div style={{ fontSize: 12 }}>
+                          <div style={{ fontWeight: 700 }}>#{a.user_pkid}</div>
+                          {(a.pkid_first_name || a.pkid_username) && (
+                            <div style={{ color: '#6b7280', fontSize: 11 }}>{a.pkid_first_name || a.pkid_username}</div>
+                          )}
+                          {a.pkid_max_user_id && (
+                            <div style={{ color: '#7c3aed', fontSize: 11 }}>MAX: {a.pkid_max_user_id}</div>
+                          )}
+                        </div>
+                      ) : <span style={{ color: '#9ca3af', fontSize: 12 }}>—</span>}
                     </td>
                     <td style={{ ...td, color: '#999' }}>{fmtDate(a.last_login_at)}</td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -150,6 +170,17 @@ export default function AdminAdminsPage() {
               onChange={e => setForm({ ...form, display_name: e.target.value })}
               style={inputStyle}
             />
+
+            <input
+              placeholder="PKid пользователя сервиса (для связки с MAX-аккаунтом)"
+              type="number"
+              value={form.user_pkid}
+              onChange={e => setForm({ ...form, user_pkid: e.target.value })}
+              style={inputStyle}
+            />
+            <div style={{ fontSize: 11, color: '#6b7280', marginTop: -8, marginBottom: 12 }}>
+              💡 PKid виден в шапке сервиса (кнопка «Профиль»). Используется для «Отправить себе» в рассылках и в будущем — для импер-логина.
+            </div>
 
             <select
               value={form.role}

@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Query, UploadFile
 
 from ..middleware.admin_auth import (
     get_current_admin, require_superadmin,
@@ -421,6 +421,28 @@ def _token_action_label(action: str) -> str:
 
 
 # ============================================================
+# Универсальная загрузка файлов из админки
+# ============================================================
+
+@router.post("/upload")
+async def admin_upload(
+    file: UploadFile = File(...),
+    admin: Dict = Depends(get_current_admin),
+):
+    """Загружает файл в /uploads, возвращает {url, file_type, size_bytes}.
+    Используется в форме уведомлений и рассылок (картинка/видео обложки)."""
+    from ..services.file_storage import save_upload
+    try:
+        path, file_type, _data = await save_upload(file)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    import os as _os
+    url = "/uploads/" + _os.path.basename(path)
+    size = _os.path.getsize(path) if _os.path.exists(path) else 0
+    return {"success": True, "url": url, "file_type": file_type, "size_bytes": size}
+
+
+# ============================================================
 # Уведомления (модалки для всех пользователей при заходе)
 # ============================================================
 
@@ -573,18 +595,27 @@ async def admin_send_test(bid: int, admin: Dict = Depends(get_current_admin)):
     bc = await fetch_one("SELECT * FROM admin_broadcasts WHERE id = $1", bid)
     if not bc:
         raise HTTPException(status_code=404, detail="Рассылка не найдена")
-    # Найти "себя" среди обычных пользователей.
-    me = await fetch_one(
-        """SELECT * FROM users
-           WHERE (telegram_id IS NOT NULL OR max_user_id IS NOT NULL)
-             AND (username = $1 OR email = $1)
-           LIMIT 1""",
-        admin.get("username") or "",
-    )
+    # Сначала по user_pkid из admin_users (явная привязка), потом фоллбэк на
+    # username/email, чтобы старые админы продолжали работать.
+    me = None
+    admin_full = await fetch_one("SELECT user_pkid, username FROM admin_users WHERE id = $1", admin.get("id"))
+    if admin_full and admin_full.get("user_pkid"):
+        me = await fetch_one(
+            "SELECT * FROM users WHERE id = $1 AND (telegram_id IS NOT NULL OR max_user_id IS NOT NULL)",
+            int(admin_full["user_pkid"]),
+        )
+    if not me:
+        me = await fetch_one(
+            """SELECT * FROM users
+               WHERE (telegram_id IS NOT NULL OR max_user_id IS NOT NULL)
+                 AND (username = $1 OR email = $1)
+               LIMIT 1""",
+            (admin_full or {}).get("username") or admin.get("username") or "",
+        )
     if not me:
         raise HTTPException(
             status_code=400,
-            detail="Не нашёл вас среди пользователей сервиса. Привяжите Telegram/MAX к юзеру с таким же username/email как у админ-аккаунта.",
+            detail="Не нашёл вас среди пользователей сервиса. Откройте «Админы» и впишите свой PKid.",
         )
     sent, failed = await _send_admin_broadcast_to_user(bc, me)
     return {"success": True, "sent": sent, "failed": failed, "user_id": me["id"]}
@@ -1620,8 +1651,16 @@ async def delete_dialog_message(identifier: str, message_id: int, admin: Dict = 
 
 @router.get("/admins")
 async def list_admins(admin: Dict = Depends(require_superadmin)):
-    rows = await fetch_all("SELECT id, username, display_name, role, is_active, last_login_at, created_at FROM admin_users ORDER BY created_at")
-    return {"success": True, "admins": rows}
+    rows = await fetch_all(
+        """SELECT a.id, a.username, a.display_name, a.role, a.is_active,
+                  a.last_login_at, a.created_at, a.user_pkid,
+                  u.first_name AS pkid_first_name, u.username AS pkid_username,
+                  u.max_user_id AS pkid_max_user_id, u.telegram_id AS pkid_telegram_id
+           FROM admin_users a
+           LEFT JOIN users u ON u.id = a.user_pkid
+           ORDER BY a.created_at"""
+    )
+    return {"success": True, "admins": [dict(r) for r in rows]}
 
 
 @router.post("/admins")
@@ -1631,6 +1670,7 @@ async def create_admin(request: Request, admin: Dict = Depends(require_superadmi
     password = body.get("password", "")
     display_name = body.get("display_name", "")
     role = body.get("role", "admin")
+    user_pkid_raw = body.get("user_pkid")
     if not username or not password:
         raise HTTPException(status_code=400, detail="username и password обязательны")
     if role not in ("superadmin", "admin", "viewer"):
@@ -1638,10 +1678,19 @@ async def create_admin(request: Request, admin: Dict = Depends(require_superadmi
     existing = await fetch_one("SELECT id FROM admin_users WHERE username = $1", username)
     if existing:
         raise HTTPException(status_code=400, detail="Username уже занят")
+    user_pkid = None
+    if user_pkid_raw:
+        try:
+            user_pkid = int(user_pkid_raw)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="PKid должен быть числом")
+        u = await fetch_one("SELECT id FROM users WHERE id = $1", user_pkid)
+        if not u:
+            raise HTTPException(status_code=400, detail=f"Пользователь PKid={user_pkid} не найден")
     pw_hash = hash_password(password)
     aid = await execute_returning_id(
-        "INSERT INTO admin_users (username, password_hash, display_name, role) VALUES ($1,$2,$3,$4) RETURNING id",
-        username, pw_hash, display_name, role,
+        "INSERT INTO admin_users (username, password_hash, display_name, role, user_pkid) VALUES ($1,$2,$3,$4,$5) RETURNING id",
+        username, pw_hash, display_name, role, user_pkid,
     )
     return {"success": True, "adminId": aid}
 
@@ -1658,6 +1707,20 @@ async def update_admin(admin_id: int, request: Request, admin: Dict = Depends(re
             fields.append(f"{key} = ${idx}")
             params.append(body[key])
             idx += 1
+    if "user_pkid" in body:
+        upk = body["user_pkid"]
+        if upk in ("", None):
+            user_pkid = None
+        else:
+            try: user_pkid = int(upk)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="PKid должен быть числом")
+            u = await fetch_one("SELECT id FROM users WHERE id = $1", user_pkid)
+            if not u:
+                raise HTTPException(status_code=400, detail=f"Пользователь PKid={user_pkid} не найден")
+        fields.append(f"user_pkid = ${idx}")
+        params.append(user_pkid)
+        idx += 1
     if "password" in body and body["password"]:
         fields.append(f"password_hash = ${idx}")
         params.append(hash_password(body["password"]))

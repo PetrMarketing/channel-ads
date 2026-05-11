@@ -4,6 +4,7 @@ import {
   pageTitle, card, tableWrap, th, td, btnPrimary, btnOutline, btnDanger,
   badge, fmtDate, emptyState, modalOverlay, modalBox,
 } from './adminStyles';
+import AdminFileInput from './AdminFileInput';
 
 const AUDIENCE_LABELS = {
   all:  { label: 'Все пользователи', bg: '#dbeafe', fg: '#1e40af' },
@@ -143,7 +144,14 @@ export default function AdminNotificationsPage() {
             </h3>
             <NotifField label="Заголовок *" v={editing.title} onChange={v => setEditing(e => ({ ...e, title: v }))} placeholder="Например: Новая фича — ИИ-стикеры" />
             <NotifField label="Текст" v={editing.body} multiline onChange={v => setEditing(e => ({ ...e, body: v }))} placeholder="Подробнее о том, что нового" />
-            <NotifField label="Картинка (URL)" v={editing.image_url} onChange={v => setEditing(e => ({ ...e, image_url: v }))} placeholder="/uploads/promo.png или https://…" />
+            <div style={{ marginBottom: 12 }}>
+              <AdminFileInput
+                label="Картинка (необязательно)"
+                value={editing.image_url}
+                accept="image/*"
+                onChange={(url) => setEditing(e => ({ ...e, image_url: url }))}
+              />
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <NotifField label="Текст кнопки" v={editing.button_text} onChange={v => setEditing(e => ({ ...e, button_text: v }))} placeholder="Узнать подробнее" />
               <NotifField label="Ссылка кнопки" v={editing.button_url} onChange={v => setEditing(e => ({ ...e, button_url: v }))} placeholder="/achievements или https://…" />
