@@ -753,7 +753,14 @@ async def _send_admin_broadcast_to_user(bc: dict, user: dict):
 
 
 async def _run_admin_broadcast(bid: int):
-    """Фоновая отправка рассылки всем подходящим пользователям."""
+    """Фоновая отправка рассылки всем подходящим пользователям.
+
+    Симафор + rate-limiter: до 10 параллельных отправок, не больше 17 в секунду.
+    Лимит MAX bot API ~20 req/sec; оставляем запас на пиковые подвисания.
+    """
+    import asyncio as _aio
+    from ..services.rate_limiter import RateLimiter
+
     bc = await fetch_one("SELECT * FROM admin_broadcasts WHERE id = $1", bid)
     if not bc:
         return
@@ -764,24 +771,55 @@ async def _run_admin_broadcast(bid: int):
             WHERE (u.max_user_id IS NOT NULL OR u.telegram_id IS NOT NULL)
               AND ({where})"""
     )
-    sent, failed = 0, 0
-    for u in users:
-        # Проверим что не отменили
-        cur = await fetch_one("SELECT status FROM admin_broadcasts WHERE id = $1", bid)
-        if not cur or cur.get("status") == "cancelled":
-            print(f"[admin-broadcast {bid}] cancelled mid-send, sent={sent} failed={failed}")
+    total = len(users)
+    if total == 0:
+        await execute(
+            "UPDATE admin_broadcasts SET status='sent', completed_at=NOW(), sent_count=0, failed_count=0, total_count=0 WHERE id = $1", bid,
+        )
+        print(f"[admin-broadcast {bid}] no recipients matched audience={audience}")
+        return
+
+    sem = _aio.Semaphore(10)            # макс 10 одновременно
+    limiter = RateLimiter(17)           # макс 17 запросов в секунду (запас от лимита 20)
+    counter = {"sent": 0, "failed": 0, "cancelled": False, "done": 0}
+
+    async def process_one(u_row: dict):
+        if counter["cancelled"]:
             return
-        s, f = await _send_admin_broadcast_to_user(bc, dict(u))
-        sent += s
-        failed += f
-        # Throttle 50ms чтобы не положить ботов
-        import asyncio as _aio
-        await _aio.sleep(0.05)
+        async with sem:
+            if counter["cancelled"]:
+                return
+            await limiter.acquire()
+            # Перед каждой отправкой проверяем что не отменили (cheap query in_memory? нет, берём из БД)
+            if counter["done"] % 20 == 0:
+                cur = await fetch_one("SELECT status FROM admin_broadcasts WHERE id = $1", bid)
+                if not cur or cur.get("status") == "cancelled":
+                    counter["cancelled"] = True
+                    return
+            try:
+                s, f = await _send_admin_broadcast_to_user(bc, dict(u_row))
+                counter["sent"] += s
+                counter["failed"] += f
+            except Exception as e:
+                print(f"[admin-broadcast {bid}] EXC user={u_row.get('id')}: {e}")
+                counter["failed"] += 1
+            counter["done"] += 1
+            # Каждые 50 сообщений обновляем счётчики в БД (UI видит прогресс)
+            if counter["done"] % 50 == 0:
+                await execute(
+                    "UPDATE admin_broadcasts SET sent_count=$1, failed_count=$2, total_count=$3 WHERE id = $4",
+                    counter["sent"], counter["failed"], total, bid,
+                )
+
+    print(f"[admin-broadcast {bid}] start: total={total} audience={audience}, rate=17/sec, concurrency=10")
+    await _aio.gather(*[process_one(u) for u in users])
+
+    final_status = "cancelled" if counter["cancelled"] else "sent"
     await execute(
-        "UPDATE admin_broadcasts SET status='sent', completed_at=NOW(), sent_count=$1, failed_count=$2, total_count=$3 WHERE id = $4",
-        sent, failed, len(users), bid,
+        f"UPDATE admin_broadcasts SET status='{final_status}', completed_at=NOW(), sent_count=$1, failed_count=$2, total_count=$3 WHERE id = $4",
+        counter["sent"], counter["failed"], total, bid,
     )
-    print(f"[admin-broadcast {bid}] done: sent={sent} failed={failed} total={len(users)}")
+    print(f"[admin-broadcast {bid}] done status={final_status} sent={counter['sent']} failed={counter['failed']} total={total}")
 
 
 @router.get("/referrals/overview")
