@@ -558,13 +558,19 @@ async def admin_create_broadcast(request: Request, admin: Dict = Depends(get_cur
     title = (body.get("title") or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="Название обязательно")
+    inline_buttons = body.get("inline_buttons")
+    if isinstance(inline_buttons, (list, dict)):
+        import json as _json
+        inline_buttons = _json.dumps(inline_buttons, ensure_ascii=False)
     bid = await execute_returning_id(
         """INSERT INTO admin_broadcasts
-           (title, message_text, image_url, media_type, button_text, button_url, audience, status, scheduled_at, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
+           (title, message_text, image_url, media_type, button_text, button_url, inline_buttons,
+            audience, status, scheduled_at, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id""",
         title, body.get("message_text") or "", body.get("image_url") or None,
         body.get("media_type") or None, body.get("button_text") or None,
-        body.get("button_url") or None, body.get("audience") or "all",
+        body.get("button_url") or None, inline_buttons,
+        body.get("audience") or "all",
         body.get("status") or "draft",
         body.get("scheduled_at") or None,
         admin.get("id"),
@@ -577,10 +583,15 @@ async def admin_update_broadcast(bid: int, request: Request, admin: Dict = Depen
     body = await request.json()
     fields, params = [], []
     idx = 1
-    for key in ("title", "message_text", "image_url", "media_type", "button_text", "button_url", "audience", "status", "scheduled_at"):
+    for key in ("title", "message_text", "image_url", "media_type", "button_text", "button_url",
+                "inline_buttons", "audience", "status", "scheduled_at"):
         if key in body:
+            val = body[key]
+            if key == "inline_buttons" and isinstance(val, (list, dict)):
+                import json as _json
+                val = _json.dumps(val, ensure_ascii=False)
             fields.append(f"{key} = ${idx}")
-            params.append(body[key])
+            params.append(val)
             idx += 1
     if not fields:
         return {"success": True}
@@ -688,33 +699,55 @@ async def admin_cancel_broadcast(bid: int, admin: Dict = Depends(get_current_adm
 async def _send_admin_broadcast_to_user(bc: dict, user: dict):
     """Отправка одной копии рассылки. Возвращает (sent, failed) — 1 или 0."""
     from ..services.messenger import send_to_user
+    import json as _json
+
     text = bc.get("message_text") or ""
-    if bc.get("button_text") and bc.get("button_url"):
-        # Inline-кнопка как ссылка
-        inline = [[{"text": bc["button_text"], "url": bc["button_url"]}]]
-    else:
-        inline = None
+
+    # inline_buttons: новый формат (массив объектов из ButtonBuilder) или
+    # legacy (button_text + button_url). Билдер уже возвращает плоский
+    # массив [{text, url}, ...] — НЕ оборачиваем в [[...]].
+    inline = None
+    raw_btns = bc.get("inline_buttons")
+    if raw_btns:
+        try:
+            parsed = _json.loads(raw_btns) if isinstance(raw_btns, str) else raw_btns
+            if isinstance(parsed, list) and parsed:
+                inline = parsed
+        except Exception as e:
+            print(f"[admin-broadcast {bc['id']}] bad inline_buttons: {e}")
+    if inline is None and bc.get("button_text") and bc.get("button_url"):
+        inline = [{"text": bc["button_text"], "url": bc["button_url"]}]
+
     file_path = None
     file_type = None
     if bc.get("image_url"):
-        # /uploads/foo.png → /app/uploads/foo.png
         url = bc["image_url"]
         if url.startswith("/uploads/"):
             file_path = "/app" + url
             file_type = bc.get("media_type") or "photo"
+
     sent, failed = 0, 0
-    # Предпочитаем MAX, если у юзера есть; иначе Telegram.
     platforms = []
     if user.get("max_user_id"):
         platforms.append(("max", user["max_user_id"]))
     elif user.get("telegram_id"):
         platforms.append(("telegram", user["telegram_id"]))
+    if not platforms:
+        print(f"[admin-broadcast {bc['id']}] user_id={user.get('id')} has no max/telegram id — skipped")
+        return 0, 0
     for platform, uid in platforms:
         try:
-            await send_to_user(uid, platform, text, file_path=file_path, file_type=file_type, inline_buttons=inline)
-            sent += 1
+            res = await send_to_user(uid, platform, text, file_path=file_path, file_type=file_type, inline_buttons=inline)
+            ok = (res or {}).get("success") if isinstance(res, dict) else True
+            if ok is False:
+                err = (res or {}).get("error", "unknown")
+                print(f"[admin-broadcast {bc['id']}] FAIL user={user.get('id')} platform={platform}: {err}")
+                failed += 1
+            else:
+                sent += 1
+                print(f"[admin-broadcast {bc['id']}] sent user={user.get('id')} platform={platform}")
         except Exception as e:
-            print(f"[admin-broadcast {bc['id']}] failed user={user.get('id')} platform={platform}: {e}")
+            print(f"[admin-broadcast {bc['id']}] EXC user={user.get('id')} platform={platform}: {e}")
             failed += 1
     return sent, failed
 
