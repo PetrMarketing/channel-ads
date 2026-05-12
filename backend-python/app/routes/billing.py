@@ -239,15 +239,19 @@ async def tinkoff_webhook(request: Request):
             if not billing and pay.get("channel_id"):
                 billing = await fetch_one("SELECT * FROM channel_billing WHERE channel_id = $1", pay["channel_id"])
             if billing:
-                months = billing.get("billing_months") or 1
+                # ВАЖНО: months берём с payment-записи (зафиксировано при создании),
+                # а не с billing.billing_months (мутабельно — может перетереться
+                # другим платежом за этот же канал, пока этот ждал CONFIRMED).
+                months = pay.get("months") or billing.get("billing_months") or 1
                 current_expires = billing.get("expires_at")
                 base = current_expires if current_expires and current_expires > datetime.utcnow() else datetime.utcnow()
                 new_expires = base + timedelta(days=30 * months)
                 await execute(
                     """UPDATE channel_billing SET status = 'active', expires_at = $1,
+                       billing_months = $3,
                        notified_7d = FALSE, notified_1d = FALSE, notified_expired = FALSE
                        WHERE id = $2""",
-                    new_expires, billing["id"],
+                    new_expires, billing["id"], months,
                 )
             pay_with_billing.append((pay, billing))
 
@@ -259,7 +263,7 @@ async def tinkoff_webhook(request: Request):
             for pay, billing in pay_with_billing:
                 if not billing:
                     continue
-                months = billing.get("billing_months") or 1
+                months = pay.get("months") or billing.get("billing_months") or 1
                 amount = float(pay.get("amount", 0))
                 ch = await fetch_one("SELECT user_id FROM channels WHERE id = $1",
                                      billing.get("channel_id") or pay.get("channel_id"))
@@ -441,8 +445,8 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
     payment_ids = []
     for bid, ch_amount in zip(billing_ids, channel_amounts):
         pid = await execute_returning_id(
-            "INSERT INTO billing_payments (channel_billing_id, amount) VALUES ($1, $2) RETURNING id",
-            bid, ch_amount,
+            "INSERT INTO billing_payments (channel_billing_id, amount, months) VALUES ($1, $2, $3) RETURNING id",
+            bid, ch_amount, months,
         )
         payment_ids.append(pid)
 
@@ -589,10 +593,11 @@ async def create_payment(tracking_code: str, request: Request, user=Depends(get_
             "paid", users, months, billing_id,
         )
 
-    # Create payment record
+    # Create payment record (months фиксируем здесь — иначе webhook прочитает
+    # мутабельный billing.billing_months и продлит на неверный срок)
     payment_id = await execute_returning_id(
-        "INSERT INTO billing_payments (channel_billing_id, amount) VALUES ($1, $2) RETURNING id",
-        billing_id, price_info["total"],
+        "INSERT INTO billing_payments (channel_billing_id, amount, months) VALUES ($1, $2, $3) RETURNING id",
+        billing_id, price_info["total"], months,
     )
 
     order_id = f"ch{channel['id']}_p{payment_id}"
