@@ -35,6 +35,8 @@ import LeadMagnetLandingPage from './pages/public/LeadMagnetLandingPage';
 import GoMiniAppPage from './pages/public/GoMiniAppPage';
 import ClickLandingPage from './pages/public/ClickLandingPage';
 import CheckListPage from './pages/CheckListPage';
+import BlogIndexPage from './pages/public/BlogIndexPage';
+import BlogArticlePage from './pages/public/BlogArticlePage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -236,6 +238,9 @@ export default function App() {
       <Route path="/staff-invite/:token" element={<StaffInvitePage />} />
       <Route path="/documentation" element={<DocumentationPage />} />
       <Route path="/check-list" element={<CheckListPage />} />
+      <Route path="/blog" element={<BlogIndexPage />} />
+      <Route path="/blog/category/:categorySlug" element={<BlogIndexPage />} />
+      <Route path="/blog/:slug" element={<BlogArticlePage />} />
       {/* /go/:code handled by backend directly — instant 302 redirect */}
 
       {/* Admin panel */}

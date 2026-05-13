@@ -32,7 +32,7 @@ from .routes import (
     funnels, content, giveaways, notifications, payments,
     max_routes, telegram_bot, max_webhook,
     admin, paid_chats, paid_chat_payments, services, ord, referrals, landings,
-    metrics, shop, payment_webhooks, ai_post, files_library,
+    metrics, shop, payment_webhooks, ai_post, files_library, blog,
 )
 
 
@@ -134,6 +134,58 @@ app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend-react", "dist")
 if os.path.isdir(frontend_dist):
     from fastapi.responses import FileResponse
+
+    @app.get("/robots.txt", include_in_schema=False)
+    async def serve_robots():
+        app_url = settings.APP_URL.rstrip("/")
+        body = (
+            "User-agent: *\n"
+            "Allow: /\n"
+            "Disallow: /admin\n"
+            "Disallow: /api\n"
+            "Disallow: /uploads/\n"
+            f"Sitemap: {app_url}/sitemap.xml\n"
+        )
+        return Response(content=body, media_type="text/plain")
+
+    @app.get("/sitemap.xml", include_in_schema=False)
+    async def serve_sitemap():
+        """Динамический sitemap: статичные + опубликованные статьи блога."""
+        app_url = settings.APP_URL.rstrip("/")
+        items = [
+            (f"{app_url}/", "1.0", "daily"),
+            (f"{app_url}/promo", "0.9", "weekly"),
+            (f"{app_url}/blog", "0.9", "daily"),
+            (f"{app_url}/documentation", "0.6", "weekly"),
+        ]
+        try:
+            arts = await fetch_all(
+                "SELECT slug, GREATEST(updated_at, published_at) AS lastmod "
+                "FROM blog_articles WHERE status = 'published' "
+                "ORDER BY published_at DESC LIMIT 5000"
+            )
+            for a in arts:
+                items.append((f"{app_url}/blog/{a['slug']}", "0.7", "weekly", a.get("lastmod")))
+            cats = await fetch_all("SELECT slug FROM blog_categories ORDER BY sort_order")
+            for c in cats:
+                items.append((f"{app_url}/blog/category/{c['slug']}", "0.6", "weekly"))
+        except Exception as e:
+            print(f"[sitemap] error: {e}")
+        urls_xml = []
+        for it in items:
+            url, prio, freq = it[0], it[1], it[2]
+            lastmod = it[3] if len(it) > 3 and it[3] else None
+            lm = f"<lastmod>{lastmod.strftime('%Y-%m-%d') if hasattr(lastmod, 'strftime') else str(lastmod)[:10]}</lastmod>" if lastmod else ""
+            urls_xml.append(
+                f"<url><loc>{url}</loc>{lm}<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
+            )
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            + "".join(urls_xml) +
+            '</urlset>'
+        )
+        return Response(content=xml, media_type="application/xml")
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def serve_favicon():
@@ -257,6 +309,8 @@ from .routes import ai_content
 app.include_router(ai_content.router, prefix="/api/ai-content", tags=["ai-content"])
 app.include_router(ai_post.router, prefix="/api/ai-post", tags=["ai-post"])
 app.include_router(files_library.router, prefix="/api/files", tags=["files-library"])
+app.include_router(blog.public_router, prefix="/api/blog", tags=["blog"])
+app.include_router(blog.admin_router, prefix="/api/admin/blog", tags=["admin-blog"])
 from .routes import support
 app.include_router(support.router, prefix="/api/support", tags=["support"])
 from .routes import client_notes
@@ -2179,6 +2233,64 @@ async def serve_lm_seo(code: str):
 # ========================
 # SPA Catch-All (must be last!)
 # ========================
+async def _inject_blog_meta(html: str, full_path: str) -> str:
+    """Для /blog/<slug> подставляем правильные SEO meta в index.html
+    (Google/боты часто не ждут SPA-JS). Заголовок, description, OG-image,
+    JSON-LD Article. Не трогаем разметку — только дописываем теги в head."""
+    parts = full_path.strip("/").split("/")
+    slug = None
+    if len(parts) >= 2 and parts[0] == "blog" and parts[1] not in ("category", ""):
+        slug = parts[1]
+    elif len(parts) >= 3 and parts[0] == "blog" and parts[1] == "category":
+        slug = None  # категория — отдельный обработчик ниже
+    if not slug:
+        return html
+    art = await fetch_one(
+        "SELECT slug, title, excerpt, meta_title, meta_description, cover_image_url, "
+        "published_at, updated_at FROM blog_articles WHERE slug = $1 AND status = 'published'",
+        slug,
+    )
+    if not art:
+        return html
+    app_url = settings.APP_URL.rstrip("/")
+    title = (art.get("meta_title") or art.get("title") or "Блог").replace("<", "").replace(">", "")
+    desc = (art.get("meta_description") or art.get("excerpt") or "")[:300].replace("<", "").replace(">", "")
+    cover = art.get("cover_image_url") or ""
+    if cover and cover.startswith("/"):
+        cover = app_url + cover
+    page_url = f"{app_url}/blog/{slug}"
+    pub = art.get("published_at")
+    upd = art.get("updated_at")
+    pub_iso = pub.isoformat() if hasattr(pub, "isoformat") else ""
+    upd_iso = upd.isoformat() if hasattr(upd, "isoformat") else ""
+    json_ld = (
+        '{"@context":"https://schema.org","@type":"Article",'
+        f'"headline":{json.dumps(title, ensure_ascii=False)},'
+        f'"description":{json.dumps(desc, ensure_ascii=False)},'
+        f'"datePublished":"{pub_iso}","dateModified":"{upd_iso}",'
+        f'"image":"{cover}","mainEntityOfPage":"{page_url}"'
+        '}'
+    )
+    inject = (
+        f'<title>{title} — PK Business</title>\n'
+        f'<meta name="description" content="{desc}">\n'
+        f'<link rel="canonical" href="{page_url}">\n'
+        f'<meta property="og:type" content="article">\n'
+        f'<meta property="og:title" content="{title}">\n'
+        f'<meta property="og:description" content="{desc}">\n'
+        f'<meta property="og:url" content="{page_url}">\n'
+        + (f'<meta property="og:image" content="{cover}">\n' if cover else '')
+        + f'<meta name="twitter:card" content="summary_large_image">\n'
+        f'<meta name="twitter:title" content="{title}">\n'
+        f'<meta name="twitter:description" content="{desc}">\n'
+        + (f'<meta name="twitter:image" content="{cover}">\n' if cover else '')
+        + f'<script type="application/ld+json">{json_ld}</script>\n'
+    )
+    if "</head>" in html:
+        return html.replace("</head>", inject + "</head>", 1)
+    return html
+
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     """Serve React SPA for all non-API routes."""
@@ -2196,6 +2308,13 @@ async def serve_spa(full_path: str):
     index_path = os.path.join(spa_dir, "index.html")
     if os.path.isfile(index_path):
         with open(index_path, "r") as f:
-            return HTMLResponse(content=f.read())
+            html = f.read()
+        # Для статей блога добавляем SEO meta прямо в HTML
+        if full_path.startswith("blog/"):
+            try:
+                html = await _inject_blog_meta(html, full_path)
+            except Exception as e:
+                print(f"[blog SEO inject] {e}")
+        return HTMLResponse(content=html)
 
     raise HTTPException(status_code=404, detail="Not found")
