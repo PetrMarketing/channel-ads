@@ -206,7 +206,81 @@ if os.path.isdir(frontend_dist):
     @app.get("/promo", include_in_schema=False)
     async def serve_promo_landing():
         landing_path = os.path.join(os.path.dirname(__file__), "routes", "maxmarketing_landing.html")
-        return FileResponse(landing_path, media_type="text/html")
+        with open(landing_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        # Подтягиваем 3 свежие опубликованные статьи блога и встраиваем
+        # секцию «Свежее в блоге» вместо плейсхолдера.
+        try:
+            arts = await fetch_all(
+                """SELECT a.slug, a.title, a.excerpt, a.cover_image_url,
+                          a.published_at, c.name AS category_name
+                   FROM blog_articles a
+                   LEFT JOIN blog_categories c ON c.id = a.category_id
+                   WHERE a.status='published'
+                   ORDER BY a.published_at DESC NULLS LAST LIMIT 3"""
+            )
+        except Exception as e:
+            print(f"[promo blog block] {e}")
+            arts = []
+        if arts:
+            cards = []
+            for a in arts:
+                cover = a.get("cover_image_url") or ""
+                cover_style = (
+                    f"background:url({cover}) center/cover;"
+                    if cover else
+                    "background:linear-gradient(135deg,#4361ee20,#7b68ee30);"
+                )
+                excerpt = (a.get("excerpt") or "").replace("<", "&lt;")[:160]
+                cat = (a.get("category_name") or "").replace("<", "&lt;")
+                title = (a.get("title") or "").replace("<", "&lt;")
+                cards.append(
+                    f'<a class="blog-card" href="/blog/{a["slug"]}">'
+                    f'<div class="blog-card-cover" style="{cover_style}"></div>'
+                    f'<div class="blog-card-body">'
+                    + (f'<span class="blog-card-cat">{cat}</span>' if cat else '')
+                    + f'<h3>{title}</h3>'
+                    + (f'<p>{excerpt}</p>' if excerpt else '')
+                    + '</div></a>'
+                )
+            blog_section = (
+                '<section id="blog">\n'
+                '  <div class="container">\n'
+                '    <div class="cases-head reveal">\n'
+                '      <div class="eyebrow"><span class="eyebrow-dot"></span>Блог</div>\n'
+                '      <h2 class="sec-title">Свежее <span class="gradient-text">в блоге</span></h2>\n'
+                '      <p class="sec-sub">Гайды, кейсы и инструкции по работе с каналами в MAX.</p>\n'
+                '    </div>\n'
+                '    <div class="blog-cards reveal-stagger">\n'
+                + '\n'.join(cards) +
+                '\n    </div>\n'
+                '    <div style="text-align:center;margin-top:36px;">\n'
+                '      <a href="/blog" class="btn-outline">Все статьи блога →</a>\n'
+                '    </div>\n'
+                '  </div>\n'
+                '</section>\n'
+                '<style>\n'
+                '  .blog-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;}\n'
+                '  .blog-card{display:flex;flex-direction:column;border:1px solid #e5e7eb;'
+                'border-radius:14px;overflow:hidden;background:#fff;text-decoration:none;color:inherit;'
+                'transition:transform .15s ease,box-shadow .15s ease;}\n'
+                '  .blog-card:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.08);}\n'
+                '  .blog-card-cover{aspect-ratio:16/9;}\n'
+                '  .blog-card-body{padding:16px;display:flex;flex-direction:column;gap:8px;flex:1;}\n'
+                '  .blog-card-cat{font-size:.7rem;font-weight:700;color:#4361ee;text-transform:uppercase;letter-spacing:.05em;}\n'
+                '  .blog-card h3{margin:0;font-size:1.05rem;font-weight:700;color:#1a1a2e;line-height:1.35;}\n'
+                '  .blog-card p{margin:0;font-size:.86rem;color:#6b7280;line-height:1.5;'
+                'display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}\n'
+                '  .btn-outline{display:inline-block;padding:12px 28px;border-radius:12px;'
+                'border:1px solid #4361ee;color:#4361ee;font-weight:700;text-decoration:none;'
+                'transition:background .15s,color .15s;}\n'
+                '  .btn-outline:hover{background:#4361ee;color:#fff;}\n'
+                '</style>\n'
+            )
+        else:
+            blog_section = ""
+        html = html.replace("<!-- BLOG_SECTION_PLACEHOLDER -->", blog_section)
+        return HTMLResponse(content=html)
 
     # Reverse proxies for analytics pixels — MAX in-app browser fails SSL on
     # mc.yandex.ru and top-fwz1.mail.ru directly. Browser hits us instead and
