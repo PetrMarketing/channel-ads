@@ -149,7 +149,7 @@ export function BlogFooter() {
   return (
     <footer style={{ borderTop: `1px solid ${BORDER}`, padding: '40px 20px', background: '#fafbfc' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, color: MUTED, fontSize: '0.85rem' }}>
-        <div>© PK Business · MAXМаркетинг</div>
+        <div>© MAX Маркетинг</div>
         <div style={{ display: 'flex', gap: 16 }}>
           <Link to="/blog" style={{ color: MUTED, textDecoration: 'none' }}>Блог</Link>
           <a href="/promo" style={{ color: MUTED, textDecoration: 'none' }}>О сервисе</a>

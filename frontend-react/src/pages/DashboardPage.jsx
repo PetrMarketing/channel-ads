@@ -28,10 +28,10 @@ export default function DashboardPage() {
   const [bonusBusyKey, setBonusBusyKey] = useState(null);
   const pollRef = useRef(null);
   const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
-  const maxBotName = import.meta.env.VITE_MAX_BOT_NAME || 'PKMarketing';
+  const maxBotName = import.meta.env.VITE_MAX_BOT_NAME || 'ПКРеклама';
 
   const { overlay: pageTour } = usePageOnboarding('dashboard', [
-    { selector: '[data-tour-page="dash-add-channel"]', title: 'Подключение канала', text: 'Добавьте канал MAX как администратора бота PKMarketing — он появится здесь автоматически.', placement: 'bottom' },
+    { selector: '[data-tour-page="dash-add-channel"]', title: 'Подключение канала', text: `Добавьте канал MAX как администратора бота ${maxBotName} — он появится здесь автоматически.`, placement: 'bottom' },
     { selector: '[data-tour-page="dash-stats"]', title: 'Статистика', text: 'Данные обновляются каждые 30 сек.', placement: 'bottom' },
   ]);
 
@@ -550,7 +550,7 @@ function ChannelCard({ channel, isSelected, onSelect, onDelete }) {
   const isDisconnected = ch.is_active === 0 || ch.is_active === false;
   const tgBotUsername = import.meta.env.VITE_TG_BOT_USERNAME || 'PKAds_bot';
   const maxBotUsername = import.meta.env.VITE_MAX_BOT_USERNAME || 'id575307462228_bot';
-  const maxBotName = import.meta.env.VITE_MAX_BOT_NAME || 'PKMarketing';
+  const maxBotName = import.meta.env.VITE_MAX_BOT_NAME || 'ПКРеклама';
   const platformColor = ch.platform === 'max' ? ACCENT2 : '#2AABEE';
   const firstLetter = (ch.title || ch.channel_id || 'C')[0].toUpperCase();
 

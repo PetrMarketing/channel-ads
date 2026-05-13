@@ -109,10 +109,10 @@ const STEPS_CREATE = [
     img: 'https://fs.getcourse.ru/fileservice/file/download/a/939699/sc/479/h/60a99f27c130128595648d8bb39633f2.png',
   },
   {
-    title: 'Авторизуйтесь в MAXМаркетинг',
+    title: 'Авторизуйтесь в MAX Маркетинг',
     desc: 'Перейдите по ссылке max.pkmarketing.ru/login и войдите через MAX.',
     img: 'https://fs.getcourse.ru/fileservice/file/download/a/939699/sc/55/h/c0053f91797d4036fcc3f6706909c41b.png',
-    cta: { label: 'Открыть MAXМаркетинг', to: '/login' },
+    cta: { label: 'Открыть MAX Маркетинг', to: '/login' },
   },
   {
     title: 'Добавьте канал в сервис',
@@ -190,7 +190,7 @@ const STEPS_MANUAL = [
   },
   {
     title: 'Создайте лид-магнит',
-    desc: 'Перейдите в раздел «Закрепы» → «Лид-магниты» в MAXМаркетинг.',
+    desc: 'Перейдите в раздел «Закрепы» → «Лид-магниты» в MAX Маркетинг.',
     img: 'https://fs.getcourse.ru/fileservice/file/download/a/939699/sc/102/h/29d4081f52c297ba0af6517f67a3680f.png',
   },
   {
@@ -469,7 +469,7 @@ export default function CheckListPage() {
                 className="cl-primary"
                 style={primaryBtn}
               >
-                Перейти в MAXМаркетинг
+                Перейти в MAX Маркетинг
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <path d="M5 12h14M13 5l7 7-7 7"/>
                 </svg>
@@ -677,7 +677,7 @@ export default function CheckListPage() {
                   onClick={(e) => { e.preventDefault(); navigate('/login'); }}
                   className="cl-white-btn"
                 >
-                  Перейти в MAXМаркетинг
+                  Перейти в MAX Маркетинг
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                     <path d="M5 12h14M13 5l7 7-7 7"/>
                   </svg>

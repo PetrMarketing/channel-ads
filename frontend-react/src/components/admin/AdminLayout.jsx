@@ -58,7 +58,7 @@ export default function AdminLayout() {
             </div>
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: -0.3 }}>Admin</div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontWeight: 500, letterSpacing: 0.5 }}>MAXМаркетинг</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontWeight: 500, letterSpacing: 0.5 }}>MAX Маркетинг</div>
             </div>
           </div>
         </div>

@@ -174,7 +174,7 @@ export default function Header({ onToggleSidebar, onBurgerClick }) {
           <h1 style={{
             margin: 0, fontSize: '1.05rem', fontWeight: 700, color: DARK,
             letterSpacing: '-0.02em', lineHeight: 1,
-          }}>MAXМаркетинг</h1>
+          }}>MAX Маркетинг</h1>
         </div>
 
         {/* Channel selector */}
