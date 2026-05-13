@@ -108,7 +108,7 @@ def _render_landing(slug: str, landing_db: dict) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{data["title"]} — MAXМаркетинг</title>
+<title>{data["title"]} — MAX Маркетинг</title>
 <meta name="description" content="{data["subtitle"]}">
 <link rel="icon" href="/favicon.ico">
 <style>
@@ -179,7 +179,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
     </div>
 </div>
 
-<div class="footer">MAXМаркетинг — платформа для управления рекламой каналов</div>
+<div class="footer">MAX Маркетинг — платформа для управления рекламой каналов</div>
 
 <script>
 fetch('/api/admin/landings/{lid}/track',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{event:'view'}})}}).catch(()=>{{}});
