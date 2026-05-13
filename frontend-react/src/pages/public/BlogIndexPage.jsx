@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
+import { useBlogYandexMetrika } from '../../hooks/useBlogYandexMetrika';
 
 const ACCENT = '#4361ee';
 const ACCENT2 = '#7b68ee';
@@ -13,6 +14,7 @@ const MUTED = '#6b7280';
 const BORDER = '#e5e7eb';
 
 export default function BlogIndexPage() {
+  useBlogYandexMetrika();
   const { categorySlug } = useParams();
   const navigate = useNavigate();
   const [categories, setCategories] = useState([]);

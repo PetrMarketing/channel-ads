@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../../services/api';
 import { BlogHeader, BlogFooter } from './BlogIndexPage';
+import { useBlogYandexMetrika, ymReachGoal } from '../../hooks/useBlogYandexMetrika';
 
 const ACCENT = '#4361ee';
 const ACCENT2 = '#7b68ee';
@@ -13,6 +14,7 @@ const MUTED = '#6b7280';
 const BORDER = '#e5e7eb';
 
 export default function BlogArticlePage() {
+  useBlogYandexMetrika();
   const { slug } = useParams();
   const [article, setArticle] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -35,6 +37,7 @@ export default function BlogArticlePage() {
 
   const trackCta = async (target) => {
     try { await api.post(`/blog/articles/${slug}/cta-click`, { target }); } catch {}
+    ymReachGoal('blog_cta_click', { article: slug, target });
   };
 
   return (
