@@ -15,9 +15,10 @@ const STATUS_META = {
 };
 
 const TABS = [
-  { id: 'articles',   label: 'Статьи' },
-  { id: 'categories', label: 'Категории' },
-  { id: 'overview',   label: 'Сводка' },
+  { id: 'articles',    label: 'Статьи' },
+  { id: 'screenshots', label: 'Скриншоты' },
+  { id: 'categories',  label: 'Категории' },
+  { id: 'overview',    label: 'Сводка' },
 ];
 
 export default function AdminBlogPage() {
@@ -36,6 +37,7 @@ export default function AdminBlogPage() {
         ))}
       </div>
       {tab === 'articles' && <ArticlesTab />}
+      {tab === 'screenshots' && <ScreenshotsTab />}
       {tab === 'categories' && <CategoriesTab />}
       {tab === 'overview' && <OverviewTab />}
     </div>
@@ -177,6 +179,7 @@ function ArticleEditor({ editing, categories, onClose, onSaved }) {
   const [tagInput, setTagInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [showRutube, setShowRutube] = useState(false);
+  const [showScreenshots, setShowScreenshots] = useState(false);
   const editorRef = useRef(null);
 
   const update = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -324,6 +327,7 @@ function ArticleEditor({ editing, categories, onClose, onSaved }) {
             <ToolbarBtn onClick={() => document.getElementById('blog-img-input')?.click()}>📷 Картинка</ToolbarBtn>
             <input id="blog-img-input" type="file" accept="image/*" style={{ display: 'none' }}
               onChange={e => { const f = e.target.files?.[0]; if (f) insertImageFile(f); e.target.value = ''; }} />
+            <ToolbarBtn onClick={() => setShowScreenshots(true)}>🖼 Из библиотеки</ToolbarBtn>
             <ToolbarBtn onClick={insertScreenshotPlaceholder}>📐 Плейсхолдер скрина</ToolbarBtn>
             <ToolbarBtn onClick={() => setShowRutube(true)}>📺 RuTube видео</ToolbarBtn>
           </div>
@@ -404,6 +408,66 @@ function ArticleEditor({ editing, categories, onClose, onSaved }) {
           </div>
         </div>
       )}
+
+      {showScreenshots && (
+        <ScreenshotPicker
+          onClose={() => setShowScreenshots(false)}
+          onPick={(s) => {
+            // Вставляем тег с маркером — src/alt подставятся при рендере статьи.
+            // src здесь нужен только для предпросмотра в редакторе.
+            insertHtml(`<img data-screenshot-slug="${s.slug}" src="${s.file_url}" alt="${(s.alt_text || s.title || '').replace(/"/g, '&quot;')}" />`);
+            setShowScreenshots(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Модалка выбора скриншота из библиотеки
+function ScreenshotPicker({ onClose, onPick }) {
+  const [items, setItems] = useState(null);
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    adminApi.get('/blog/screenshots').then(d => setItems(d?.screenshots || []));
+  }, []);
+  const filtered = useMemo(() => {
+    const list = items || [];
+    if (!q.trim()) return list;
+    const s = q.toLowerCase();
+    return list.filter(i => (i.title || '').toLowerCase().includes(s)
+      || (i.slug || '').toLowerCase().includes(s)
+      || (i.description || '').toLowerCase().includes(s));
+  }, [items, q]);
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={{ ...modalBox, maxWidth: 760, maxHeight: '88vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h4 style={{ margin: 0 }}>Библиотека скриншотов</h4>
+          <button onClick={onClose} style={btnOutline}>Закрыть</button>
+        </div>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 12px' }}>
+          Выбранный скриншот вставится с привязкой по slug. Если потом загрузишь новый файл — он автоматически обновится во всех статьях.
+        </p>
+        <input value={q} onChange={e => setQ(e.target.value)}
+          placeholder="Поиск по названию или slug…" style={input} autoFocus />
+        {!items ? <div style={emptyState}>Загрузка…</div>
+          : filtered.length === 0 ? <div style={emptyState}>Нет скриншотов. Добавь их во вкладке «Скриншоты».</div>
+          : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+              {filtered.map(s => (
+                <button key={s.id} onClick={() => onPick(s)} style={{
+                  border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff',
+                  padding: 8, cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 6,
+                }}>
+                  <img src={s.file_url} alt="" style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 6, background: '#f3f4f6' }} />
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a2e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
+                  <div style={{ fontSize: 10, color: '#9ca3af', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.slug}</div>
+                </button>
+              ))}
+            </div>
+          )}
+      </div>
     </div>
   );
 }
@@ -442,6 +506,223 @@ function CoverPicker({ value, onChange }) {
         onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); }} style={{ display: 'none' }} />
     </div>
   );
+}
+
+// ============== Screenshots library ==============
+function ScreenshotsTab() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
+  const [usages, setUsages] = useState(null); // { screenshot, articles }
+  const [q, setQ] = useState('');
+
+  const load = useCallback(() => {
+    setLoading(true);
+    adminApi.get('/blog/screenshots').then(d => {
+      if (d?.success) setItems(d.screenshots || []);
+    }).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => {
+    if (!q.trim()) return items;
+    const s = q.toLowerCase();
+    return items.filter(i => (i.title || '').toLowerCase().includes(s)
+      || (i.slug || '').toLowerCase().includes(s)
+      || (i.description || '').toLowerCase().includes(s));
+  }, [items, q]);
+
+  const del = async (s) => {
+    const msg = s.usage_count > 0
+      ? `Удалить «${s.title}»? Используется в ${s.usage_count} статьях — там скриншот пропадёт.`
+      : `Удалить «${s.title}»?`;
+    if (!confirm(msg)) return;
+    try { await adminApi.delete(`/blog/screenshots/${s.id}`); load(); } catch (e) { alert(e?.message); }
+  };
+
+  const showUsages = async (s) => {
+    try {
+      const d = await adminApi.get(`/blog/screenshots/${s.id}/usages`);
+      if (d?.success) setUsages({ screenshot: d.screenshot, articles: d.articles });
+    } catch (e) { alert(e?.message); }
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Поиск по названию / slug…"
+          style={{ ...input, marginBottom: 0, maxWidth: 320 }} />
+        <button style={btnPrimary} onClick={() => setEditing({ title: '', slug: '', description: '', file_url: '', alt_text: '' })}>
+          + Добавить скриншот
+        </button>
+      </div>
+
+      <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10, padding: 10, background: '#f9fafb', borderRadius: 8 }}>
+        💡 Скриншоты переиспользуются в статьях через тег <code>&lt;img data-screenshot-slug="..."&gt;</code>.
+        Если заменишь файл — он сразу обновится во всех статьях, где этот скриншот вставлен.
+      </div>
+
+      {loading ? <div style={emptyState}>Загрузка…</div>
+        : filtered.length === 0 ? <div style={emptyState}>Скриншотов пока нет</div>
+        : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+            {filtered.map(s => (
+              <div key={s.id} style={{ ...card, padding: 0, overflow: 'hidden' }}>
+                <img src={s.file_url} alt={s.alt_text || ''} style={{
+                  width: '100%', aspectRatio: '16/9', objectFit: 'cover',
+                  background: '#f3f4f6', borderBottom: '1px solid #e5e7eb',
+                }} />
+                <div style={{ padding: 12 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, color: '#1a1a2e' }}>{s.title}</div>
+                  <div style={{ fontSize: 10, color: '#9ca3af', fontFamily: 'monospace', marginBottom: 6 }}>slug: {s.slug}</div>
+                  {s.description && (
+                    <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8, lineHeight: 1.4 }}>{s.description}</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
+                    <button onClick={() => showUsages(s)} style={{
+                      ...badge(s.usage_count > 0 ? '#dcfce7' : '#f3f4f6', s.usage_count > 0 ? '#166534' : '#6b7280'),
+                      cursor: 'pointer', border: 'none',
+                    }}>
+                      📰 {s.usage_count} {plurArticles(s.usage_count)}
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => setEditing(s)} style={{ ...btnOutline, padding: '4px 10px', fontSize: 11, flex: 1 }}>Изменить</button>
+                    <button onClick={() => del(s)} style={{ ...btnDanger, padding: '4px 10px', fontSize: 11 }}>×</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+      {editing && (
+        <ScreenshotEditor
+          editing={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
+
+      {usages && (
+        <div style={modalOverlay} onClick={() => setUsages(null)}>
+          <div style={{ ...modalBox, maxWidth: 580 }} onClick={e => e.stopPropagation()}>
+            <h4 style={{ margin: '0 0 4px' }}>Где используется: {usages.screenshot.title}</h4>
+            <div style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'monospace', marginBottom: 12 }}>{usages.screenshot.slug}</div>
+            {usages.articles.length === 0 ? (
+              <div style={{ color: '#6b7280', fontSize: 13, padding: 14 }}>Скриншот пока не используется ни в одной статье.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {usages.articles.map(a => (
+                  <a key={a.id} href={a.status === 'published' ? `/blog/${a.slug}` : '#'} target="_blank" rel="noreferrer"
+                    style={{ display: 'block', padding: 10, border: '1px solid #e5e7eb', borderRadius: 8, textDecoration: 'none', color: '#1a1a2e' }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{a.title}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                      {a.category_name || '—'} · <span style={{ color: a.status === 'published' ? '#16a34a' : '#9ca3af' }}>{STATUS_META[a.status]?.label || a.status}</span>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+              <button onClick={() => setUsages(null)} style={btnOutline}>Закрыть</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScreenshotEditor({ editing, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    id: editing.id || null,
+    title: editing.title || '',
+    slug: editing.slug || '',
+    description: editing.description || '',
+    file_url: editing.file_url || '',
+    alt_text: editing.alt_text || '',
+  });
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+
+  const upload = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const d = await adminApi.upload('/upload', fd);
+      if (d?.success) setForm(p => ({ ...p, file_url: d.url }));
+    } catch (e) { alert(e?.message); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  const save = async () => {
+    if (!form.title.trim() || !form.file_url) { alert('Нужно название и файл'); return; }
+    setBusy(true);
+    try {
+      if (form.id) await adminApi.put(`/blog/screenshots/${form.id}`, form);
+      else await adminApi.post('/blog/screenshots', form);
+      onSaved();
+    } catch (e) { alert(e?.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={modalOverlay}>
+      <div style={{ ...modalBox, maxWidth: 540 }}>
+        <h4 style={{ margin: '0 0 12px' }}>{form.id ? `Изменить скриншот #${form.id}` : 'Новый скриншот'}</h4>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Файл *</label>
+          {form.file_url ? (
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8 }}>
+              <img src={form.file_url} alt="" style={{ width: 160, height: 90, objectFit: 'cover', borderRadius: 8, border: '1px solid #e5e7eb' }} />
+              <button onClick={() => fileRef.current?.click()} disabled={busy} style={btnOutline}>↻ Заменить файл</button>
+            </div>
+          ) : (
+            <button onClick={() => fileRef.current?.click()} disabled={busy} style={{
+              padding: '12px 18px', borderRadius: 10, border: '1px dashed #4361ee',
+              background: '#eef2ff', color: '#4361ee', fontWeight: 600, cursor: 'pointer', fontSize: 13,
+            }}>{busy ? 'Загружаем…' : '📤 Загрузить скриншот'}</button>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={e => upload(e.target.files?.[0])} />
+        </div>
+
+        <Field label="Название (для поиска в библиотеке) *" v={form.title}
+          onChange={v => setForm(p => ({ ...p, title: v, slug: p.slug || autoSlug(v) }))} />
+        <Field label="Slug (стабильный идентификатор)" v={form.slug}
+          onChange={v => setForm(p => ({ ...p, slug: v }))} mono
+          placeholder="например: max-create-channel-step1" />
+        <Field label="Описание (что на скриншоте — для админа)" v={form.description}
+          onChange={v => setForm(p => ({ ...p, description: v }))} multiline rows={2} />
+        <Field label="Alt-текст (для SEO/доступности)" v={form.alt_text}
+          onChange={v => setForm(p => ({ ...p, alt_text: v }))}
+          placeholder="например: Кнопка «Создать канал» в мессенджере MAX" />
+
+        {form.id && (
+          <div style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', padding: 10, borderRadius: 8, marginBottom: 12 }}>
+            ⚠️ Изменения файла или alt-текста сразу применятся ко всем статьям, где используется этот скриншот.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid #e5e7eb', paddingTop: 14 }}>
+          <button onClick={onClose} style={btnOutline}>Отмена</button>
+          <button onClick={save} disabled={busy} style={btnPrimary}>Сохранить</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function plurArticles(n) {
+  const v = n || 0;
+  const last = v % 10;
+  const teen = v % 100;
+  if (teen >= 11 && teen <= 14) return 'статьях';
+  if (last === 1) return 'статья';
+  if (last >= 2 && last <= 4) return 'статьи';
+  return 'статьях';
 }
 
 // ============== Categories ==============

@@ -40,6 +40,42 @@ def _visitor_id(request: Request) -> str:
     return vid
 
 
+# Регулярка ловит <img ... data-screenshot-slug="X" ...>
+# Перезаписываем src + alt свежими значениями из blog_screenshots, поэтому
+# обновление файла в библиотеке тут же видно во всех статьях.
+_SCREENSHOT_TAG_RE = re.compile(
+    r'<img\b([^>]*?)data-screenshot-slug=["\']([^"\']+)["\']([^>]*?)/?>',
+    re.IGNORECASE,
+)
+
+
+async def _rewrite_screenshots(html: str) -> str:
+    """Подменяет src/alt у <img data-screenshot-slug="..."> актуальными данными."""
+    if not html or 'data-screenshot-slug' not in html:
+        return html
+    slugs = list({m.group(2) for m in _SCREENSHOT_TAG_RE.finditer(html)})
+    if not slugs:
+        return html
+    rows = await fetch_all(
+        "SELECT slug, file_url, alt_text, title FROM blog_screenshots WHERE slug = ANY($1::text[])",
+        slugs,
+    )
+    by_slug = {r["slug"]: r for r in rows}
+
+    def _sub(m):
+        before, slug, after = m.group(1), m.group(2), m.group(3)
+        meta = by_slug.get(slug)
+        if not meta:
+            # скриншот удалён — оставим как есть, но пометим класс для админа
+            return f'<img{before}data-screenshot-slug="{slug}" class="blog-screenshot-missing"{after} />'
+        # Очищаем предыдущие src=/alt= (если редактор оставил), ставим свежие
+        attrs = re.sub(r'\s(src|alt)=["\'][^"\']*["\']', '', before + after)
+        alt = (meta.get("alt_text") or meta.get("title") or "").replace('"', '&quot;')
+        return f'<img{attrs} data-screenshot-slug="{slug}" src="{meta["file_url"]}" alt="{alt}" />'
+
+    return _SCREENSHOT_TAG_RE.sub(_sub, html)
+
+
 # ============================================================
 # PUBLIC
 # ============================================================
@@ -151,6 +187,8 @@ async def get_article(slug: str, request: Request, response: Response):
         related = [dict(r) for r in related_rows]
 
     out = dict(art)
+    if out.get("body"):
+        out["body"] = await _rewrite_screenshots(out["body"])
     out["related"] = related
     return {"success": True, "article": out}
 
@@ -364,6 +402,93 @@ async def admin_article_stats(aid: int, admin: Dict = Depends(get_current_admin)
         "registrations": regs.get("n") if regs else 0,
         "by_day": [{"day": r["day"], "uniques": int(r.get("uniques") or 0)} for r in by_day],
     }
+
+
+# ============================================================
+# Библиотека скриншотов — переиспользуются в нескольких статьях.
+# При обновлении файла меняется во всех статьях автоматически
+# (рендер статьи перезаписывает src через _rewrite_screenshots).
+# ============================================================
+
+@admin_router.get("/screenshots")
+async def admin_list_screenshots(admin: Dict = Depends(get_current_admin)):
+    """Все скриншоты + кол-во статей где используется (по data-screenshot-slug в body)."""
+    rows = await fetch_all(
+        """SELECT s.id, s.slug, s.title, s.description, s.file_url, s.alt_text,
+                  s.created_at, s.updated_at,
+                  (SELECT COUNT(*)::int FROM blog_articles a
+                   WHERE a.body LIKE '%data-screenshot-slug="' || s.slug || '"%'
+                      OR a.body LIKE '%data-screenshot-slug=''' || s.slug || '''%') AS usage_count
+           FROM blog_screenshots s ORDER BY s.created_at DESC"""
+    )
+    return {"success": True, "screenshots": [dict(r) for r in rows]}
+
+
+@admin_router.post("/screenshots")
+async def admin_create_screenshot(request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    title = (body.get("title") or "").strip()
+    file_url = (body.get("file_url") or "").strip()
+    if not title or not file_url:
+        raise HTTPException(status_code=400, detail="Нужны title и file_url")
+    slug = (body.get("slug") or _slugify(title)).strip()
+    # уникальность slug
+    exists = await fetch_one("SELECT id FROM blog_screenshots WHERE slug = $1", slug)
+    if exists:
+        slug = f"{slug}-{secrets.token_hex(3)}"
+    sid = await execute_returning_id(
+        """INSERT INTO blog_screenshots (slug, title, description, file_url, alt_text, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING id""",
+        slug, title, body.get("description") or "", file_url,
+        body.get("alt_text") or "", admin.get("id"),
+    )
+    return {"success": True, "id": sid, "slug": slug}
+
+
+@admin_router.put("/screenshots/{sid}")
+async def admin_update_screenshot(sid: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    fields, params = [], []
+    idx = 1
+    for key in ("slug", "title", "description", "file_url", "alt_text"):
+        if key in body:
+            fields.append(f"{key} = ${idx}")
+            params.append(body[key])
+            idx += 1
+    if not fields:
+        return {"success": True}
+    fields.append("updated_at = NOW()")
+    params.append(sid)
+    await execute(f"UPDATE blog_screenshots SET {', '.join(fields)} WHERE id = ${idx}", *params)
+    return {"success": True}
+
+
+@admin_router.delete("/screenshots/{sid}")
+async def admin_delete_screenshot(sid: int, admin: Dict = Depends(get_current_admin)):
+    """Удаляет запись. Img-теги в статьях остаются — отрисуются с классом
+    blog-screenshot-missing, чтобы было заметно."""
+    await execute("DELETE FROM blog_screenshots WHERE id = $1", sid)
+    return {"success": True}
+
+
+@admin_router.get("/screenshots/{sid}/usages")
+async def admin_screenshot_usages(sid: int, admin: Dict = Depends(get_current_admin)):
+    """Список статей, где используется этот скриншот."""
+    sc = await fetch_one("SELECT slug FROM blog_screenshots WHERE id = $1", sid)
+    if not sc:
+        raise HTTPException(status_code=404, detail="Скриншот не найден")
+    slug = sc["slug"]
+    rows = await fetch_all(
+        """SELECT a.id, a.slug, a.title, a.status, a.published_at,
+                  c.name AS category_name
+           FROM blog_articles a
+           LEFT JOIN blog_categories c ON c.id = a.category_id
+           WHERE a.body LIKE $1 OR a.body LIKE $2
+           ORDER BY a.created_at DESC""",
+        f'%data-screenshot-slug="{slug}"%',
+        f"%data-screenshot-slug='{slug}'%",
+    )
+    return {"success": True, "screenshot": dict(sc), "articles": [dict(r) for r in rows]}
 
 
 @admin_router.get("/overview")

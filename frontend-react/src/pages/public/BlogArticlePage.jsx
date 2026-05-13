@@ -92,6 +92,7 @@ export default function BlogArticlePage() {
               .blog-article-body ul, .blog-article-body ol { margin: 14px 0; padding-left: 24px; }
               .blog-article-body li { margin: 8px 0; }
               .blog-article-body img { max-width: 100%; height: auto; display: block; margin: 20px auto; border-radius: 10px; }
+              .blog-article-body img.blog-screenshot-missing { display: none; }
               .blog-article-body iframe { max-width: 100%; aspect-ratio: 16/9; width: 100%; height: auto; border: none; border-radius: 10px; margin: 20px 0; }
               .blog-article-body a { color: ${ACCENT}; }
               .blog-article-body blockquote { border-left: 3px solid ${ACCENT}; padding: 4px 16px; margin: 20px 0; color: ${MUTED}; font-style: italic; }
