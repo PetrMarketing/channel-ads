@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import { usePageOnboarding } from '../components/OnboardingTour';
+import BlogCarousel from '../components/BlogCarousel';
 
 const ACCENT = '#4361ee';
 const ACCENT2 = '#7b68ee';
@@ -433,6 +434,7 @@ export default function DashboardPage() {
           .dash-hero-sidecard-value { font-size: 1.7rem !important; }
         }
       `}</style>
+      <BlogCarousel />
     </div>
   );
 }

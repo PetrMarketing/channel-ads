@@ -1,4 +1,4 @@
-import { Outlet, useLocation, Link } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { useState, useCallback, useEffect } from 'react';
 import Header from './Header';
 import Sidebar from './Sidebar';
@@ -82,21 +82,6 @@ export default function Layout() {
               <main className="main-content" style={{ padding: '24px' }}>
                 <Outlet />
               </main>
-              <footer className="app-footer" style={{
-                padding: '20px 24px',
-                borderTop: '1px solid var(--border, #e5e7eb)',
-                background: 'var(--bg-secondary, #fafbfc)',
-                display: 'flex', flexWrap: 'wrap', alignItems: 'center',
-                justifyContent: 'space-between', gap: 12,
-                fontSize: '0.85rem', color: 'var(--text-secondary, #6b7280)',
-              }}>
-                <div>© 2026 MAX Маркетинг</div>
-                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-                  <Link to="/blog" style={{ color: 'inherit', textDecoration: 'none' }}>📖 Блог</Link>
-                  <a href="/promo" style={{ color: 'inherit', textDecoration: 'none' }}>О сервисе</a>
-                  <a href="mailto:hello@pkmarketing.ru" style={{ color: 'inherit', textDecoration: 'none' }}>Поддержка</a>
-                </div>
-              </footer>
             </div>
           </div>
         </div>
