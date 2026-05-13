@@ -796,8 +796,8 @@ function MissingRow({ item, isLast, onDone }) {
       transition: 'background 0.3s',
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a2e', marginBottom: 2 }}>
-          {slugToTitle(item.slug)}
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a2e', marginBottom: 3, lineHeight: 1.4 }}>
+          {item.description_ru || slugToTitle(item.slug)}
         </div>
         <div style={{
           fontFamily: 'ui-monospace, monospace', fontSize: 10, color: '#9ca3af',

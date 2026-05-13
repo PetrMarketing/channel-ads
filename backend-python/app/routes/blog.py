@@ -538,6 +538,12 @@ async def admin_missing_screenshots(admin: Dict = Depends(get_current_admin)):
         list(found.keys()),
     )
     existing = {r["slug"] for r in existing_rows}
+    # Подгружаем человекочитаемые описания (что должно быть на скриншоте)
+    hint_rows = await fetch_all(
+        "SELECT slug, description_ru FROM blog_screenshot_hints WHERE slug = ANY($1::text[])",
+        list(found.keys()),
+    )
+    hints = {r["slug"]: r["description_ru"] for r in hint_rows}
     missing = []
     for slug, articles in found.items():
         if slug in existing:
@@ -546,6 +552,7 @@ async def admin_missing_screenshots(admin: Dict = Depends(get_current_admin)):
             "slug": slug,
             "usage_count": len(articles),
             "articles": articles,
+            "description_ru": hints.get(slug),
         })
     missing.sort(key=lambda x: -x["usage_count"])
     return {"success": True, "missing": missing, "total_missing": len(missing)}
