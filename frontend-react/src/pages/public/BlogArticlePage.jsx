@@ -31,7 +31,7 @@ export default function BlogArticlePage() {
   // Document title — даже если SSR-meta уже подставлен, обновим для SPA-навигации
   useEffect(() => {
     if (article?.meta_title || article?.title) {
-      document.title = `${article.meta_title || article.title} — PK Business`;
+      document.title = `${article.meta_title || article.title} — MAX Маркетинг`;
     }
   }, [article]);
 
@@ -111,7 +111,7 @@ export default function BlogArticlePage() {
                 Хотите попробовать в действии?
               </h3>
               <p style={{ margin: '0 0 16px', fontSize: '0.94rem', color: MUTED }}>
-                Подключите канал MAX к PK Business — 2 дня бесплатно
+                Подключите канал MAX к MAX Маркетинг — 2 дня бесплатно
               </p>
               <a href="/login" onClick={() => trackCta('/login')} style={{
                 display: 'inline-block', padding: '12px 28px', borderRadius: 12,

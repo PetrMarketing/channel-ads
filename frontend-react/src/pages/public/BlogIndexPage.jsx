@@ -45,8 +45,8 @@ export default function BlogIndexPage() {
   // Document title
   useEffect(() => {
     document.title = currentCat
-      ? `${currentCat.name} — Блог PK Business`
-      : 'Блог — PK Business';
+      ? `${currentCat.name} — Блог MAX Маркетинг`
+      : 'Блог — MAX Маркетинг';
   }, [currentCat]);
 
   const pageCount = Math.ceil(total / 12);
@@ -57,7 +57,7 @@ export default function BlogIndexPage() {
 
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 20px 80px' }}>
         <h1 style={{ fontSize: '2rem', fontWeight: 800, color: DARK, margin: '0 0 8px', letterSpacing: '-0.02em' }}>
-          {currentCat ? currentCat.name : 'Блог сервиса PK Business'}
+          {currentCat ? currentCat.name : 'Блог сервиса MAX Маркетинг'}
         </h1>
         <p style={{ fontSize: '0.96rem', color: MUTED, margin: '0 0 28px', maxWidth: 720 }}>
           {currentCat?.description || 'Гайды, кейсы и инструкции по работе с каналами в мессенджере MAX. Как привлекать подписчиков, монетизировать аудиторию и использовать ИИ для роста канала.'}
@@ -130,7 +130,7 @@ export function BlogHeader() {
             </svg>
           </div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: '1.05rem', color: DARK, lineHeight: 1.1 }}>PK Business</div>
+            <div style={{ fontWeight: 800, fontSize: '1.05rem', color: DARK, lineHeight: 1.1 }}>MAX Маркетинг</div>
             <div style={{ fontSize: '0.7rem', color: MUTED }}>Блог</div>
           </div>
         </Link>
