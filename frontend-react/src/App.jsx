@@ -58,6 +58,7 @@ import AdminFunnelPage from './pages/admin/AdminFunnelPage';
 import AdminNotificationsPage from './pages/admin/AdminNotificationsPage';
 import AdminBroadcastsUsersPage from './pages/admin/AdminBroadcastsUsersPage';
 import AdminOnboardingPage from './pages/admin/AdminOnboardingPage';
+import AdminBlogPage from './pages/admin/AdminBlogPage';
 import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
 import AdminSupportPage from './pages/admin/AdminSupportPage';
 
@@ -265,6 +266,7 @@ export default function App() {
         <Route path="notifications" element={<AdminNotificationsPage />} />
         <Route path="broadcasts-users" element={<AdminBroadcastsUsersPage />} />
         <Route path="onboarding" element={<AdminOnboardingPage />} />
+        <Route path="blog" element={<AdminBlogPage />} />
       </Route>
 
       {/* Dashboard (protected) */}
