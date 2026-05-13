@@ -769,11 +769,11 @@ function MissingRow({ item, isLast, onDone }) {
       const fd = new FormData(); fd.append('file', file);
       const up = await adminApi.upload('/upload', fd);
       if (!up?.success) throw new Error('Не удалось загрузить файл');
-      const title = slugToTitle(item.slug);
+      const title = item.description_ru || slugToTitle(item.slug);
       const r = await adminApi.post('/blog/screenshots', {
         slug: item.slug,
         title,
-        alt_text: title,
+        alt_text: item.description_ru || title,
         file_url: up.url,
       });
       if (!r?.success) throw new Error('Не удалось сохранить скриншот');

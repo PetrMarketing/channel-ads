@@ -2174,7 +2174,7 @@ async def serve_subscribe_seo(code: str):
             return default_resp
 
         channel_title = (link.get("channel_title") or "").strip() or "Канал"
-        title = f"{channel_title} — подписка через МАКС Маркетинг"
+        title = f"{channel_title} — подписка через MAX Маркетинг"
         description = f"Подпишитесь на канал «{channel_title}» в национальном мессенджере MAX."
         url = f"https://max.pkmarketing.ru/subscribe/{code}"
         image = link.get("channel_avatar")
@@ -2271,14 +2271,27 @@ async def _inject_blog_meta(html: str, full_path: str) -> str:
         f'"image":"{cover}","mainEntityOfPage":"{page_url}"'
         '}'
     )
+    full_title = f"{title} — MAX Маркетинг"
+    # Удаляем дефолтные мета-теги шаблона, чтобы боты/краулеры брали наши,
+    # а не общие про сервис.
+    html = re.sub(r'<title>[^<]*</title>', '', html, count=1)
+    for attr in ('name="description"', 'name="keywords"',
+                 'property="og:type"', 'property="og:title"',
+                 'property="og:description"', 'property="og:url"',
+                 'property="og:image"',
+                 'name="twitter:title"', 'name="twitter:description"',
+                 'name="twitter:image"',
+                 'itemprop="name"', 'itemprop="description"', 'itemprop="url"'):
+        html = re.sub(rf'<meta\s[^>]*{re.escape(attr)}[^>]*/?>\s*', '', html)
     inject = (
-        f'<title>{title} — PK Business</title>\n'
+        f'<title>{full_title}</title>\n'
         f'<meta name="description" content="{desc}">\n'
         f'<link rel="canonical" href="{page_url}">\n'
         f'<meta property="og:type" content="article">\n'
         f'<meta property="og:title" content="{title}">\n'
         f'<meta property="og:description" content="{desc}">\n'
         f'<meta property="og:url" content="{page_url}">\n'
+        f'<meta property="og:site_name" content="MAX Маркетинг">\n'
         + (f'<meta property="og:image" content="{cover}">\n' if cover else '')
         + f'<meta name="twitter:card" content="summary_large_image">\n'
         f'<meta name="twitter:title" content="{title}">\n'
