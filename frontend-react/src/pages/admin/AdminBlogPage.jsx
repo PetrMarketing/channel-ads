@@ -17,6 +17,7 @@ const STATUS_META = {
 const TABS = [
   { id: 'articles',    label: 'Статьи' },
   { id: 'screenshots', label: 'Скриншоты' },
+  { id: 'missing',     label: 'Нужны скрины' },
   { id: 'categories',  label: 'Категории' },
   { id: 'overview',    label: 'Сводка' },
 ];
@@ -38,6 +39,7 @@ export default function AdminBlogPage() {
       </div>
       {tab === 'articles' && <ArticlesTab />}
       {tab === 'screenshots' && <ScreenshotsTab />}
+      {tab === 'missing' && <MissingScreenshotsTab />}
       {tab === 'categories' && <CategoriesTab />}
       {tab === 'overview' && <OverviewTab />}
     </div>
@@ -713,6 +715,103 @@ function ScreenshotEditor({ editing, onClose, onSaved }) {
       </div>
     </div>
   );
+}
+
+// ============== Missing screenshots ==============
+// Список slug-ов которые упоминаются в статьях, но ещё не загружены.
+// У каждой записи есть встроенная форма загрузки — slug уже подставлен.
+function MissingScreenshotsTab() {
+  const [items, setItems] = useState(null);
+  const load = useCallback(() => {
+    adminApi.get('/blog/missing-screenshots').then(d => {
+      if (d?.success) setItems(d.missing || []);
+    });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  if (items === null) return <div style={emptyState}>Загрузка…</div>;
+  if (items.length === 0) {
+    return (
+      <div style={{ padding: 30, textAlign: 'center' }}>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>🎉</div>
+        <div style={{ fontSize: 14, color: '#16a34a', fontWeight: 600 }}>
+          Все скриншоты из статей загружены
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: '#92400e', background: '#fef3c7', padding: 10, borderRadius: 8, marginBottom: 12 }}>
+        💡 Эти скрин-слуги упоминаются в статьях, но файла ещё нет. Загрузи файл — он автоматически появится во всех статьях из списка.
+        Сверху — самые востребованные (используются в нескольких статьях).
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 14 }}>
+        {items.map(it => (
+          <MissingCard key={it.slug} item={it} onCreated={load} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MissingCard({ item, onCreated }) {
+  const [busy, setBusy] = useState(false);
+  const [title, setTitle] = useState(slugToTitle(item.slug));
+  const [alt, setAlt] = useState('');
+  const fileRef = useRef(null);
+
+  const upload = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const up = await adminApi.upload('/upload', fd);
+      if (!up?.success) throw new Error('upload failed');
+      const r = await adminApi.post('/blog/screenshots', {
+        slug: item.slug,
+        title: title || slugToTitle(item.slug),
+        alt_text: alt || title || slugToTitle(item.slug),
+        file_url: up.url,
+      });
+      if (r?.success) onCreated();
+    } catch (e) { alert(e?.message); }
+    finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  return (
+    <div style={{ ...card, padding: 14 }}>
+      <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, color: '#1a1a2e', marginBottom: 4, fontWeight: 700 }}>
+        {item.slug}
+      </div>
+      <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 10 }}>
+        Используется в <b>{item.usage_count}</b> {plurArticles(item.usage_count)}:
+      </div>
+      <ul style={{ margin: '0 0 12px', padding: '0 0 0 18px', fontSize: 11, color: '#4b5563' }}>
+        {item.articles.slice(0, 3).map(a => (
+          <li key={a.id} style={{ marginBottom: 3, lineHeight: 1.35 }}>{a.title}</li>
+        ))}
+        {item.articles.length > 3 && (
+          <li style={{ fontStyle: 'italic', color: '#9ca3af' }}>и ещё {item.articles.length - 3}…</li>
+        )}
+      </ul>
+
+      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Название (для библиотеки)"
+        style={{ ...input, marginBottom: 8, fontSize: 12 }} />
+      <input value={alt} onChange={e => setAlt(e.target.value)} placeholder="Alt-текст (для SEO)"
+        style={{ ...input, marginBottom: 10, fontSize: 12 }} />
+      <button onClick={() => fileRef.current?.click()} disabled={busy} style={{
+        ...btnPrimary, padding: '10px 14px', fontSize: 13, width: '100%',
+      }}>{busy ? 'Загружаем…' : '📤 Выбрать файл и загрузить'}</button>
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={e => upload(e.target.files?.[0])} />
+    </div>
+  );
+}
+
+function slugToTitle(slug) {
+  return (slug || '').replace(/-/g, ' ').replace(/^./, c => c.toUpperCase());
 }
 
 function plurArticles(n) {

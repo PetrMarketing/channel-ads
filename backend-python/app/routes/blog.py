@@ -511,3 +511,41 @@ async def admin_blog_overview(admin: Dict = Depends(get_current_admin)):
         **(dict(stats) if stats else {}),
         "registrations_from_blog": regs.get("n") if regs else 0,
     }
+
+
+@admin_router.get("/missing-screenshots")
+async def admin_missing_screenshots(admin: Dict = Depends(get_current_admin)):
+    """Скрин-слуги, упомянутые в статьях, которых ещё нет в библиотеке.
+    Возвращает {slug: [{article_id, title, status}]} — отсортировано по
+    числу упоминаний (то, что нужно залить в первую очередь)."""
+    # Собираем все slug-и из статей
+    rows = await fetch_all(
+        """SELECT id, title, slug AS article_slug, status, body
+           FROM blog_articles WHERE body LIKE '%data-screenshot-slug=%'"""
+    )
+    found = {}  # screenshot_slug -> [article info]
+    for r in rows:
+        slugs = set(re.findall(r'data-screenshot-slug=["\']([^"\']+)["\']', r["body"] or ""))
+        for s in slugs:
+            found.setdefault(s, []).append({
+                "id": int(r["id"]), "title": r["title"],
+                "slug": r["article_slug"], "status": r["status"],
+            })
+    if not found:
+        return {"success": True, "missing": []}
+    existing_rows = await fetch_all(
+        "SELECT slug FROM blog_screenshots WHERE slug = ANY($1::text[])",
+        list(found.keys()),
+    )
+    existing = {r["slug"] for r in existing_rows}
+    missing = []
+    for slug, articles in found.items():
+        if slug in existing:
+            continue
+        missing.append({
+            "slug": slug,
+            "usage_count": len(articles),
+            "articles": articles,
+        })
+    missing.sort(key=lambda x: -x["usage_count"])
+    return {"success": True, "missing": missing, "total_missing": len(missing)}
