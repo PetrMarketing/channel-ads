@@ -136,16 +136,26 @@ async def generate_post_text(
     cost = await skill_cost(channel["id"], "text")
     await _charge(user["id"], cost, "ai_post_text", f"Генерация текста поста для «{channel.get('title', tc)}»")
 
-    try:
-        text = await openrouter_chat(full_prompt, model="anthropic/claude-sonnet-4")
-    except Exception as e:
-        await _refund(user["id"], cost, f"Ошибка генерации текста поста: {e}")
-        raise HTTPException(status_code=500, detail=f"Не удалось сгенерировать: {e}")
+    text = ""
+    last_error = None
+    # Каскад моделей — если основной Sonnet 4 ответил пусто, пробуем альтернативу
+    for attempt_model in ("anthropic/claude-sonnet-4", "openai/gpt-4o-mini"):
+        try:
+            text = (await openrouter_chat(full_prompt, model=attempt_model) or "").strip()
+        except Exception as e:
+            last_error = str(e)
+            print(f"[ai-post] generate-text {attempt_model} EXC: {e}")
+            continue
+        if text:
+            if attempt_model != "anthropic/claude-sonnet-4":
+                print(f"[ai-post] fallback succeeded with {attempt_model}")
+            break
+        print(f"[ai-post] generate-text {attempt_model} returned empty; trying next")
 
-    text = (text or "").strip()
     if not text:
-        await _refund(user["id"], cost, "Пустой ответ модели на генерацию текста поста")
-        raise HTTPException(status_code=500, detail="ИИ вернул пустой текст")
+        await _refund(user["id"], cost, f"Пустой ответ ИИ на генерацию поста (last_error={last_error})")
+        detail = "ИИ вернул пустой ответ. Попробуйте переформулировать запрос — например, добавьте больше контекста о теме поста, целевой аудитории и желаемой длине."
+        raise HTTPException(status_code=500, detail=detail)
 
     # Чистим возможные ```html обёртки
     if text.startswith("```html"):

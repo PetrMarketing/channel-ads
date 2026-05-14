@@ -20,11 +20,53 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7,
+        "max_tokens": 4096,
     }
     async with aiohttp.ClientSession() as session:
         async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
             result = await resp.json()
-    return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+    return _extract_text(result, model)
+
+
+def _extract_text(result: dict, model: str = "") -> str:
+    """Достаёт текст из ответа OpenRouter с фолбэками.
+
+    Anthropic-модели через OpenRouter иногда отдают пустой content + текст
+    в reasoning / reasoning_content. Также проверяем error и refusal."""
+    if not isinstance(result, dict):
+        print(f"[OpenRouter] non-dict response: {type(result).__name__}")
+        return ""
+    err = result.get("error")
+    if err:
+        print(f"[OpenRouter] error: {err}")
+        return ""
+    choices = result.get("choices") or []
+    if not choices:
+        print(f"[OpenRouter] no choices. keys={list(result.keys())} body={str(result)[:400]}")
+        return ""
+    msg = choices[0].get("message") or {}
+    # 1) обычный путь
+    content = msg.get("content")
+    if isinstance(content, list):
+        # Vision / parts формат: [{"type":"text","text":"..."}, ...]
+        text_parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+        content = "\n".join(t for t in text_parts if t).strip()
+    if isinstance(content, str) and content.strip():
+        return content
+    # 2) refusal (Anthropic)
+    refusal = msg.get("refusal")
+    if refusal:
+        print(f"[OpenRouter] {model} refusal: {refusal[:200]}")
+        return ""
+    # 3) reasoning поля (Anthropic extended-thinking, OpenAI o1/o3)
+    for k in ("reasoning_content", "reasoning"):
+        v = msg.get(k)
+        if isinstance(v, str) and v.strip():
+            print(f"[OpenRouter] {model} returned text via '{k}' (content was empty)")
+            return v.strip()
+    finish = choices[0].get("finish_reason") or choices[0].get("native_finish_reason")
+    print(f"[OpenRouter] {model} empty content. finish={finish} msg_keys={list(msg.keys())} usage={result.get('usage')}")
+    return ""
 
 
 async def openrouter_chat_messages(messages: list, model: str = None) -> str:
@@ -34,11 +76,11 @@ async def openrouter_chat_messages(messages: list, model: str = None) -> str:
     if not api_key:
         raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {"model": model, "messages": messages, "temperature": 0.4}
+    payload = {"model": model, "messages": messages, "temperature": 0.4, "max_tokens": 4096}
     async with aiohttp.ClientSession() as session:
         async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
             result = await resp.json()
-    return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+    return _extract_text(result, model)
 
 
 async def openrouter_image_gen(prompt: str, photo_base64=None) -> str:
