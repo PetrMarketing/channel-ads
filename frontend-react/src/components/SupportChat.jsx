@@ -1,3 +1,9 @@
+/**
+ * Виджет поддержки в правом нижнем углу.
+ * С 2026-05-14 — древо вопросов (без ИИ): пользователь жмёт кнопки → готовый
+ * ответ или подменю. Кнопка «Позвать оператора» открывает форму с описанием
+ * и скриншотами — создаётся обычный тикет в админке.
+ */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -5,118 +11,41 @@ import { useAuth } from '../contexts/AuthContext';
 export default function SupportChat() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [ticketId, setTicketId] = useState(null);
-  const [ticketStatus, setTicketStatus] = useState('ai');
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const messagesEnd = useRef(null);
-  const pollRef = useRef(null);
-  const fileRef = useRef(null);
+  const [topics, setTopics] = useState(null);     // dict id → node
+  const [path, setPath] = useState(['root']);     // навигационный стек
+  const [mode, setMode] = useState('tree');       // tree | operator | thanks
+  const [operatorTopicId, setOperatorTopicId] = useState(null);
 
-  const scrollBottom = () => {
-    setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-  };
-
-  const loadTicket = useCallback(async () => {
-    try {
-      const data = await api.get('/support/ticket');
-      if (data.success) {
-        setTicketId(data.ticket_id);
-        setTicketStatus(data.status);
-        setMessages(data.messages || []);
-        setLoaded(true);
-      }
-    } catch {}
-  }, []);
-
-  useEffect(() => { if (open && !loaded) loadTicket(); }, [open, loaded, loadTicket]);
-  useEffect(() => { if (open) scrollBottom(); }, [messages, open]);
-
-  // Поллинг новых сообщений + статуса (статус может смениться, если админ
-  // подключился или вернул диалог ИИ — без перезагрузки чата это не видно).
+  // Загружаем древо при первом открытии
   useEffect(() => {
-    if (!open || !ticketId) return;
-    pollRef.current = setInterval(async () => {
-      try {
-        const data = await api.get(`/support/ticket/${ticketId}/messages`);
-        if (data.success) {
-          if (data.messages?.length > messages.length) setMessages(data.messages);
-          if (data.status && data.status !== ticketStatus) setTicketStatus(data.status);
-        }
-      } catch {}
-    }, 6000);
-    return () => clearInterval(pollRef.current);
-  }, [open, ticketId, messages.length, ticketStatus]);
-
-  const handleEscalate = async () => {
-    if (!ticketId || sending) return;
-    setSending(true);
-    try {
-      await api.post(`/support/ticket/${ticketId}/escalate`);
-      setTicketStatus('waiting_human');
-      // Перезапросим сообщения — там должно появиться системное «Пользователь нажал…»
-      const d = await api.get(`/support/ticket/${ticketId}/messages`);
-      if (d?.success) setMessages(d.messages || []);
-    } catch (e) {
-      // ignore
-    } finally { setSending(false); }
-  };
-
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || sending) return;
-    setInput('');
-    setSending(true);
-
-    const tempMsg = { id: Date.now(), role: 'user', content: text, created_at: new Date().toISOString() };
-    setMessages(prev => [...prev, tempMsg]);
-    scrollBottom();
-
-    try {
-      const data = await api.post(`/support/ticket/${ticketId}/message`, { content: text });
-      if (data.success && data.ai_reply) {
-        setMessages(prev => [...prev, { id: Date.now() + 1, role: 'ai', content: data.ai_reply, created_at: new Date().toISOString() }]);
-        if (data.escalated) setTicketStatus('escalated');
-      }
-    } catch {}
-    finally { setSending(false); scrollBottom(); }
-  };
-
-  const handleSendPhoto = async (file) => {
-    if (!file || sending) return;
-    setSending(true);
-
-    const tempMsg = { id: Date.now(), role: 'user', content: 'Отправлено изображение', image_url: URL.createObjectURL(file), created_at: new Date().toISOString() };
-    setMessages(prev => [...prev, tempMsg]);
-    scrollBottom();
-
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('content', input.trim() || '');
-      setInput('');
-      const data = await api.upload(`/support/ticket/${ticketId}/photo`, fd);
-      if (data.success && data.ai_reply) {
-        setMessages(prev => [...prev, { id: Date.now() + 1, role: 'ai', content: data.ai_reply, created_at: new Date().toISOString() }]);
-        if (data.escalated) setTicketStatus('escalated');
-      }
-    } catch {}
-    finally { setSending(false); scrollBottom(); }
-  };
-
-  const handleNewTicket = async () => {
-    if (ticketId && ticketStatus !== 'closed') {
-      try { await api.post(`/support/ticket/${ticketId}/close`); } catch {}
+    if (open && !topics) {
+      api.get('/support/topics').then(d => {
+        if (d?.success) setTopics(d.topics);
+      }).catch(() => {});
     }
-    setLoaded(false); setTicketId(null); setMessages([]); setTicketStatus('ai');
-    loadTicket();
-  };
-
-  const greeting = `Здравствуйте, ${user?.first_name || user?.username || ''}! Какой у Вас вопрос?`;
+  }, [open, topics]);
 
   if (!user) return null;
+
+  const currentId = path[path.length - 1];
+  const node = topics?.[currentId];
+
+  const goTo = (id) => {
+    setPath(p => [...p, id]);
+    setMode('tree');
+  };
+  const goBack = () => {
+    setPath(p => p.length > 1 ? p.slice(0, -1) : p);
+    setMode('tree');
+  };
+  const goRoot = () => {
+    setPath(['root']);
+    setMode('tree');
+  };
+  const callOperator = () => {
+    setOperatorTopicId(currentId !== 'root' ? currentId : null);
+    setMode('operator');
+  };
 
   return (
     <>
@@ -137,164 +66,288 @@ export default function SupportChat() {
         }
       </button>
 
-      {/* Chat panel */}
       {open && (
-        <div style={{
-          position: 'fixed', bottom: 90, right: 24, width: 370, maxHeight: 520,
-          borderRadius: 16, zIndex: 9999, display: 'flex', flexDirection: 'column',
-          background: 'var(--bg-primary, #fff)', border: '1px solid var(--border, #e0e0e0)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.18)', overflow: 'hidden',
-        }}>
-          {/* Header */}
-          <div style={{
-            padding: '14px 16px', background: 'linear-gradient(135deg, #7B68EE, #4F46E5)',
-            color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Поддержка</div>
-              <div style={{ fontSize: '0.72rem', opacity: 0.85, display: 'flex', alignItems: 'center', gap: 6 }}>
-                {ticketStatus === 'closed' ? 'Тикет закрыт'
-                  : ticketStatus === 'answered' ? <><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} /> Чат с админом</>
-                  : ticketStatus === 'escalated' || ticketStatus === 'waiting_human' ? <><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24' }} /> Ожидание человека</>
-                  : 'ИИ-ассистент'}
-              </div>
-            </div>
-            {(ticketStatus === 'closed' || messages.length > 2) && (
-              <button onClick={handleNewTicket} title="Новый диалог" style={{
-                background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6,
-                padding: '4px 8px', cursor: 'pointer', color: '#fff', fontSize: '0.72rem',
-              }}>Новый</button>
-            )}
-          </div>
+        <div style={panelStyle}>
+          <Header onNewChat={goRoot} title={topicTitle(node)} />
 
-          {/* Messages */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', minHeight: 300, maxHeight: 380 }}>
-            {/* Greeting */}
-            <MsgBubble role="ai" content={greeting} />
-
-            {messages.map(msg => (
-              <MsgBubble key={msg.id} role={msg.role} content={msg.content} imageUrl={msg.image_url} />
-            ))}
-
-            {sending && (
-              <div style={{ marginBottom: 10, display: 'flex', gap: 8 }}>
-                <AvatarCircle role="ai" />
-                <div style={{
-                  background: 'var(--bg-glass, #f5f5f5)', borderRadius: '4px 12px 12px 12px',
-                  padding: '8px 16px', fontSize: '0.85rem',
-                }}>
-                  <span style={{ display: 'inline-flex', gap: 3 }}>
-                    <span style={{ animation: 'dotBounce 1.4s infinite 0s' }}>.</span>
-                    <span style={{ animation: 'dotBounce 1.4s infinite 0.2s' }}>.</span>
-                    <span style={{ animation: 'dotBounce 1.4s infinite 0.4s' }}>.</span>
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Кнопка эскалации — показывается пока разговор с ИИ и есть хоть одно сообщение */}
-            {ticketId && ticketStatus === 'ai' && messages.length >= 2 && (
-              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
-                <button
-                  onClick={handleEscalate}
-                  disabled={sending}
-                  style={{
-                    background: 'rgba(251, 191, 36, 0.10)', border: '1px solid rgba(251, 191, 36, 0.40)',
-                    color: '#92400e', padding: '6px 12px', borderRadius: 8,
-                    fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
-                  }}
-                >👤 Позвать человека</button>
-              </div>
-            )}
-
-            {/* Подсказка-плашка когда ждём ответа админа */}
-            {(ticketStatus === 'waiting_human' || ticketStatus === 'escalated') && (
+          {!topics ? (
+            <Body><div style={{ color: '#888', textAlign: 'center', padding: 30 }}>Загрузка…</div></Body>
+          ) : mode === 'operator' ? (
+            <OperatorForm
+              topicId={operatorTopicId}
+              topicTitle={operatorTopicId ? topics[operatorTopicId]?.title : null}
+              onCancel={() => setMode('tree')}
+              onDone={() => setMode('thanks')}
+            />
+          ) : mode === 'thanks' ? (
+            <Body>
               <div style={{
-                marginTop: 10, padding: '10px 12px', borderRadius: 10,
-                background: 'rgba(251, 191, 36, 0.10)', border: '1px solid rgba(251, 191, 36, 0.40)',
-                fontSize: '0.78rem', color: '#92400e', textAlign: 'center', lineHeight: 1.4,
+                background: 'rgba(16, 185, 129, 0.10)', border: '1px solid rgba(16, 185, 129, 0.40)',
+                color: '#065f46', padding: 16, borderRadius: 10, fontSize: 13, lineHeight: 1.5,
               }}>
-                ⏳ Ожидаем ответа специалиста. Обычно отвечаем в течение нескольких часов.
+                ✅ Готово, заявка отправлена!<br/>
+                Оператор свяжется с вами в этом же чате — обычно отвечаем в течение нескольких часов.
               </div>
-            )}
-
-            <div ref={messagesEnd} />
-          </div>
-
-          {/* Input */}
-          {ticketStatus !== 'closed' && (
-            <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border, #e0e0e0)', display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button onClick={() => fileRef.current?.click()} title="Прикрепить фото" style={{
-                background: 'none', border: 'none', cursor: 'pointer', padding: 4, flexShrink: 0, opacity: 0.6,
-              }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-                </svg>
-              </button>
-              <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleSendPhoto(f); e.target.value = ''; }} />
-              <input
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                placeholder="Напишите сообщение..."
-                style={{
-                  flex: 1, border: '1px solid var(--border, #ddd)', borderRadius: 8,
-                  padding: '8px 12px', fontSize: '0.85rem', outline: 'none',
-                  background: 'var(--bg-primary, #fff)', color: 'inherit',
-                }}
+              <div style={{ marginTop: 16, textAlign: 'center' }}>
+                <button onClick={goRoot} style={btnGhostStyle}>← В главное меню</button>
+              </div>
+            </Body>
+          ) : (
+            <Body>
+              <TreeView
+                node={node}
+                topics={topics}
+                pathLen={path.length}
+                onPick={goTo}
+                onBack={goBack}
+                onRoot={goRoot}
+                onCallOperator={callOperator}
               />
-              <button onClick={handleSend} disabled={sending || !input.trim()} style={{
-                background: '#7B68EE', color: '#fff', border: 'none', borderRadius: 8,
-                padding: '8px 14px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600,
-                opacity: sending || !input.trim() ? 0.5 : 1, flexShrink: 0,
-              }}>&#10148;</button>
-            </div>
+            </Body>
           )}
         </div>
       )}
-      <style>{`@keyframes dotBounce { 0%,80%,100% { opacity: 0.3; } 40% { opacity: 1; } }`}</style>
     </>
   );
 }
 
-function AvatarCircle({ role }) {
-  const bg = role === 'admin' ? '#10B981' : 'linear-gradient(135deg, #7B68EE, #4F46E5)';
-  const label = role === 'admin' ? 'A' : role === 'ai' ? '' : '';
+// ────────────────────────────────────────────────────────────────────
+// Подкомпоненты
+// ────────────────────────────────────────────────────────────────────
+
+function Header({ onNewChat, title }) {
   return (
     <div style={{
-      width: 28, height: 28, borderRadius: '50%', flexShrink: 0, background: bg,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '14px 16px', background: 'linear-gradient(135deg, #7B68EE, #4F46E5)',
+      color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     }}>
-      {role === 'admin'
-        ? <span style={{ fontSize: 12, color: '#fff', fontWeight: 700 }}>A</span>
-        : <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-      }
+      <div>
+        <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Поддержка</div>
+        <div style={{ fontSize: '0.72rem', opacity: 0.85 }}>{title || 'MAX Маркетинг'}</div>
+      </div>
+      <button onClick={onNewChat} title="В начало" style={{
+        background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6,
+        padding: '4px 8px', cursor: 'pointer', color: '#fff', fontSize: '0.72rem',
+      }}>В меню</button>
     </div>
   );
 }
 
-function MsgBubble({ role, content, imageUrl }) {
-  const isUser = role === 'user';
+function Body({ children }) {
   return (
-    <div style={{ marginBottom: 10, display: 'flex', gap: 8, flexDirection: isUser ? 'row-reverse' : 'row' }}>
-      {!isUser && <AvatarCircle role={role} />}
-      <div style={{ maxWidth: '80%' }}>
-        {imageUrl && (
-          <img src={imageUrl} alt="" style={{
-            maxWidth: '100%', maxHeight: 180, borderRadius: 8, marginBottom: content ? 4 : 0,
-            display: 'block', cursor: 'pointer',
-          }} onClick={() => window.open(imageUrl, '_blank')} />
-        )}
-        {content && (
-          <div style={{
-            background: isUser ? '#7B68EE' : 'var(--bg-glass, #f5f5f5)',
-            color: isUser ? '#fff' : 'inherit',
-            borderRadius: isUser ? '12px 4px 12px 12px' : '4px 12px 12px 12px',
-            padding: '8px 12px', fontSize: '0.85rem', lineHeight: 1.5, whiteSpace: 'pre-wrap',
-          }}>{content}</div>
-        )}
-      </div>
+    <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', minHeight: 320, maxHeight: 420 }}>
+      {children}
     </div>
   );
 }
+
+function TreeView({ node, topics, pathLen, onPick, onBack, onRoot, onCallOperator }) {
+  if (!node) return <div style={{ color: '#888' }}>Раздел не найден</div>;
+  const hasChildren = (node.children || []).length > 0;
+  const hasAnswer = !!node.answer;
+
+  return (
+    <>
+      {/* Хлебные крошки + Назад */}
+      {pathLen > 1 && (
+        <div style={{ marginBottom: 10, display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button onClick={onBack} style={btnGhostStyle}>← Назад</button>
+          <button onClick={onRoot} style={btnGhostStyle}>↺ В меню</button>
+        </div>
+      )}
+
+      {/* Intro / приветствие узла */}
+      {node.intro && (
+        <div style={{
+          background: 'var(--bg-glass, #f5f5f5)',
+          padding: '10px 14px', borderRadius: '4px 12px 12px 12px',
+          fontSize: 13, lineHeight: 1.5, marginBottom: 12, whiteSpace: 'pre-wrap',
+        }}>{node.intro}</div>
+      )}
+
+      {/* Ответ (если есть) */}
+      {hasAnswer && (
+        <div style={{
+          background: 'var(--bg-glass, #f5f5f5)',
+          padding: '12px 14px', borderRadius: '4px 12px 12px 12px',
+          fontSize: 13, lineHeight: 1.6, marginBottom: 12, whiteSpace: 'pre-wrap',
+        }}>{linkifyText(node.answer)}</div>
+      )}
+
+      {/* Подкнопки */}
+      {hasChildren && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {node.children.map(c => (
+            <button key={c.id} onClick={() => onPick(c.id)} style={btnTopicStyle}>
+              <span style={{ flex: 1 }}>{c.title}</span>
+              <span style={{ opacity: 0.4, fontSize: 14 }}>›</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* «Позвать оператора» — всегда внизу */}
+      <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border, #eee)' }}>
+        <button onClick={onCallOperator} style={btnOperatorStyle}>
+          👨‍💻 Позвать оператора
+        </button>
+        {hasAnswer && (
+          <div style={{ fontSize: 11, color: '#888', textAlign: 'center', marginTop: 6 }}>
+            Не нашли ответ или нужна персональная помощь?
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function OperatorForm({ topicId, topicTitle, onCancel, onDone }) {
+  const [text, setText] = useState('');
+  const [files, setFiles] = useState([]);
+  const [sending, setSending] = useState(false);
+  const fileRef = useRef(null);
+
+  const submit = async () => {
+    if (!text.trim() || sending) return;
+    setSending(true);
+    try {
+      const r = await api.post('/support/operator-request', {
+        description: text.trim(),
+        topic_id: topicId,
+      });
+      if (!r?.success) throw new Error('fail');
+      const ticketId = r.ticket_id;
+      // Отдельно догружаем файлы как фото-сообщения к этому же тикету
+      for (const f of files) {
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('content', '');
+        try { await api.upload(`/support/ticket/${ticketId}/photo`, fd); } catch {}
+      }
+      onDone();
+    } catch (e) {
+      alert('Не удалось отправить, попробуйте ещё раз');
+    } finally { setSending(false); }
+  };
+
+  return (
+    <Body>
+      <button onClick={onCancel} style={{ ...btnGhostStyle, marginBottom: 10 }}>← Отмена</button>
+
+      <div style={{
+        background: 'rgba(67, 97, 238, 0.08)', border: '1px solid rgba(67, 97, 238, 0.20)',
+        padding: 12, borderRadius: 10, marginBottom: 12, fontSize: 13, lineHeight: 1.5,
+      }}>
+        Опишите подробно ваш вопрос и приложите скриншоты (снимок экрана) с вашей проблемой.
+        Оператор ответит в этом же чате.
+        {topicTitle && (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#666' }}>
+            📂 Тема: <b>{topicTitle}</b>
+          </div>
+        )}
+      </div>
+
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        placeholder="Опишите ситуацию: что вы делали, что ожидали увидеть, что произошло вместо этого…"
+        rows={5}
+        style={{
+          width: '100%', padding: 10, border: '1px solid var(--border, #ddd)', borderRadius: 8,
+          fontSize: 13, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box',
+          background: 'var(--bg-primary, #fff)', color: 'inherit', marginBottom: 10,
+        }}
+      />
+
+      {/* Превью прикреплённых */}
+      {files.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {files.map((f, i) => (
+            <div key={i} style={{
+              padding: '4px 8px', borderRadius: 6, background: 'var(--bg-glass, #f5f5f5)',
+              fontSize: 11, display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              📎 {f.name.length > 22 ? f.name.slice(0, 19) + '…' : f.name}
+              <button onClick={() => setFiles(p => p.filter((_, x) => x !== i))}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 14 }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => fileRef.current?.click()} disabled={sending} style={{
+          ...btnGhostStyle, padding: '10px 14px', fontSize: 13,
+        }}>📎 Прикрепить файл</button>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+          onChange={e => {
+            const fs = Array.from(e.target.files || []);
+            setFiles(p => [...p, ...fs].slice(0, 5));
+            e.target.value = '';
+          }} />
+        <button onClick={submit} disabled={sending || !text.trim()} style={{
+          ...btnTopicStyle, background: '#7B68EE', color: '#fff',
+          opacity: (sending || !text.trim()) ? 0.5 : 1, justifyContent: 'center',
+        }}>{sending ? 'Отправляем…' : 'Отправить оператору →'}</button>
+      </div>
+    </Body>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Утилиты
+// ────────────────────────────────────────────────────────────────────
+
+function topicTitle(node) {
+  if (!node) return null;
+  if (node.title) return node.title;
+  return null;
+}
+
+function linkifyText(text) {
+  if (!text) return null;
+  // Превращаем URL в кликабельные ссылки. Текст остаётся в pre-wrap.
+  const re = /\b(https?:\/\/[^\s)]+|max\.pkmarketing\.ru\/[^\s)]*|pkmarketing\.ru\/?[^\s)]*)/g;
+  const parts = [];
+  let last = 0, m;
+  let i = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(<span key={`t${i}`}>{text.slice(last, m.index)}</span>);
+    const url = m[0].startsWith('http') ? m[0] : `https://${m[0]}`;
+    parts.push(<a key={`l${i}`} href={url} target="_blank" rel="noreferrer" style={{ color: '#4361ee' }}>{m[0]}</a>);
+    last = m.index + m[0].length;
+    i++;
+  }
+  if (last < text.length) parts.push(<span key={`t${i}`}>{text.slice(last)}</span>);
+  return parts;
+}
+
+const panelStyle = {
+  position: 'fixed', bottom: 90, right: 24, width: 380, maxHeight: 560,
+  borderRadius: 16, zIndex: 9999, display: 'flex', flexDirection: 'column',
+  background: 'var(--bg-primary, #fff)', border: '1px solid var(--border, #e0e0e0)',
+  boxShadow: '0 8px 32px rgba(0,0,0,0.18)', overflow: 'hidden',
+  color: 'var(--text-primary, #1a1a2e)',
+};
+
+const btnTopicStyle = {
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+  width: '100%', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+  background: 'var(--bg-glass, #f5f5f5)', color: 'inherit',
+  border: '1px solid var(--border, #e5e7eb)',
+  fontSize: 13, lineHeight: 1.4, textAlign: 'left', fontFamily: 'inherit',
+  transition: 'background 0.15s, border-color 0.15s',
+};
+
+const btnOperatorStyle = {
+  display: 'block', width: '100%', padding: '11px 14px', borderRadius: 10, cursor: 'pointer',
+  background: 'linear-gradient(135deg, #7B68EE, #4F46E5)', color: '#fff', border: 'none',
+  fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
+};
+
+const btnGhostStyle = {
+  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px',
+  borderRadius: 6, background: 'transparent', color: 'var(--text-secondary, #6b7280)',
+  border: '1px solid var(--border, #e5e7eb)', cursor: 'pointer',
+  fontSize: 11, fontFamily: 'inherit',
+};

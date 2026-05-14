@@ -1,20 +1,75 @@
-"""Чат поддержки — ИИ-ассистент с эскалацией к специалисту."""
+"""Чат поддержки — древо вопросов с кнопкой «Позвать оператора».
+
+С 2026-05-14 ИИ-ответы отключены: пользователь жмёт кнопки и получает готовые
+ответы из support_topics.py. Если ответ не нашёлся — кнопка «Позвать
+оператора» создаёт обычный тикет с описанием/скриншотами для админа.
+"""
 import os
-import base64
 import secrets
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from fastapi import APIRouter, Request, HTTPException, Depends, UploadFile, File, Form
 
 from ..config import settings
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
 from ..middleware.auth import get_current_user
-from ..services.ai_openrouter import openrouter_chat_messages
-from ..services.support_kb import get_support_prompt
+from ..services.support_topics import get_topics_tree, get_topic
 
 router = APIRouter()
 
-SUPPORT_MODEL = "openai/gpt-4.1-nano"
+
+# ---- Древо вопросов ----
+
+@router.get("/topics")
+async def get_support_topics():
+    """Возвращает всё древо тем разом — фронт хранит локально и навигирует
+    без лишних запросов."""
+    return {"success": True, "topics": get_topics_tree(), "root": "root"}
+
+
+# ---- Создать тикет с выбранной темой и описанием для оператора ----
+
+@router.post("/operator-request")
+async def operator_request(request: Request, user: Dict[str, Any] = Depends(get_current_user)):
+    """Пользователь нажал «Позвать оператора» и описал проблему.
+    Создаём (или переиспользуем) тикет, добавляем сообщение с контекстом
+    выбранной темы, помечаем escalated. Админ увидит в /admin/support."""
+    body = await request.json()
+    description = (body.get("description") or "").strip()
+    topic_id = (body.get("topic_id") or "").strip() or None
+    if not description:
+        raise HTTPException(status_code=400, detail="Опишите вопрос")
+
+    ticket = await fetch_one(
+        "SELECT id FROM support_tickets WHERE user_id=$1 AND status NOT IN ('closed') ORDER BY created_at DESC LIMIT 1",
+        user["id"],
+    )
+    if ticket:
+        ticket_id = int(ticket["id"])
+    else:
+        ticket_id = await execute_returning_id(
+            "INSERT INTO support_tickets (user_id, status, escalated) VALUES ($1, 'waiting_human', TRUE) RETURNING id",
+            user["id"],
+        )
+
+    # Контекст темы (если выбрана) + описание
+    parts = []
+    if topic_id:
+        node = get_topic(topic_id)
+        if node and node.get("title"):
+            parts.append(f"📂 Тема: {node['title']}")
+    parts.append(description)
+    full_text = "\n\n".join(parts)
+
+    await execute(
+        "INSERT INTO support_messages (ticket_id, role, content) VALUES ($1, 'user', $2)",
+        ticket_id, full_text,
+    )
+    await execute(
+        "UPDATE support_tickets SET escalated=TRUE, status='waiting_human', updated_at=NOW() WHERE id=$1",
+        ticket_id,
+    )
+    return {"success": True, "ticket_id": ticket_id}
 
 
 # ---- Получить/создать активный тикет ----
@@ -105,19 +160,12 @@ async def send_message(ticket_id: int, request: Request, user: Dict[str, Any] = 
         "INSERT INTO support_messages (ticket_id, role, content) VALUES ($1, 'user', $2)",
         ticket_id, content,
     )
-    await execute("UPDATE support_tickets SET updated_at=NOW() WHERE id=$1", ticket_id)
-
-    # Если человек уже подключён к диалогу — ИИ молчит, ждём админа.
-    if ticket.get("escalated") or ticket["status"] in ("escalated", "answered", "waiting_human"):
-        # Помечаем что юзер написал и ждёт ответа человека
-        await execute(
-            "UPDATE support_tickets SET status='waiting_human', updated_at=NOW() WHERE id=$1",
-            ticket_id,
-        )
-        return {"success": True, "ai_reply": None, "status": "waiting_human"}
-
-    ai_text, escalated = await _generate_ai_reply(ticket_id)
-    return {"success": True, "ai_reply": ai_text, "escalated": escalated, "status": "escalated" if escalated else "ai"}
+    # Любое сообщение от пользователя = ждёт ответа оператора (ИИ отключён).
+    await execute(
+        "UPDATE support_tickets SET escalated=TRUE, status='waiting_human', updated_at=NOW() WHERE id=$1",
+        ticket_id,
+    )
+    return {"success": True, "ai_reply": None, "status": "waiting_human"}
 
 
 # ---- Загрузить изображение ----
@@ -157,65 +205,12 @@ async def send_photo(
     )
     await execute("UPDATE support_tickets SET updated_at=NOW() WHERE id=$1", ticket_id)
 
-    if ticket.get("escalated") or ticket["status"] in ("escalated", "answered", "waiting_human"):
-        await execute(
-            "UPDATE support_tickets SET status='waiting_human', updated_at=NOW() WHERE id=$1",
-            ticket_id,
-        )
-        return {"success": True, "image_url": image_url, "ai_reply": None, "status": "waiting_human"}
-
-    # Генерируем ответ ИИ с учётом изображения
-    ai_text, escalated = await _generate_ai_reply(ticket_id, image_bytes=file_bytes, image_ext=ext)
-    return {"success": True, "image_url": image_url, "ai_reply": ai_text, "escalated": escalated, "status": "escalated" if escalated else "ai"}
-
-
-# ---- Общая функция генерации ответа ИИ ----
-
-async def _generate_ai_reply(ticket_id: int, image_bytes: bytes = None, image_ext: str = ".png"):
-    """Генерирует ответ ИИ по истории тикета. Возвращает (текст, escalated)."""
-    history = await fetch_all(
-        "SELECT role, content, image_url FROM support_messages WHERE ticket_id=$1 ORDER BY created_at",
+    # Любое сообщение от пользователя = ждёт ответа оператора (ИИ отключён).
+    await execute(
+        "UPDATE support_tickets SET escalated=TRUE, status='waiting_human', updated_at=NOW() WHERE id=$1",
         ticket_id,
     )
-
-    messages = [{"role": "system", "content": get_support_prompt()}]
-    for msg in history:
-        role = "assistant" if msg["role"] in ("ai", "admin") else "user"
-        # Для последнего сообщения с картинкой — отправляем vision
-        if msg.get("image_url") and msg == history[-1] and image_bytes:
-            mime = "image/jpeg" if image_ext.lower() in (".jpg", ".jpeg") else "image/png"
-            b64 = base64.b64encode(image_bytes).decode()
-            messages.append({
-                "role": role,
-                "content": [
-                    {"type": "text", "text": msg["content"] or "Пользователь отправил скриншот."},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-                ],
-            })
-        else:
-            messages.append({"role": role, "content": msg["content"]})
-
-    try:
-        ai_text = await openrouter_chat_messages(messages, model=SUPPORT_MODEL)
-    except Exception as e:
-        print(f"[Support] AI error: {e}")
-        ai_text = "Сейчас позову специалиста, подождите пожалуйста [ESCALATE]"
-
-    escalated = "[ESCALATE]" in ai_text
-    ai_text_clean = ai_text.replace("[ESCALATE]", "").strip()
-
-    await execute(
-        "INSERT INTO support_messages (ticket_id, role, content) VALUES ($1, 'ai', $2)",
-        ticket_id, ai_text_clean,
-    )
-
-    if escalated:
-        await execute(
-            "UPDATE support_tickets SET escalated=TRUE, status='escalated', updated_at=NOW() WHERE id=$1",
-            ticket_id,
-        )
-
-    return ai_text_clean, escalated
+    return {"success": True, "image_url": image_url, "ai_reply": None, "status": "waiting_human"}
 
 
 # ---- Закрыть тикет (пользователь) ----
