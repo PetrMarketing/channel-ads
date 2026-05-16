@@ -19,6 +19,30 @@ router = APIRouter()
 SESSION_COST = 150  # Стоимость сессии в ИИ токенах
 
 
+async def _refund_session(user_id: int, session_id: int, reason: str) -> None:
+    """Возвращает токены, списанные за сессию, если ещё не возвращали.
+    Помечает сессию status='failed' — её больше не пересоздавать, юзер
+    откроет новую (бесплатно с возвращёнными токенами)."""
+    row = await fetch_one(
+        "SELECT tokens_spent, status FROM ai_design_sessions WHERE id=$1 AND user_id=$2",
+        session_id, user_id,
+    )
+    if not row or row.get("status") == "failed":
+        return
+    amount = int(row.get("tokens_spent") or 0)
+    if amount > 0:
+        await execute("UPDATE users SET ai_tokens = ai_tokens + $1 WHERE id=$2", amount, user_id)
+        await execute(
+            "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1,$2,$3,$4)",
+            user_id, -amount, "ai_design_refund", reason[:300],
+        )
+    await execute(
+        "UPDATE ai_design_sessions SET status='failed', updated_at=NOW() WHERE id=$1",
+        session_id,
+    )
+    print(f"[ai-design] refund {amount} tokens to user {user_id}, session {session_id}: {reason[:120]}")
+
+
 async def _get_owned_channel(tc: str, user_id: int):
     """Получить канал пользователя по tracking_code."""
     return await fetch_one(
@@ -215,15 +239,24 @@ async def generate_avatars(tc: str, session_id: int, user: Dict[str, Any] = Depe
         f"На аватарках не должно быть никакого текста, надписей или букв — только графика и иллюстрации."
     )
 
-    # Генерируем и сохраняем изображение
-    image_result = await openrouter_image_gen(prompt, photo_base64)
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    grid_filename = f"ai_grid_{secrets.token_hex(8)}.png"
-    grid_path = os.path.join(settings.UPLOAD_DIR, grid_filename)
-    await save_image_result(image_result, grid_path)
-
-    # Разрезаем на 9 частей
-    avatar_urls = _split_grid(grid_path, settings.UPLOAD_DIR)
+    # Генерируем и сохраняем изображение. При ЛЮБОЙ ошибке генерации
+    # — рефандим ИИ-токены сессии (regen_count не увеличиваем, чтобы
+    # пользователь мог попробовать ещё раз бесплатно).
+    try:
+        image_result = await openrouter_image_gen(prompt, photo_base64)
+        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+        grid_filename = f"ai_grid_{secrets.token_hex(8)}.png"
+        grid_path = os.path.join(settings.UPLOAD_DIR, grid_filename)
+        await save_image_result(image_result, grid_path)
+        avatar_urls = _split_grid(grid_path, settings.UPLOAD_DIR)
+    except HTTPException as e:
+        await _refund_session(user["id"], session_id,
+                              f"Ошибка генерации аватарок: {e.detail}")
+        raise
+    except Exception as e:
+        await _refund_session(user["id"], session_id,
+                              f"Системная ошибка генерации аватарок: {e}")
+        raise HTTPException(status_code=500, detail=f"Не удалось сгенерировать аватарки: {e}")
 
     await execute(
         """UPDATE ai_design_sessions
@@ -258,7 +291,19 @@ async def generate_descriptions(tc: str, session_id: int, user: Dict[str, Any] =
         f"Ответь строго в формате JSON: [\"описание1\", \"описание2\", \"описание3\"]"
     )
 
-    content = await openrouter_chat(prompt)
+    try:
+        content = await openrouter_chat(prompt, model="anthropic/claude-sonnet-4")
+    except HTTPException as e:
+        await _refund_session(user["id"], session_id, f"Ошибка генерации описаний: {e.detail}")
+        raise
+    except Exception as e:
+        await _refund_session(user["id"], session_id, f"Системная ошибка генерации описаний: {e}")
+        raise HTTPException(status_code=500, detail=f"Не удалось сгенерировать описания: {e}")
+
+    content = (content or "").strip()
+    if not content:
+        await _refund_session(user["id"], session_id, "Пустой ответ ИИ при генерации описаний")
+        raise HTTPException(status_code=500, detail="ИИ вернул пустой ответ. Попробуйте создать новую сессию — токены возвращены.")
 
     # Парсим JSON из ответа
     descriptions = []
