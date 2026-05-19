@@ -105,6 +105,7 @@ export default function BillingPage() {
   const [buying, setBuying] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState(12);
   const [email, setEmail] = useState('');
+  const [promoCode, setPromoCode] = useState('');
   const [durations, setDurations] = useState([]);
   const [channelConfigs, setChannelConfigs] = useState({});
   const [billingStatuses, setBillingStatuses] = useState({});
@@ -209,13 +210,14 @@ export default function BillingPage() {
             tracking_code: ch.tracking_code,
             users: channelConfigs[ch.tracking_code]?.users || 1,
           })),
+          promo_code: promoCode || undefined,
         });
         if (data?.success) setServerPrice(data);
       } catch { /* ignore */ }
     }, 300);
     return () => { if (priceFetchTimer.current) clearTimeout(priceFetchTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMonths, selectedChannels.length, JSON.stringify(channelConfigs)]);
+  }, [selectedMonths, selectedChannels.length, JSON.stringify(channelConfigs), promoCode]);
 
   const calcPrice = () => {
     // Если сервер ответил — используем его данные (учитывают уровни каналов)
@@ -260,11 +262,17 @@ export default function BillingPage() {
   const handleBuy = async () => {
     if (!selectedCount) { showToast('Выберите хотя бы один канал', 'error'); return; }
     if (!email || !email.includes('@')) { showToast('Укажите корректный email', 'error'); return; }
+    // Если ввели промо, но он невалиден — отказываем (чтобы юзер либо убрал, либо ввёл правильный)
+    if (promoCode && serverPrice?.promo && !serverPrice.promo.valid) {
+      showToast('Промокод не найден или истёк', 'error');
+      return;
+    }
     setBuying(true);
     try {
       const data = await api.post('/billing/pay-multi', {
         months: selectedMonths, email,
         channels: selectedChannels.map(ch => ({ tracking_code: ch.tracking_code, users: channelConfigs[ch.tracking_code]?.users || 1 })),
+        promo_code: promoCode || undefined,
       });
       if (data.success && (data.payment_url || data.paymentUrl)) {
         window.location.href = data.payment_url || data.paymentUrl;
@@ -680,19 +688,58 @@ export default function BillingPage() {
 
       <section style={{ marginBottom: 16 }}>
         <div style={cardBase}>
-          <div style={{ padding: 18 }}>
-            <label style={labelStyle}>Email для чека</label>
-            <input
-              className="bp-input"
-              style={inputStyle}
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-            />
+          <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Email для чека</label>
+              <input
+                className="bp-input"
+                style={inputStyle}
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Промокод (если есть)</label>
+              <input
+                className="bp-input"
+                style={{ ...inputStyle, textTransform: 'uppercase', fontFamily: 'ui-monospace, monospace' }}
+                placeholder="SUMMER10"
+                value={promoCode}
+                onChange={e => setPromoCode(e.target.value.toUpperCase())}
+              />
+              {promoCode && serverPrice?.promo && (
+                <div style={{ marginTop: 8, fontSize: '0.86rem' }}>
+                  {serverPrice.promo.valid ? (
+                    <span style={{ color: SUCCESS, fontWeight: 600 }}>
+                      ✓ Промокод применён — скидка {serverPrice.promo.discount_type === 'percent'
+                        ? `${serverPrice.promo.discount_value}%`
+                        : `${serverPrice.promo.discount_value.toLocaleString('ru-RU')} ₽`}
+                      {serverPrice.promo.bonus_ai_tokens > 0 && (
+                        <> + бонус <b>{serverPrice.promo.bonus_ai_tokens} ИИ-токенов</b> после оплаты</>
+                      )}
+                    </span>
+                  ) : (
+                    <span style={{ color: DANGER, fontWeight: 600 }}>✗ {serverPrice.promo.reason || 'Промокод недействителен'}</span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </section>
+
+      {serverPrice?.promo?.valid && serverPrice.promo.discount_amount > 0 && (
+        <section style={{ marginBottom: 16 }}>
+          <div style={{ ...cardBase, background: 'rgba(16,185,129,0.05)', border: `1px solid ${SUCCESS}40` }}>
+            <div style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
+              <span>До скидки: <s style={{ color: MUTED }}>{price.total.toLocaleString('ru-RU')} ₽</s></span>
+              <span style={{ color: SUCCESS, fontWeight: 700 }}>−{serverPrice.promo.discount_amount.toLocaleString('ru-RU')} ₽</span>
+            </div>
+          </div>
+        </section>
+      )}
 
       <button
         className="bp-primary"
@@ -709,7 +756,10 @@ export default function BillingPage() {
       >
         {buying ? 'Перенаправление на оплату...' :
           !selectedCount ? 'Выберите каналы' :
-          `Оплатить ${price.total.toLocaleString('ru-RU')} ₽`}
+          (() => {
+            const finalAmount = serverPrice?.total_after_promo ?? price.total;
+            return `Оплатить ${finalAmount.toLocaleString('ru-RU')} ₽`;
+          })()}
       </button>
     </div>
   );

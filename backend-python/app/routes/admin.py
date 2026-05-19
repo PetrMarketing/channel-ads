@@ -2301,3 +2301,93 @@ async def admin_close_ticket(ticket_id: int, admin: Dict = Depends(get_current_a
         "UPDATE support_tickets SET status='closed', updated_at=NOW() WHERE id=$1", ticket_id
     )
     return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Промокоды для тарифа (раздел «Подписки»)
+# ---------------------------------------------------------------------------
+
+@router.get("/promocodes")
+async def list_promocodes(admin: Dict = Depends(get_current_admin)):
+    rows = await fetch_all(
+        """SELECT id, code, description, discount_type, discount_value,
+                  bonus_ai_tokens, max_uses, used_count, valid_until,
+                  is_active, created_at
+           FROM billing_promocodes ORDER BY created_at DESC"""
+    )
+    return {"success": True, "promocodes": [dict(r) for r in rows]}
+
+
+@router.post("/promocodes")
+async def create_promocode(request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    code = (body.get("code") or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="Код обязателен")
+    if await fetch_one("SELECT id FROM billing_promocodes WHERE LOWER(code)=LOWER($1)", code):
+        raise HTTPException(status_code=400, detail="Такой промокод уже существует")
+    discount_type = body.get("discount_type") or "percent"
+    if discount_type not in ("percent", "fixed"):
+        discount_type = "percent"
+    try:
+        discount_value = float(body.get("discount_value") or 0)
+        bonus_tokens = int(body.get("bonus_ai_tokens") or 0)
+        max_uses = int(body["max_uses"]) if body.get("max_uses") not in (None, "", 0) else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Числовые поля заполнены неверно")
+    if discount_type == "percent" and not (0 <= discount_value <= 100):
+        raise HTTPException(status_code=400, detail="Процент должен быть от 0 до 100")
+
+    pid = await execute_returning_id(
+        """INSERT INTO billing_promocodes
+            (code, description, discount_type, discount_value, bonus_ai_tokens,
+             max_uses, valid_until, is_active, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id""",
+        code, body.get("description") or "", discount_type, discount_value,
+        bonus_tokens, max_uses, body.get("valid_until") or None,
+        bool(body.get("is_active", True)), admin.get("id"),
+    )
+    await log_admin_action(admin, "promocode_create", "promocode", pid, {"code": code})
+    return {"success": True, "id": pid}
+
+
+@router.put("/promocodes/{pid}")
+async def update_promocode(pid: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    body = await request.json()
+    fields, params = [], []
+    idx = 1
+    for key in ("code", "description", "discount_type", "discount_value",
+                "bonus_ai_tokens", "max_uses", "valid_until", "is_active"):
+        if key in body:
+            val = body[key]
+            if key == "code":
+                val = (val or "").strip().upper()
+                if not val:
+                    raise HTTPException(status_code=400, detail="Код не может быть пустым")
+            if key in ("discount_value",):
+                val = float(val or 0)
+            if key in ("bonus_ai_tokens",):
+                val = int(val or 0)
+            if key == "max_uses":
+                val = int(val) if val not in (None, "", 0) else None
+            if key == "valid_until" and val == "":
+                val = None
+            if key == "is_active":
+                val = bool(val)
+            fields.append(f"{key} = ${idx}")
+            params.append(val)
+            idx += 1
+    if not fields:
+        return {"success": True}
+    fields.append("updated_at = NOW()")
+    params.append(pid)
+    await execute(f"UPDATE billing_promocodes SET {', '.join(fields)} WHERE id = ${idx}", *params)
+    await log_admin_action(admin, "promocode_update", "promocode", pid, body)
+    return {"success": True}
+
+
+@router.delete("/promocodes/{pid}")
+async def delete_promocode(pid: int, admin: Dict = Depends(get_current_admin)):
+    await execute("DELETE FROM billing_promocodes WHERE id = $1", pid)
+    await log_admin_action(admin, "promocode_delete", "promocode", pid)
+    return {"success": True}

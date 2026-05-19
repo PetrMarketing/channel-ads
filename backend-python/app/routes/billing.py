@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ..middleware.auth import get_current_user, get_channel_for_user
 from ..config import settings
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
+from ..services.promocodes import resolve_promo, calculate_discount, consume_promo
 
 router = APIRouter()
 public_router = APIRouter()
@@ -272,6 +273,33 @@ async def tinkoff_webhook(request: Request):
         except Exception as e:
             print(f"[Billing] Referral commission error: {e}")
 
+        # Применение промокода: начисляем бонусные ИИ-токены + инкремент
+        # счётчика использований. Promo-данные кладутся только на первый
+        # pay в multi-серии (см. /pay-multi), поэтому отрабатываем разово.
+        try:
+            for pay, billing in pay_with_billing:
+                promo_code = pay.get("promo_code")
+                if not promo_code:
+                    continue
+                bonus = int(pay.get("promo_bonus_tokens") or 0)
+                # user_id берём из channel этого pay
+                channel_id_for_user = (billing.get("channel_id") if billing else None) or pay.get("channel_id")
+                ch_user = await fetch_one("SELECT user_id FROM channels WHERE id = $1", channel_id_for_user)
+                if ch_user and bonus > 0:
+                    await execute(
+                        "UPDATE users SET ai_tokens = ai_tokens + $1 WHERE id = $2",
+                        bonus, ch_user["user_id"],
+                    )
+                    await execute(
+                        "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1, $2, $3, $4)",
+                        ch_user["user_id"], -bonus, "promo_bonus", f"Бонус по промокоду {promo_code}",
+                    )
+                promo_row = await fetch_one("SELECT id FROM billing_promocodes WHERE LOWER(code) = LOWER($1)", promo_code)
+                if promo_row:
+                    await consume_promo(promo_row["id"])
+        except Exception as e:
+            print(f"[Billing] Promo apply error: {e}")
+
     elif status == "REJECTED" or status == "CANCELED":
         all_payments = await fetch_all(
             "SELECT * FROM billing_payments WHERE payment_id = $1", order_id
@@ -384,7 +412,28 @@ async def calculate_multi(request: Request, user=Depends(get_current_user)):
         resolved.append({"channel": ch, "users": ch_users, "tracking_code": tc})
 
     data = await calculate_multi_price(resolved, months)
-    return {"success": True, **data}
+
+    # Применяем промокод (если ввели и валидный)
+    promo_code_raw = (body.get("promo_code") or "").strip()
+    promo_info = None
+    if promo_code_raw:
+        promo = await resolve_promo(promo_code_raw)
+        if promo:
+            discount = calculate_discount(promo, float(data.get("total", 0)))
+            promo_info = {
+                "valid": True,
+                "code": promo["code"],
+                "discount_amount": discount,
+                "discount_type": promo.get("discount_type"),
+                "discount_value": float(promo.get("discount_value") or 0),
+                "bonus_ai_tokens": int(promo.get("bonus_ai_tokens") or 0),
+                "description": promo.get("description") or "",
+            }
+            data["total_after_promo"] = round(float(data.get("total", 0)) - discount, 2)
+        else:
+            promo_info = {"valid": False, "code": promo_code_raw, "reason": "Промокод не найден или истёк"}
+
+    return {"success": True, **data, "promo": promo_info}
 
 
 @router.post("/pay-multi")
@@ -422,11 +471,26 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
     pricing_by_ch = {it["channel_id"]: it for it in pricing["items"]}
     total = pricing["total"]
 
+    # Применяем промокод (если есть и валиден)
+    promo_code_raw = (body.get("promo_code") or "").strip()
+    promo_obj = await resolve_promo(promo_code_raw) if promo_code_raw else None
+    promo_discount_total = 0.0
+    promo_bonus_tokens = 0
+    if promo_obj:
+        promo_discount_total = calculate_discount(promo_obj, float(total))
+        promo_bonus_tokens = int(promo_obj.get("bonus_ai_tokens") or 0)
+        total = round(float(total) - promo_discount_total, 2)
+    elif promo_code_raw:
+        raise HTTPException(status_code=400, detail="Промокод не найден или истёк")
+
     billing_ids = []
     channel_amounts = []
+    # Скидка от промо распределяется пропорционально по каналам
+    raw_total = pricing["total"] or 1
     for r in resolved:
         ch = r["channel"]
-        ch_amount = pricing_by_ch[ch["id"]]["amount"]
+        raw_amount = pricing_by_ch[ch["id"]]["amount"]
+        ch_amount = round(raw_amount * (total / raw_total), 2) if promo_discount_total > 0 else raw_amount
         billing = await fetch_one("SELECT * FROM channel_billing WHERE channel_id = $1", ch["id"])
         if not billing:
             billing_id = await execute_returning_id(
@@ -443,10 +507,17 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
         channel_amounts.append(ch_amount)
 
     payment_ids = []
-    for bid, ch_amount in zip(billing_ids, channel_amounts):
+    for i, (bid, ch_amount) in enumerate(zip(billing_ids, channel_amounts)):
+        # Промо-метаданные кладём ТОЛЬКО на первый payment записи multi-серии,
+        # чтобы webhook начислил bonus_tokens и инкрементировал счётчик один раз.
+        promo_code_val = promo_obj["code"] if (promo_obj and i == 0) else None
+        promo_disc_val = promo_discount_total if (promo_obj and i == 0) else 0
+        promo_bonus_val = promo_bonus_tokens if (promo_obj and i == 0) else 0
         pid = await execute_returning_id(
-            "INSERT INTO billing_payments (channel_billing_id, amount, months) VALUES ($1, $2, $3) RETURNING id",
-            bid, ch_amount, months,
+            """INSERT INTO billing_payments
+                (channel_billing_id, amount, months, promo_code, promo_discount, promo_bonus_tokens)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING id""",
+            bid, ch_amount, months, promo_code_val, promo_disc_val, promo_bonus_val,
         )
         payment_ids.append(pid)
 
