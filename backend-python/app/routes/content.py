@@ -221,6 +221,49 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
     if not post:
         raise HTTPException(status_code=404, detail="Пост не найден")
 
+    # Атомарный захват для предотвращения race condition с funnel_processor,
+    # который сканирует scheduled-посты с истёкшим scheduled_at и отправляет
+    # их параллельно. Без этого guard: юзер жмёт «Опубликовать» одновременно
+    # с тиком шедулера → оба отправляют → дубликат + 500 у юзера.
+    if post.get("status") in ("scheduled", "draft"):
+        claim = await fetch_one(
+            """UPDATE content_posts SET status = 'publishing'
+               WHERE id = $1 AND status IN ('scheduled', 'draft')
+               RETURNING id""",
+            post_id,
+        )
+        if not claim:
+            # Шедулер уже забрал — небольшой полл, чтобы он успел доехать
+            import asyncio as _asyncio
+            for _ in range(10):
+                await _asyncio.sleep(0.3)
+                cur = await fetch_one(
+                    "SELECT status, telegram_message_id FROM content_posts WHERE id = $1", post_id
+                )
+                if cur and cur.get("status") == "published":
+                    return {"success": True, "messageId": cur.get("telegram_message_id"), "edited": False, "by_scheduler": True}
+                if cur and cur.get("status") in ("scheduled", "draft", "publishing"):
+                    continue
+            # Если за 3 сек так и не опубликовался — считаем что что-то пошло не так
+            # у шедулера. Сбрасываем publishing → scheduled, чтобы пост не завис.
+            await execute(
+                "UPDATE content_posts SET status = 'scheduled' WHERE id = $1 AND status = 'publishing'",
+                post_id,
+            )
+            raise HTTPException(status_code=409, detail="Пост сейчас публикуется автоматически — обновите страницу через несколько секунд.")
+    elif post.get("status") == "publishing":
+        # Кто-то (шедулер или предыдущий /publish) уже отправляет — ждём
+        import asyncio as _asyncio
+        for _ in range(10):
+            await _asyncio.sleep(0.3)
+            cur = await fetch_one(
+                "SELECT status, telegram_message_id FROM content_posts WHERE id = $1", post_id
+            )
+            if cur and cur.get("status") == "published":
+                return {"success": True, "messageId": cur.get("telegram_message_id"), "edited": False, "by_scheduler": True}
+        raise HTTPException(status_code=409, detail="Пост сейчас публикуется — обновите страницу через несколько секунд.")
+    # status='published' — пройдёт ниже в ветку edit existing message
+
     # Restore file from DB if missing on disk
     from ..services.file_storage import ensure_file
     post_file_path = ensure_file(post.get("file_path"), post.get("file_data"))
@@ -297,6 +340,11 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
                 max_file_token=post.get("max_file_token"),
             )
         except Exception as e:
+            # Откат захвата чтобы шедулер мог попробовать ещё раз
+            await execute(
+                "UPDATE content_posts SET status = 'scheduled' WHERE id = $1 AND status = 'publishing'",
+                post_id,
+            )
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
         msg_id = None
