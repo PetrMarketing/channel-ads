@@ -1268,6 +1268,62 @@ async def get_channel(channel_id: int, admin: Dict = Depends(get_current_admin))
     return {"success": True, "channel": ch, "staff": staff}
 
 
+@router.post("/channels/{channel_id}/staff")
+async def add_channel_staff(channel_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    """Назначить пользователя как сотрудника канала по PKid (users.id).
+    Роль по умолчанию — admin (полные права)."""
+    body = await request.json()
+    try:
+        user_id = int(body.get("user_id") or body.get("pk_id") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="PKid должен быть числом")
+    if user_id <= 0:
+        raise HTTPException(status_code=400, detail="Введите PKid")
+    role = (body.get("role") or "admin").lower()
+    if role not in ("admin", "editor", "advertiser"):
+        role = "admin"
+
+    # Проверки
+    channel = await fetch_one("SELECT id, user_id, title FROM channels WHERE id=$1", channel_id)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    user = await fetch_one("SELECT id, username, first_name FROM users WHERE id=$1", user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"Пользователь с PKid {user_id} не найден")
+    if user["id"] == channel["user_id"]:
+        raise HTTPException(status_code=400, detail="Этот пользователь — владелец канала")
+    existing = await fetch_one(
+        "SELECT id, role FROM channel_staff WHERE channel_id=$1 AND user_id=$2",
+        channel_id, user_id,
+    )
+    if existing:
+        # Обновляем роль (idempotent)
+        await execute("UPDATE channel_staff SET role=$1 WHERE id=$2", role, existing["id"])
+        await log_admin_action(admin, "channel_staff_role_change", "channel", channel_id,
+                               {"user_id": user_id, "new_role": role})
+        return {"success": True, "id": existing["id"], "updated": True}
+    sid = await execute_returning_id(
+        "INSERT INTO channel_staff (channel_id, user_id, role) VALUES ($1, $2, $3) RETURNING id",
+        channel_id, user_id, role,
+    )
+    await log_admin_action(admin, "channel_staff_add", "channel", channel_id,
+                           {"user_id": user_id, "role": role, "channel_title": channel.get("title")})
+    return {"success": True, "id": sid, "added": True}
+
+
+@router.delete("/channels/{channel_id}/staff/{user_id}")
+async def remove_channel_staff(channel_id: int, user_id: int, admin: Dict = Depends(get_current_admin)):
+    """Снять админа/сотрудника с канала."""
+    deleted = await fetch_one(
+        "DELETE FROM channel_staff WHERE channel_id=$1 AND user_id=$2 RETURNING id",
+        channel_id, user_id,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден на этом канале")
+    await log_admin_action(admin, "channel_staff_remove", "channel", channel_id, {"user_id": user_id})
+    return {"success": True}
+
+
 def _strip_binary(rows):
     """Remove binary fields (file_data etc.) from query results for JSON serialization."""
     clean = []

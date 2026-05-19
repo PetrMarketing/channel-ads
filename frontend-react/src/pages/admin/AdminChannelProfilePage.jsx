@@ -398,20 +398,9 @@ export default function AdminChannelProfilePage() {
         </div>
       </div>
 
-      {/* Staff */}
-      {staff.length > 0 && (
-        <div style={{ ...tableWrap, marginBottom: 20 }}>
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0' }}>
-            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#1a1a2e' }}>Сотрудники</h4>
-          </div>
-          <table style={tableStyle}>
-            <thead><tr><th style={th}>Имя</th><th style={th}>Username</th><th style={th}>Роль</th></tr></thead>
-            <tbody>{staff.map(s => (
-              <tr key={s.id}><td style={{ ...td, fontWeight: 600 }}>{s.first_name || '—'}</td><td style={td}>{s.username || '—'}</td><td style={td}><span style={statusBadge(s.role === 'admin' ? 'active' : 'draft')}>{s.role}</span></td></tr>
-            ))}</tbody>
-          </table>
-        </div>
-      )}
+      {/* Админы канала */}
+      <ChannelStaffBlock channelId={channelId} initialStaff={staff || []}
+        onChange={() => adminApi.get(`/channels/${channelId}`).then(d => { if (d) setData(d); })} />
 
       {/* Tabs */}
       <div style={{ borderBottom: '1px solid #e5e7eb', marginBottom: 20, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -507,6 +496,112 @@ export default function AdminChannelProfilePage() {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─── Админы канала: список + добавление по PKid + удаление ───
+function ChannelStaffBlock({ channelId, initialStaff, onChange }) {
+  const [staff, setStaff] = React.useState(initialStaff || []);
+  const [pkid, setPkid] = React.useState('');
+  const [role, setRole] = React.useState('admin');
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  React.useEffect(() => { setStaff(initialStaff || []); }, [initialStaff]);
+
+  const add = async () => {
+    const id = parseInt(pkid, 10);
+    if (!id || id <= 0) { setError('Введите PKid (число)'); return; }
+    setBusy(true); setError('');
+    try {
+      const r = await adminApi.post(`/channels/${channelId}/staff`, { user_id: id, role });
+      if (!r?.success) throw new Error('fail');
+      setPkid('');
+      if (onChange) onChange();
+    } catch (e) {
+      setError(e?.message || 'Не удалось добавить');
+    } finally { setBusy(false); }
+  };
+
+  const remove = async (userId, displayName) => {
+    if (!confirm(`Снять ${displayName || `PKid ${userId}`} с этого канала?`)) return;
+    try {
+      await adminApi.delete(`/channels/${channelId}/staff/${userId}`);
+      if (onChange) onChange();
+    } catch (e) { alert(e?.message); }
+  };
+
+  return (
+    <div style={{ ...tableWrap, marginBottom: 20 }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#1a1a2e' }}>
+          Админы канала {staff.length > 0 && <span style={{ color: '#999', fontWeight: 400 }}>· {staff.length}</span>}
+        </h4>
+      </div>
+
+      {/* Форма добавления */}
+      <div style={{ padding: 16, borderBottom: '1px solid #f9fafb', background: '#fafbfc' }}>
+        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8 }}>
+          Добавить сотрудника по <b>PKid</b> (числовой ID пользователя — виден в его «Профиле»)
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <input value={pkid} onChange={e => { setPkid(e.target.value.replace(/\D/g, '')); setError(''); }}
+            onKeyDown={e => { if (e.key === 'Enter') add(); }}
+            placeholder="PKid (например 12345)"
+            disabled={busy}
+            style={{
+              padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb',
+              fontSize: 13, width: 180, fontFamily: 'ui-monospace, monospace',
+              outline: 'none',
+            }} />
+          <select value={role} onChange={e => setRole(e.target.value)} disabled={busy}
+            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13 }}>
+            <option value="admin">Администратор</option>
+            <option value="editor">Редактор</option>
+            <option value="advertiser">Рекламодатель</option>
+          </select>
+          <button onClick={add} disabled={busy || !pkid}
+            style={{
+              padding: '8px 18px', borderRadius: 8, border: 'none',
+              background: pkid && !busy ? '#4361ee' : '#e5e7eb',
+              color: pkid && !busy ? '#fff' : '#9ca3af',
+              fontSize: 13, fontWeight: 600,
+              cursor: pkid && !busy ? 'pointer' : 'not-allowed',
+            }}>{busy ? 'Добавляем…' : '+ Добавить'}</button>
+        </div>
+        {error && <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{error}</div>}
+      </div>
+
+      {/* Список */}
+      {staff.length === 0 ? (
+        <div style={{ padding: '24px 16px', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+          На канале пока нет дополнительных админов
+        </div>
+      ) : (
+        <table style={tableStyle}>
+          <thead><tr>
+            <th style={th}>PKid</th><th style={th}>Имя</th><th style={th}>Username</th>
+            <th style={th}>Роль</th><th style={th}></th>
+          </tr></thead>
+          <tbody>{staff.map(s => {
+            const displayName = s.first_name || s.username || `PKid ${s.user_id}`;
+            return (
+              <tr key={s.id}>
+                <td style={{ ...td, fontFamily: 'ui-monospace, monospace' }}>{s.user_id}</td>
+                <td style={{ ...td, fontWeight: 600 }}>{s.first_name || '—'}</td>
+                <td style={td}>{s.username || '—'}</td>
+                <td style={td}><span style={statusBadge(s.role === 'admin' ? 'active' : 'draft')}>{s.role}</span></td>
+                <td style={{ ...td, textAlign: 'right' }}>
+                  <button onClick={() => remove(s.user_id, displayName)} title="Снять с канала"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 16, padding: 4 }}>×</button>
+                </td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
       )}
     </div>
   );
