@@ -419,7 +419,7 @@ async def calculate_multi(request: Request, user=Depends(get_current_user)):
     if promo_code_raw:
         promo = await resolve_promo(promo_code_raw, months=months)
         if promo and not promo.get("_wrong_months"):
-            discount = calculate_discount(promo, float(data.get("total", 0)))
+            discount = calculate_discount(promo, float(data.get("total", 0)), channels_count=len(resolved))
             promo_info = {
                 "valid": True,
                 "code": promo["code"],
@@ -490,7 +490,7 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
             detail=f"Промокод действует только для сроков: {', '.join(f'{m} мес.' for m in applicable)}",
         )
     if promo_obj:
-        promo_discount_total = calculate_discount(promo_obj, float(total))
+        promo_discount_total = calculate_discount(promo_obj, float(total), channels_count=len(resolved))
         promo_bonus_tokens = int(promo_obj.get("bonus_ai_tokens") or 0)
         total = round(float(total) - promo_discount_total, 2)
     elif promo_code_raw:

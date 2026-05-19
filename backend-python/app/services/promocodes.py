@@ -39,8 +39,19 @@ async def resolve_promo(code: str, months: Optional[int] = None) -> Optional[dic
     return dict(promo)
 
 
-def calculate_discount(promo: dict, base_amount: float) -> float:
-    """Возвращает размер скидки в рублях."""
+def calculate_discount(promo: dict, base_amount: float, channels_count: int = 1) -> float:
+    """Возвращает размер скидки в рублях.
+
+    Для percent — % от base_amount (равно для любого количества каналов).
+    Для fixed — нисходящая логика как у multi-channel discount:
+      1-й канал — полная скидка X ₽
+      2-й — X * 0.9
+      3-й — X * 0.8
+      ...
+      10-й — X * 0.1 (минимум 10% от исходной)
+    Итог: X * sum(max(0.1, 1 - i*0.1) for i in range(N))
+    Не уходит ниже base_amount.
+    """
     if not promo:
         return 0.0
     dtype = (promo.get("discount_type") or "percent").lower()
@@ -49,7 +60,11 @@ def calculate_discount(promo: dict, base_amount: float) -> float:
         return 0.0
     if dtype == "percent":
         return round(min(base_amount, base_amount * dval / 100.0), 2)
-    return round(min(base_amount, dval), 2)
+    # fixed: нисходящая
+    n = max(1, int(channels_count or 1))
+    multiplier = sum(max(0.1, 1 - i * 0.1) for i in range(n))
+    total_discount = dval * multiplier
+    return round(min(base_amount, total_discount), 2)
 
 
 async def consume_promo(promo_id: int) -> None:
