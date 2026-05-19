@@ -105,7 +105,8 @@ export default function BillingPage() {
   const [buying, setBuying] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState(12);
   const [email, setEmail] = useState('');
-  const [promoCode, setPromoCode] = useState('');
+  const [promoCode, setPromoCode] = useState('');       // что юзер ввёл
+  const [appliedPromo, setAppliedPromo] = useState(''); // что отправляется на сервер
   const [durations, setDurations] = useState([]);
   const [channelConfigs, setChannelConfigs] = useState({});
   const [billingStatuses, setBillingStatuses] = useState({});
@@ -210,14 +211,14 @@ export default function BillingPage() {
             tracking_code: ch.tracking_code,
             users: channelConfigs[ch.tracking_code]?.users || 1,
           })),
-          promo_code: promoCode || undefined,
+          promo_code: appliedPromo || undefined,
         });
         if (data?.success) setServerPrice(data);
       } catch { /* ignore */ }
     }, 300);
     return () => { if (priceFetchTimer.current) clearTimeout(priceFetchTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMonths, selectedChannels.length, JSON.stringify(channelConfigs), promoCode]);
+  }, [selectedMonths, selectedChannels.length, JSON.stringify(channelConfigs), appliedPromo]);
 
   const calcPrice = () => {
     // Если сервер ответил — используем его данные (учитывают уровни каналов)
@@ -262,9 +263,9 @@ export default function BillingPage() {
   const handleBuy = async () => {
     if (!selectedCount) { showToast('Выберите хотя бы один канал', 'error'); return; }
     if (!email || !email.includes('@')) { showToast('Укажите корректный email', 'error'); return; }
-    // Если ввели промо, но он невалиден — отказываем (чтобы юзер либо убрал, либо ввёл правильный)
-    if (promoCode && serverPrice?.promo && !serverPrice.promo.valid) {
-      showToast('Промокод не найден или истёк', 'error');
+    // Если применён промо, но он невалиден — отказываем
+    if (appliedPromo && serverPrice?.promo && !serverPrice.promo.valid) {
+      showToast(serverPrice.promo.reason || 'Промокод не действителен', 'error');
       return;
     }
     setBuying(true);
@@ -272,7 +273,7 @@ export default function BillingPage() {
       const data = await api.post('/billing/pay-multi', {
         months: selectedMonths, email,
         channels: selectedChannels.map(ch => ({ tracking_code: ch.tracking_code, users: channelConfigs[ch.tracking_code]?.users || 1 })),
-        promo_code: promoCode || undefined,
+        promo_code: appliedPromo || undefined,
       });
       if (data.success && (data.payment_url || data.paymentUrl)) {
         window.location.href = data.payment_url || data.paymentUrl;
@@ -702,14 +703,35 @@ export default function BillingPage() {
             </div>
             <div>
               <label style={labelStyle}>Промокод (если есть)</label>
-              <input
-                className="bp-input"
-                style={{ ...inputStyle, textTransform: 'uppercase', fontFamily: 'ui-monospace, monospace' }}
-                placeholder="SUMMER10"
-                value={promoCode}
-                onChange={e => setPromoCode(e.target.value.toUpperCase())}
-              />
-              {promoCode && serverPrice?.promo && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="bp-input"
+                  style={{ ...inputStyle, textTransform: 'uppercase', fontFamily: 'ui-monospace, monospace', flex: 1 }}
+                  placeholder="SUMMER10"
+                  value={promoCode}
+                  onChange={e => setPromoCode(e.target.value.toUpperCase())}
+                  onKeyDown={e => { if (e.key === 'Enter' && promoCode.trim()) { e.preventDefault(); setAppliedPromo(promoCode.trim()); } }}
+                  disabled={!!appliedPromo}
+                />
+                {appliedPromo ? (
+                  <button onClick={() => { setAppliedPromo(''); setPromoCode(''); }}
+                    style={{
+                      padding: '0 16px', borderRadius: 10, border: `1px solid ${BORDER}`,
+                      background: '#fff', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, color: MUTED,
+                    }}>× Сбросить</button>
+                ) : (
+                  <button onClick={() => promoCode.trim() && setAppliedPromo(promoCode.trim())}
+                    disabled={!promoCode.trim()}
+                    style={{
+                      padding: '0 18px', borderRadius: 10, border: 'none',
+                      background: promoCode.trim() ? '#4361ee' : '#e5e7eb',
+                      color: promoCode.trim() ? '#fff' : '#9ca3af',
+                      cursor: promoCode.trim() ? 'pointer' : 'not-allowed',
+                      fontSize: '0.85rem', fontWeight: 600,
+                    }}>Применить</button>
+                )}
+              </div>
+              {appliedPromo && serverPrice?.promo && (
                 <div style={{ marginTop: 8, fontSize: '0.86rem' }}>
                   {serverPrice.promo.valid ? (
                     <span style={{ color: SUCCESS, fontWeight: 600 }}>

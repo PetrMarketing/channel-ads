@@ -57,6 +57,7 @@ export default function AdminPromoCodesPage() {
                 <th style={th}>Код</th>
                 <th style={th}>Скидка</th>
                 <th style={th}>Бонус</th>
+                <th style={th}>Применим к тарифам</th>
                 <th style={th}>Использовано</th>
                 <th style={th}>Срок</th>
                 <th style={th}>Статус</th>
@@ -77,6 +78,15 @@ export default function AdminPromoCodesPage() {
                     {p.bonus_ai_tokens > 0
                       ? <span style={badge('#e0e7ff', '#3730a3')}>+{p.bonus_ai_tokens} ток.</span>
                       : <span style={{ color: '#9ca3af' }}>—</span>}
+                  </td>
+                  <td style={td}>
+                    {p.applicable_months && p.applicable_months.length > 0
+                      ? <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {p.applicable_months.map(m => (
+                            <span key={m} style={badge('#fef3c7', '#92400e')}>{m} мес.</span>
+                          ))}
+                        </div>
+                      : <span style={{ color: '#9ca3af', fontSize: 11 }}>все сроки</span>}
                   </td>
                   <td style={td}>
                     {p.used_count}{p.max_uses ? ` / ${p.max_uses}` : <span style={{ color: '#9ca3af' }}> (∞)</span>}
@@ -126,6 +136,7 @@ function PromoEditor({ editing, onClose, onSaved }) {
     max_uses: editing.max_uses ?? '',
     valid_until: editing.valid_until ? editing.valid_until.slice(0, 16) : '',
     is_active: editing.is_active !== false,
+    applicable_months: editing.applicable_months || [],
   });
   const [busy, setBusy] = useState(false);
 
@@ -140,6 +151,7 @@ function PromoEditor({ editing, onClose, onSaved }) {
         bonus_ai_tokens: Number(form.bonus_ai_tokens) || 0,
         max_uses: form.max_uses === '' ? null : Number(form.max_uses),
         valid_until: form.valid_until || null,
+        applicable_months: form.applicable_months.length > 0 ? form.applicable_months : null,
       };
       if (form.id) await adminApi.put(`/promocodes/${form.id}`, payload);
       else await adminApi.post('/promocodes', payload);
@@ -174,6 +186,38 @@ function PromoEditor({ editing, onClose, onSaved }) {
 
         <Field label="Бонусных ИИ-токенов при оплате" v={String(form.bonus_ai_tokens)}
           onChange={v => set('bonus_ai_tokens', v)} placeholder="0 = без бонуса" />
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Применим к тарифам (срокам подписки)</label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {[1, 3, 6, 12].map(m => {
+              const checked = form.applicable_months.includes(m);
+              return (
+                <label key={m} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '8px 14px', borderRadius: 10,
+                  border: `1px solid ${checked ? '#4361ee' : '#e5e7eb'}`,
+                  background: checked ? '#eef2ff' : '#fff',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 500,
+                  color: checked ? '#3730a3' : '#1a1a2e',
+                  userSelect: 'none',
+                }}>
+                  <input type="checkbox" checked={checked}
+                    onChange={() => set('applicable_months',
+                      checked
+                        ? form.applicable_months.filter(x => x !== m)
+                        : [...form.applicable_months, m].sort((a, b) => a - b)
+                    )}
+                    style={{ accentColor: '#4361ee' }} />
+                  {m} мес.
+                </label>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
+            Если ни одна галочка не выбрана — промокод действует для всех сроков.
+          </div>
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Макс. использований (пусто = безлимит)"

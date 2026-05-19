@@ -417,8 +417,8 @@ async def calculate_multi(request: Request, user=Depends(get_current_user)):
     promo_code_raw = (body.get("promo_code") or "").strip()
     promo_info = None
     if promo_code_raw:
-        promo = await resolve_promo(promo_code_raw)
-        if promo:
+        promo = await resolve_promo(promo_code_raw, months=months)
+        if promo and not promo.get("_wrong_months"):
             discount = calculate_discount(promo, float(data.get("total", 0)))
             promo_info = {
                 "valid": True,
@@ -430,6 +430,13 @@ async def calculate_multi(request: Request, user=Depends(get_current_user)):
                 "description": promo.get("description") or "",
             }
             data["total_after_promo"] = round(float(data.get("total", 0)) - discount, 2)
+        elif promo and promo.get("_wrong_months"):
+            applicable = [int(x) for x in (promo.get("applicable_months") or [])]
+            promo_info = {
+                "valid": False, "code": promo_code_raw,
+                "reason": f"Промокод действует только для сроков: {', '.join(f'{m} мес.' for m in applicable)}",
+                "applicable_months": applicable,
+            }
         else:
             promo_info = {"valid": False, "code": promo_code_raw, "reason": "Промокод не найден или истёк"}
 
@@ -473,9 +480,15 @@ async def create_multi_payment(request: Request, user=Depends(get_current_user))
 
     # Применяем промокод (если есть и валиден)
     promo_code_raw = (body.get("promo_code") or "").strip()
-    promo_obj = await resolve_promo(promo_code_raw) if promo_code_raw else None
+    promo_obj = await resolve_promo(promo_code_raw, months=months) if promo_code_raw else None
     promo_discount_total = 0.0
     promo_bonus_tokens = 0
+    if promo_obj and promo_obj.get("_wrong_months"):
+        applicable = [int(x) for x in (promo_obj.get("applicable_months") or [])]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Промокод действует только для сроков: {', '.join(f'{m} мес.' for m in applicable)}",
+        )
     if promo_obj:
         promo_discount_total = calculate_discount(promo_obj, float(total))
         promo_bonus_tokens = int(promo_obj.get("bonus_ai_tokens") or 0)

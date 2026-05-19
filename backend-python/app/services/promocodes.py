@@ -5,9 +5,10 @@ from typing import Optional
 from ..database import fetch_one, execute
 
 
-async def resolve_promo(code: str) -> Optional[dict]:
-    """Возвращает активный промокод или None если нет/невалидный.
-    None означает «применять без промо», без поднятия исключения."""
+async def resolve_promo(code: str, months: Optional[int] = None) -> Optional[dict]:
+    """Возвращает активный промокод или None если нет/невалидный/не для этого срока.
+    Если применить нельзя из-за срока подписки — возвращает dict со флагом
+    _wrong_months и applicable_months для UX-сообщения."""
     if not code or not code.strip():
         return None
     promo = await fetch_one(
@@ -28,6 +29,13 @@ async def resolve_promo(code: str) -> Optional[dict]:
     max_uses = promo.get("max_uses")
     if max_uses is not None and int(promo.get("used_count") or 0) >= int(max_uses):
         return None
+    # Привязка к сроку подписки. Если promo.applicable_months задан и текущий
+    # срок не входит — возвращаем dict с _wrong_months для понятного ответа UI.
+    applicable = promo.get("applicable_months")
+    if applicable and months is not None and int(months) not in [int(x) for x in applicable]:
+        result = dict(promo)
+        result["_wrong_months"] = True
+        return result
     return dict(promo)
 
 

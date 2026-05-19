@@ -2312,7 +2312,7 @@ async def list_promocodes(admin: Dict = Depends(get_current_admin)):
     rows = await fetch_all(
         """SELECT id, code, description, discount_type, discount_value,
                   bonus_ai_tokens, max_uses, used_count, valid_until,
-                  is_active, created_at
+                  is_active, applicable_months, created_at
            FROM billing_promocodes ORDER BY created_at DESC"""
     )
     return {"success": True, "promocodes": [dict(r) for r in rows]}
@@ -2337,15 +2337,20 @@ async def create_promocode(request: Request, admin: Dict = Depends(get_current_a
         raise HTTPException(status_code=400, detail="Числовые поля заполнены неверно")
     if discount_type == "percent" and not (0 <= discount_value <= 100):
         raise HTTPException(status_code=400, detail="Процент должен быть от 0 до 100")
+    # applicable_months: NULL = все сроки, иначе список из {1,3,6,12}
+    raw_months = body.get("applicable_months")
+    applicable_months = None
+    if isinstance(raw_months, list) and raw_months:
+        applicable_months = sorted({int(m) for m in raw_months if int(m) in (1, 3, 6, 12)})
 
     pid = await execute_returning_id(
         """INSERT INTO billing_promocodes
             (code, description, discount_type, discount_value, bonus_ai_tokens,
-             max_uses, valid_until, is_active, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id""",
+             max_uses, valid_until, is_active, applicable_months, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id""",
         code, body.get("description") or "", discount_type, discount_value,
         bonus_tokens, max_uses, body.get("valid_until") or None,
-        bool(body.get("is_active", True)), admin.get("id"),
+        bool(body.get("is_active", True)), applicable_months, admin.get("id"),
     )
     await log_admin_action(admin, "promocode_create", "promocode", pid, {"code": code})
     return {"success": True, "id": pid}
@@ -2357,7 +2362,8 @@ async def update_promocode(pid: int, request: Request, admin: Dict = Depends(get
     fields, params = [], []
     idx = 1
     for key in ("code", "description", "discount_type", "discount_value",
-                "bonus_ai_tokens", "max_uses", "valid_until", "is_active"):
+                "bonus_ai_tokens", "max_uses", "valid_until", "is_active",
+                "applicable_months"):
         if key in body:
             val = body[key]
             if key == "code":
@@ -2374,6 +2380,14 @@ async def update_promocode(pid: int, request: Request, admin: Dict = Depends(get
                 val = None
             if key == "is_active":
                 val = bool(val)
+            if key == "applicable_months":
+                # пустой список → None (все сроки), иначе фильтруем по {1,3,6,12}
+                if not val:
+                    val = None
+                else:
+                    val = sorted({int(m) for m in val if int(m) in (1, 3, 6, 12)})
+                    if not val:
+                        val = None
             fields.append(f"{key} = ${idx}")
             params.append(val)
             idx += 1
