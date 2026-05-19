@@ -309,33 +309,70 @@ async def process_scheduled_posts():
                 except Exception as e:
                     print(f"[FunnelProcessor] Post {post['id']}: button resolve error: {e}")
 
-            result = await send_to_channel(
-                channel, post.get("message_text", ""),
-                file_path=post_file_path,
-                file_type=post.get("file_type"),
-                telegram_file_id=post.get("telegram_file_id"),
-                inline_buttons=resolved_buttons,
-                attach_type=post.get("attach_type"),
-                max_file_token=post.get("max_file_token"),
-            )
-            msg_id = None
-            if isinstance(result, dict):
-                msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
-                if not msg_id:
-                    msg_id = result.get("message", {}).get("body", {}).get("mid")
-            await execute(
-                "UPDATE content_posts SET status = 'published', published_at = NOW(), telegram_message_id = $1 WHERE id = $2",
-                str(msg_id) if msg_id else None, post["id"],
-            )
+            # Отделяем отправку от пост-обработки: если send_to_channel
+            # успешно вернулся, пост УЖЕ в канале — обязательно ставим
+            # published, даже если парсинг msg_id или UPDATE упадут.
+            sent_ok = False
+            send_error = None
+            result = None
+            try:
+                result = await send_to_channel(
+                    channel, post.get("message_text", ""),
+                    file_path=post_file_path,
+                    file_type=post.get("file_type"),
+                    telegram_file_id=post.get("telegram_file_id"),
+                    inline_buttons=resolved_buttons,
+                    attach_type=post.get("attach_type"),
+                    max_file_token=post.get("max_file_token"),
+                )
+                # send_to_channel может вернуть {success: False, ...} — это тоже фейл
+                if isinstance(result, dict) and result.get("success") is False:
+                    send_error = result.get("error") or "send failed"
+                else:
+                    sent_ok = True
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                send_error = str(e)
+
+            if sent_ok:
+                # Парсинг msg_id защищён — даже если упадёт, статус уже published
+                msg_id = None
+                try:
+                    if isinstance(result, dict):
+                        msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
+                        if not msg_id:
+                            msg_id = result.get("message", {}).get("body", {}).get("mid")
+                except Exception as e:
+                    print(f"[FunnelProcessor] Post {post['id']}: msg_id parse error: {e}")
+                await execute(
+                    "UPDATE content_posts SET status = 'published', published_at = NOW(), scheduled_at = NULL, telegram_message_id = $1 WHERE id = $2",
+                    str(msg_id) if msg_id else None, post["id"],
+                )
+            else:
+                # Откат в scheduled со сдвигом времени на 5 мин — чтобы шедулер
+                # повторил позже, а не каждые 30 сек. После 3 фейлов подряд можно
+                # бы помечать failed, но это уже отдельная фича.
+                await execute(
+                    """UPDATE content_posts SET status = 'scheduled',
+                       scheduled_at = NOW() + INTERVAL '5 minutes'
+                       WHERE id = $1 AND status = 'publishing'""",
+                    post["id"],
+                )
+                print(f"[FunnelProcessor] Post {post['id']} send failed, retry in 5 min: {send_error}")
         except Exception as e:
+            # Сюда долетают только ошибки до try send_to_channel выше
+            # (например, ensure_file, channel lookup и т.п.) — оставляем
+            # scheduled чтобы шедулер ретраил.
             import traceback
             traceback.print_exc()
-            # Mark as failed instead of reverting to scheduled (prevents infinite loop)
             await execute(
-                "UPDATE content_posts SET status = 'draft' WHERE id = $1 AND status = 'publishing'",
+                """UPDATE content_posts SET status = 'scheduled',
+                   scheduled_at = NOW() + INTERVAL '5 minutes'
+                   WHERE id = $1 AND status = 'publishing'""",
                 post["id"],
             )
-            print(f"[FunnelProcessor] Post {post['id']} FAILED, set to draft: {e}")
+            print(f"[FunnelProcessor] Post {post['id']} setup error, retry in 5 min: {e}")
 
 
 async def process_automation_queue():
