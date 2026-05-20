@@ -116,10 +116,10 @@ export default function DashboardPage() {
   }, [showAddModal, loadUnclaimedChannels, loadChannels]);
 
   const handleDeleteChannel = async (trackingCode) => {
-    if (!window.confirm('Удалить канал? Все данные будут потеряны.')) return;
+    if (!window.confirm('Переместить канал в корзину?\n\nКонтент (посты, лид-магниты, воронки и т.д.) сохранится. Восстановить можно из «🗑 Корзина» в течение 30 дней — после этого данные будут удалены безвозвратно.')) return;
     try {
       const data = await api.delete(`/channels/${trackingCode}`);
-      if (data.success) { showToast('Канал удалён'); loadChannels(); }
+      if (data.success) { showToast('Канал перемещён в корзину'); loadChannels(); }
     } catch { showToast('Ошибка удаления', 'error'); }
   };
 

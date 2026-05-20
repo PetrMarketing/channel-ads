@@ -526,6 +526,47 @@ async def _cart_loop():
         await asyncio.sleep(600)  # 10 minutes
 
 
+async def purge_deleted_channels():
+    """Каналы в корзине >30 дней — каскадно вычищаем."""
+    rows = await fetch_all(
+        "SELECT id, title FROM channels WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - INTERVAL '30 days' LIMIT 50",
+    )
+    if not rows:
+        return
+    for r in rows:
+        cid = int(r["id"])
+        try:
+            await execute("DELETE FROM offline_conversions WHERE channel_id = $1", cid)
+            await execute("DELETE FROM subscriptions WHERE channel_id = $1", cid)
+            await execute("DELETE FROM visits WHERE channel_id = $1", cid)
+            await execute("DELETE FROM clicks WHERE link_id IN (SELECT id FROM tracking_links WHERE channel_id = $1)", cid)
+            await execute("DELETE FROM tracking_links WHERE channel_id = $1", cid)
+            await execute("DELETE FROM funnel_progress WHERE lead_id IN (SELECT id FROM leads WHERE lead_magnet_id IN (SELECT id FROM lead_magnets WHERE channel_id = $1))", cid)
+            await execute("DELETE FROM funnel_steps WHERE channel_id = $1", cid)
+            await execute("DELETE FROM leads WHERE lead_magnet_id IN (SELECT id FROM lead_magnets WHERE channel_id = $1)", cid)
+            await execute("DELETE FROM pin_posts WHERE channel_id = $1", cid)
+            await execute("DELETE FROM lead_magnets WHERE channel_id = $1", cid)
+            await execute("DELETE FROM broadcasts WHERE channel_id = $1", cid)
+            await execute("DELETE FROM content_posts WHERE channel_id = $1", cid)
+            await execute("DELETE FROM channel_modules WHERE channel_id = $1", cid)
+            await execute("DELETE FROM channel_billing WHERE channel_id = $1", cid)
+            await execute("DELETE FROM channels WHERE id = $1", cid)
+            print(f"[TrashPurge] permanently deleted channel #{cid} ({r.get('title')})")
+        except Exception as e:
+            print(f"[TrashPurge] channel #{cid} failed: {e}")
+
+
+async def _trash_purge_loop():
+    # Запуск раз в час (через 60s после старта чтобы не блокировать миграции)
+    await asyncio.sleep(60)
+    while True:
+        try:
+            await purge_deleted_channels()
+        except Exception as e:
+            print(f"[TrashPurge] loop error: {e}")
+        await asyncio.sleep(3600)
+
+
 def start_processors():
     global _processor_tasks
     _processor_tasks = [
@@ -534,8 +575,9 @@ def start_processors():
         asyncio.create_task(_content_loop()),
         asyncio.create_task(_automation_loop()),
         asyncio.create_task(_cart_loop()),
+        asyncio.create_task(_trash_purge_loop()),
     ]
-    print("[Processors] Started (funnels: 30s, broadcasts: 60s, content: 60s, automation: 30s, carts: 10m)")
+    print("[Processors] Started (funnels: 30s, broadcasts: 60s, content: 60s, automation: 30s, carts: 10m, trash-purge: 1h)")
 
 
 def stop_processors():

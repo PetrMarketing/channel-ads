@@ -81,6 +81,14 @@ const icons = {
       <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
     </svg>
   ),
+  trash: (
+    <svg className="sidebar-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6M14 11v6"/>
+      <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+    </svg>
+  ),
   paidChats: (
     <svg className="sidebar-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
@@ -158,6 +166,7 @@ const menuItems = [
     ],
   },
   { path: '/staff', label: 'Сотрудники', icon: icons.staff, standalone: true, tour: 'staff' },
+  { path: '/trash', label: 'Корзина', icon: icons.trash, standalone: true },
   {
     category: 'billing', label: 'Подписка', icon: icons.billing,
     items: [

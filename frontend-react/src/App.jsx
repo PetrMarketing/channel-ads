@@ -5,6 +5,7 @@ import { useAdminAuth } from './contexts/AdminAuthContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import TrashPage from './pages/TrashPage';
 import LinksPage from './pages/LinksPage';
 import PinsPage from './pages/PinsPage';
 import BroadcastsPage from './pages/BroadcastsPage';
@@ -286,6 +287,7 @@ export default function App() {
         <Route path="ai-tokens" element={<AiTokensPage />} />
         <Route path="referrals" element={<ReferralPage />} />
         <Route path="staff" element={<StaffPage />} />
+        <Route path="trash" element={<TrashPage />} />
         <Route path="paid-chats" element={<PaidChatsPage />} />
         <Route path="services" element={<ServicesPage />} />
         <Route path="shop" element={<ShopPage />} />

@@ -156,7 +156,7 @@ async def scan_channels(user: Dict[str, Any] = Depends(get_current_user)):
 async def list_channels(user: Dict[str, Any] = Depends(get_current_user)):
     # Own channels
     channels = await fetch_all(
-        "SELECT * FROM channels WHERE user_id = $1 ORDER BY created_at DESC", user["id"]
+        "SELECT * FROM channels WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC", user["id"]
     )
     enriched = [await enrich_with_billing(mask_channel(c)) for c in channels]
 
@@ -337,7 +337,59 @@ async def claim_channel(tracking_code: str, user: Dict[str, Any] = Depends(get_c
 
 @router.delete("/{tracking_code}")
 async def delete_channel(tracking_code: str, user: Dict[str, Any] = Depends(get_current_user)):
-    """Delete a channel and all associated data."""
+    """Мягкое удаление канала — помечает deleted_at=NOW().
+    Через 30 дней крон удалит физически вместе со всем контентом.
+    До этого юзер может восстановить из «Корзины»."""
+    channel = await fetch_one(
+        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2 AND deleted_at IS NULL",
+        tracking_code, user["id"],
+    )
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    await execute(
+        "UPDATE channels SET deleted_at = NOW(), is_active = 0 WHERE id = $1",
+        channel["id"],
+    )
+    return {"success": True, "deleted_at": "now", "restore_until_days": 30}
+
+
+@router.get("/trash")
+async def list_trash(user: Dict[str, Any] = Depends(get_current_user)):
+    """Корзина — каналы удалённые юзером, ещё не вычищенные кроном."""
+    rows = await fetch_all(
+        """SELECT id, title, tracking_code, platform, deleted_at,
+                  EXTRACT(EPOCH FROM (deleted_at + INTERVAL '30 days' - NOW()))::int AS seconds_until_purge
+           FROM channels
+           WHERE user_id = $1 AND deleted_at IS NOT NULL
+           ORDER BY deleted_at DESC""",
+        user["id"],
+    )
+    return {"success": True, "channels": [dict(r) for r in rows]}
+
+
+@router.post("/{tracking_code}/restore")
+async def restore_channel(tracking_code: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """Восстановить мягко-удалённый канал. Контент сохранён в БД, просто
+    снимаем deleted_at — канал снова видим во всех list-запросах."""
+    channel = await fetch_one(
+        "SELECT id, deleted_at FROM channels WHERE tracking_code = $1 AND user_id = $2",
+        tracking_code, user["id"],
+    )
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    if channel.get("deleted_at") is None:
+        raise HTTPException(status_code=400, detail="Канал не в корзине")
+    await execute(
+        "UPDATE channels SET deleted_at = NULL WHERE id = $1",
+        channel["id"],
+    )
+    return {"success": True}
+
+
+@router.delete("/{tracking_code}/purge")
+async def purge_channel(tracking_code: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """Окончательное удаление из корзины (или из активных при необходимости)
+    — каскадное удаление всех связанных данных."""
     channel = await fetch_one(
         "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
         tracking_code, user["id"],
@@ -346,7 +398,6 @@ async def delete_channel(tracking_code: str, user: Dict[str, Any] = Depends(get_
         raise HTTPException(status_code=404, detail="Канал не найден")
 
     cid = channel["id"]
-    # Delete dependent data in correct order (respecting FK constraints)
     await execute("DELETE FROM offline_conversions WHERE channel_id = $1", cid)
     await execute("DELETE FROM subscriptions WHERE channel_id = $1", cid)
     await execute("DELETE FROM visits WHERE channel_id = $1", cid)

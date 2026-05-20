@@ -170,7 +170,7 @@ async def get_channel_for_user(
     """
     # Check ownership first
     channel = await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
+        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2 AND deleted_at IS NULL",
         tracking_code, user_id,
     )
     if channel:
