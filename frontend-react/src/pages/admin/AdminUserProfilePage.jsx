@@ -36,9 +36,10 @@ export default function AdminUserProfilePage() {
       broadcasts: `/users/${userId}/broadcasts`, giveaways: `/users/${userId}/giveaways`,
       leadMagnets: `/users/${userId}/lead-magnets`, referrals: `/users/${userId}/referrals`,
       history: `/users/${userId}/balance-history`,
+      generations: `/users/${userId}/generations`,
     };
     adminApi.get(endpoints[tab]).then(d => {
-      if (d) setTabData(d.channels || d.pins || d.broadcasts || d.giveaways || d.leadMagnets || d.items || d);
+      if (d) setTabData(d.channels || d.pins || d.broadcasts || d.giveaways || d.leadMagnets || d.generations || d.items || d);
     }).catch(() => setTabData([]));
   }, [tab, userId]);
 
@@ -85,6 +86,7 @@ export default function AdminUserProfilePage() {
     { key: 'channels', label: 'Каналы' }, { key: 'pins', label: 'Закрепы' },
     { key: 'leadMagnets', label: 'Лид-магниты' }, { key: 'broadcasts', label: 'Рассылки' },
     { key: 'giveaways', label: 'Розыгрыши' }, { key: 'referrals', label: 'Рефералы' },
+    { key: 'generations', label: '🤖 Генерации' },
     { key: 'history', label: '📋 История' },
   ];
 
@@ -243,6 +245,53 @@ export default function AdminUserProfilePage() {
                 <td style={td}><button style={btnDanger} onClick={() => handleDelete('giveaways', g.id)}>Удалить</button></td>
               </tr>
             ))}</tbody>
+          </table>
+        </div>)
+      )}
+
+      {tab === 'generations' && (
+        tabData.length === 0 ? <div style={emptyState}>Генераций нет</div> : (
+        <div style={tableWrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={th}>Когда</th><th style={th}>Тип</th><th style={th}>Канал</th>
+              <th style={th}>Промт</th><th style={th}>Результат</th>
+              <th style={th}>Параметры</th><th style={th}>Списано</th>
+            </tr></thead>
+            <tbody>{tabData.map(g => {
+              const kindLabel = g.kind === 'image' ? '🖼 Картинка' : g.kind === 'text' ? '✏️ Текст' : g.kind;
+              let meta = g.metadata;
+              if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+              meta = meta || {};
+              const metaList = Object.entries(meta)
+                .filter(([k, v]) => v !== null && v !== undefined && v !== '')
+                .map(([k, v]) => `${k}: ${typeof v === 'boolean' ? (v ? 'да' : 'нет') : v}`)
+                .join(' · ');
+              return (
+                <tr key={g.id}>
+                  <td style={{ ...td, fontSize: 11, color: '#6b7280', whiteSpace: 'nowrap' }}>{fmtDate(g.created_at)}</td>
+                  <td style={td}>{kindLabel}</td>
+                  <td style={td}>{g.channel_title || `#${g.channel_id}` || '—'}</td>
+                  <td style={{ ...td, maxWidth: 280, fontSize: 12 }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
+                      title={g.prompt}>{g.prompt || '—'}</div>
+                  </td>
+                  <td style={{ ...td, maxWidth: 260, fontSize: 12 }}>
+                    {g.kind === 'image' && g.result_file_path ? (
+                      <a href={g.result_file_path} target="_blank" rel="noreferrer">
+                        <img src={g.result_file_path} alt="" style={{ maxWidth: 80, maxHeight: 80, borderRadius: 4, border: '1px solid #e5e7eb' }} />
+                      </a>
+                    ) : g.result_text ? (
+                      <div title={g.result_text} style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
+                        {g.result_text}
+                      </div>
+                    ) : '—'}
+                  </td>
+                  <td style={{ ...td, fontSize: 11, color: '#6b7280', maxWidth: 220 }}>{metaList || '—'}</td>
+                  <td style={{ ...td, fontWeight: 700, color: '#4361ee', whiteSpace: 'nowrap' }}>{g.tokens_charged} ток.</td>
+                </tr>
+              );
+            })}</tbody>
           </table>
         </div>)
       )}

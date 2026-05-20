@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { adminApi } from '../../services/adminApi';
 import {
   pageTitle, card, tableWrap, th, td, statusBadge,
@@ -155,9 +156,12 @@ export default function AdminSupportPage() {
                     {t.id}
                   </td>
                   <td style={td}>
-                    <div style={{ fontWeight: 600, color: '#1a1a2e', fontSize: 13 }}>
+                    <Link to={`/admin/users/${t.user_id}`}
+                      onClick={e => e.stopPropagation()}
+                      style={{ fontWeight: 600, color: '#4361ee', fontSize: 13, textDecoration: 'none', borderBottom: '1px dashed #4361ee' }}
+                      title="Перейти в профиль пользователя">
                       {t.user_name || t.user_username || `#${t.user_id}`}
-                    </div>
+                    </Link>
                     <div style={{
                       fontSize: 11, color: '#aaa', marginTop: 3,
                       maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -193,9 +197,11 @@ export default function AdminSupportPage() {
                 background: '#fafbfc',
               }}>
                 <div>
-                  <span style={{ fontWeight: 700, color: '#1a1a2e', fontSize: 14 }}>
+                  <Link to={`/admin/users/${selected.user_id}`}
+                    style={{ fontWeight: 700, color: '#4361ee', fontSize: 14, textDecoration: 'none', borderBottom: '1px dashed #4361ee' }}
+                    title="Перейти в профиль пользователя">
                     {selected.user_name || selected.user_username || `Пользователь #${selected.user_id}`}
-                  </span>
+                  </Link>
                   <span style={{ fontSize: 12, color: '#bbb', marginLeft: 10 }}>Тикет #{selected.id}</span>
                   <span style={{ ...statusBadge(selected.status), marginLeft: 10 }}>
                     {statusLabels[selected.status] || selected.status}

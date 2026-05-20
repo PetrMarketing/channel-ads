@@ -311,6 +311,27 @@ async def user_lead_magnets(user_id: int, admin: Dict = Depends(get_current_admi
     return {"success": True, "leadMagnets": _strip_binary(rows)}
 
 
+@router.get("/users/{user_id}/generations")
+async def user_generations(
+    user_id: int,
+    limit: int = Query(200, ge=1, le=500),
+    admin: Dict = Depends(get_current_admin),
+):
+    """История ИИ-генераций пользователя — все поля что он заполнял
+    (промт, метаданные, результат, списанные токены)."""
+    rows = await fetch_all(
+        """SELECT g.id, g.kind, g.prompt, g.result_text, g.result_file_path,
+                  g.tokens_charged, g.metadata, g.created_at,
+                  g.channel_id, c.title AS channel_title
+           FROM ai_generations g
+           LEFT JOIN channels c ON c.id = g.channel_id
+           WHERE g.user_id = $1
+           ORDER BY g.created_at DESC LIMIT $2""",
+        user_id, limit,
+    )
+    return {"success": True, "generations": [dict(r) for r in rows]}
+
+
 @router.get("/users/{user_id}/balance-history")
 async def user_balance_history(
     user_id: int,

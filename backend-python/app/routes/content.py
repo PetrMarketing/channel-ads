@@ -360,6 +360,12 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
     # If edit failed or new post — send new message
     msg_id = existing_msg_id
     if not edited:
+        # Только send_to_channel в try — если он бросит exception, считаем
+        # что НЕ отправили (rollback). Всё остальное (парсинг msg_id, UPDATE)
+        # ниже, отдельно — даже если упадёт, пост уже в канале и статус
+        # должен стать published.
+        sent_ok = False
+        result = None
         try:
             result = await send_to_channel(
                 channel, message_text,
@@ -371,6 +377,7 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
                 attachment_paths=post.get("attachment_paths") or [],
                 attachment_tokens=post.get("attachment_tokens") or [],
             )
+            sent_ok = True
         except Exception as e:
             # Откат захвата чтобы шедулер мог попробовать ещё раз
             await execute(
@@ -379,18 +386,28 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
             )
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
+
+        # send прошёл — парсим msg_id (без exception в случае ошибки парсинга)
         msg_id = None
-        if isinstance(result, dict):
-            msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
-            if not msg_id:
-                msg_data = result.get("message", {})
-                msg_id = msg_data.get("body", {}).get("mid")
+        try:
+            if isinstance(result, dict):
+                msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
+                if not msg_id:
+                    msg_data = result.get("message", {})
+                    msg_id = msg_data.get("body", {}).get("mid")
+        except Exception as e:
+            print(f"[Content] publish: msg_id parse error: {e}")
 
     msg_id_str = str(msg_id) if msg_id else None
-    await execute(
-        "UPDATE content_posts SET status = 'published', published_at = NOW(), scheduled_at = NULL, telegram_message_id = $1 WHERE id = $2",
-        msg_id_str, post_id,
-    )
+    # UPDATE финального статуса в отдельном try — если что-то упадёт здесь,
+    # пост уже в канале, юзеру вернём success.
+    try:
+        await execute(
+            "UPDATE content_posts SET status = 'published', published_at = NOW(), scheduled_at = NULL, telegram_message_id = $1 WHERE id = $2",
+            msg_id_str, post_id,
+        )
+    except Exception as e:
+        print(f"[Content] publish: final UPDATE error (post is sent, will keep status='publishing'): {e}")
     # Достижение «Опубликовать постов» — только за свежую публикацию (не за edit).
     if not edited:
         try:
