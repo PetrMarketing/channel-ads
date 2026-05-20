@@ -41,24 +41,26 @@ function htmlToPreview(html) {
   return text.trim();
 }
 
-export default function MessagePreview({ messageText, buttons, file, fileUrl, tc, entityType, entityId }) {
+export default function MessagePreview({ messageText, buttons, file, fileUrl, tc, entityType, entityId, extraFiles = [] }) {
   const { showToast } = useToast();
   const [sending, setSending] = useState(false);
+  // Все файлы — первичный + дополнительные (массив объектов File)
+  const allFiles = [file, ...extraFiles].filter(Boolean);
 
   const handleSendToSelf = async () => {
     setSending(true);
     try {
       let data;
-      if (file) {
-        // New file selected — send via FormData
+      if (allFiles.length > 0) {
+        // Новые файлы выбраны — шлём ВСЕ как FormData files[]
         const formData = new FormData();
         formData.append('message_text', messageText || '');
         formData.append('entity_type', entityType || '');
         if (entityId) formData.append('entity_id', entityId);
-        formData.append('file', file);
+        for (const f of allFiles) formData.append('files', f);
         data = await api.upload(`/pins/${tc}/send-preview`, formData, 'POST');
       } else {
-        // No new file — use existing from DB
+        // Нет новых файлов — backend подтянет attachment_paths из БД по entity_id
         data = await api.post(`/pins/${tc}/send-preview`, {
           message_text: messageText,
           entity_type: entityType,
@@ -99,17 +101,29 @@ export default function MessagePreview({ messageText, buttons, file, fileUrl, tc
         padding: '16px', background: 'var(--bg)',
         minHeight: '80px',
       }}>
-        {/* File preview */}
-        {(file || fileUrl) && (
+        {/* File preview — сетка для всех файлов (медиа-группа) */}
+        {(allFiles.length > 0 || fileUrl) && (
           <div style={{ marginBottom: '10px' }}>
-            {file ? (
-              file.type?.startsWith('image/') ? (
-                <img src={URL.createObjectURL(file)} alt="" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} />
-              ) : (
-                <div style={{ padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 6, fontSize: '0.85rem' }}>
-                  {file.name}
-                </div>
-              )
+            {allFiles.length > 0 ? (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: allFiles.length === 1 ? '1fr' : 'repeat(auto-fill, minmax(120px, 1fr))',
+                gap: 6,
+              }}>
+                {allFiles.map((f, i) => (
+                  f.type?.startsWith('image/') ? (
+                    <img key={i} src={URL.createObjectURL(f)} alt="" style={{
+                      width: '100%',
+                      maxHeight: allFiles.length === 1 ? 240 : 140,
+                      objectFit: 'cover', borderRadius: 8,
+                    }} />
+                  ) : (
+                    <div key={i} style={{ padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 6, fontSize: '0.85rem' }}>
+                      📎 {f.name}
+                    </div>
+                  )
+                ))}
+              </div>
             ) : fileUrl ? (
               <img src={fileUrl} alt="" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }}
                 onError={e => { e.target.style.display = 'none'; }} />

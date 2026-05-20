@@ -1541,6 +1541,7 @@ export default function ContentPage() {
               messageText={form.message_text}
               buttons={form.inline_buttons}
               file={postFile}
+              extraFiles={extraFiles}
               fileUrl={!postFile && !removeExistingFile && editingPost?.file_path ? '/uploads/' + editingPost.file_path.split('/uploads/').pop() : ''}
               tc={tc}
               entityType="content"

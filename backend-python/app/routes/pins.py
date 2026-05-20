@@ -352,16 +352,27 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
     content_type = request.headers.get("content-type", "")
     uploaded_file_path = None
     uploaded_file_type = None
+    uploaded_attachment_paths: list = []  # до 10 файлов от FormData
 
     if "multipart/form-data" in content_type:
         form = await request.form()
         message_text = form.get("message_text", "")
         entity_type = form.get("entity_type", "")
         entity_id = form.get("entity_id")
-        upload = form.get("file")
-        if upload and hasattr(upload, 'filename') and upload.filename:
-            from ..services.file_storage import save_upload
-            uploaded_file_path, uploaded_file_type, _ = await save_upload(upload)
+        # `files` (множественное) — приоритет; fallback на `file` (легаси)
+        files_list = form.getlist("files")[:10]
+        if not files_list:
+            single = form.get("file")
+            if single:
+                files_list = [single]
+        from ..services.file_storage import save_upload
+        for uf in files_list:
+            if uf and hasattr(uf, 'filename') and uf.filename:
+                fp, ft, _ = await save_upload(uf)
+                if fp:
+                    uploaded_attachment_paths.append(fp)
+                    if uploaded_file_path is None:
+                        uploaded_file_path, uploaded_file_type = fp, ft
     else:
         body = await request.json()
         message_text = body.get("message_text", "")
@@ -375,6 +386,7 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
     file_path = uploaded_file_path
     file_type = uploaded_file_type
     max_file_token = None
+    attachment_paths = list(uploaded_attachment_paths)  # копия — будем мерджить из БД ниже
 
     if entity_id and entity_type == "pin":
         pin = await fetch_one("SELECT * FROM pin_posts WHERE id = $1", int(entity_id))
@@ -408,6 +420,10 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
                 max_file_token = post.get("max_file_token")
                 from ..services.file_storage import ensure_file
                 file_path = ensure_file(file_path, post.get("file_data"))
+                # Подтягиваем массив вложений (медиа-группа)
+                if not attachment_paths and post.get("attachment_paths"):
+                    import os as _os
+                    attachment_paths = [p for p in post["attachment_paths"] if p and _os.path.exists(p)]
 
     elif entity_id and entity_type == "giveaway":
         gw = await fetch_one("SELECT * FROM giveaways WHERE id = $1", int(entity_id))
@@ -423,6 +439,9 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
     # Send to user via bot
     from ..services.messenger import sanitize_html_for_telegram, html_to_max_markdown
 
+    _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
+    max_attach_type = _type_map.get(file_type, "file")
+
     # Try MAX first
     if user.get("max_user_id"):
         from ..services.max_api import get_max_api
@@ -430,27 +449,40 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
         if max_api:
             max_text = html_to_max_markdown(message_text)
             attachments = None
-            if max_file_token:
-                _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
-                attachments = [{"type": _type_map.get(file_type, "file"), "payload": {"token": max_file_token}}]
+            # Приоритет — медиа-группа (несколько файлов)
+            if attachment_paths and len(attachment_paths) > 1:
+                attachments = []
+                from ..services.messenger import _extract_max_file_token
+                for p in attachment_paths[:10]:
+                    up = await max_api.upload_file(p, file_type or "file")
+                    if up.get("success"):
+                        tok = _extract_max_file_token(up.get("data", {}))
+                        if tok:
+                            attachments.append({"type": max_attach_type, "payload": {"token": tok}})
+                if not attachments:
+                    attachments = None
+            elif max_file_token:
+                attachments = [{"type": max_attach_type, "payload": {"token": max_file_token}}]
             elif file_path:
                 upload_result = await max_api.upload_file(file_path, file_type or "file")
                 if upload_result.get("success"):
                     from ..services.messenger import _extract_max_file_token
                     token = _extract_max_file_token(upload_result.get("data", {}))
                     if token:
-                        _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
-                        attachments = [{"type": _type_map.get(file_type, "file"), "payload": {"token": token}}]
+                        attachments = [{"type": max_attach_type, "payload": {"token": token}}]
             result = await max_api.send_direct_message(str(user["max_user_id"]), max_text, attachments=attachments)
             if result.get("success"):
                 return {"success": True, "platform": "max"}
 
     # Fallback to Telegram
     if user.get("telegram_id"):
-        from ..services.messenger import send_telegram_message, send_telegram_photo
+        from ..services.messenger import send_telegram_message, send_telegram_photo, send_telegram_media_group
         tg_text = sanitize_html_for_telegram(message_text)
         try:
-            if file_path and file_type == "photo":
+            # Медиа-группа из >1 фото
+            if attachment_paths and len(attachment_paths) > 1 and (file_type == "photo" or all(p.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')) for p in attachment_paths)):
+                await send_telegram_media_group(user["telegram_id"], attachment_paths, caption=tg_text)
+            elif file_path and file_type == "photo":
                 await send_telegram_photo(user["telegram_id"], file_path, caption=tg_text)
             else:
                 await send_telegram_message(user["telegram_id"], tg_text)
