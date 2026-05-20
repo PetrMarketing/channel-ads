@@ -405,7 +405,19 @@ export default function ContentPage() {
 
   useEffect(() => { loadPosts(); loadLeadMagnets(); }, [loadPosts, loadLeadMagnets]);
 
+  // Дата (YYYY-MM-DD) уже прошла по МСК — нельзя создать пост на эту дату
+  const isPastDate = (dateStr) => {
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return false;
+    const msk = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const todayMsk = `${msk.getUTCFullYear()}-${String(msk.getUTCMonth() + 1).padStart(2, '0')}-${String(msk.getUTCDate()).padStart(2, '0')}`;
+    return dateStr.slice(0, 10) < todayMsk;
+  };
+
   const openCreate = (prefillDate) => {
+    if (prefillDate && isPastDate(prefillDate)) {
+      showToast('Нельзя создать пост на прошедшую дату', 'error');
+      return;
+    }
     setEditingPost(null);
     setPostFile(null); setExtraFiles([]);
     setRemoveExistingFile(false);
@@ -1174,7 +1186,11 @@ export default function ContentPage() {
                           {selectedDayPosts.length === 0 ? 'На этот день постов нет' : `Постов на день: ${selectedDayPosts.length}`}
                         </p>
                       </div>
-                      <button className="cp-ghost" style={ghostBtn} onClick={() => openCreate(selectedDate)}>
+                      <button className="cp-ghost"
+                        style={{ ...ghostBtn, opacity: isPastDate(selectedDate) ? 0.45 : 1, cursor: isPastDate(selectedDate) ? 'not-allowed' : 'pointer' }}
+                        disabled={isPastDate(selectedDate)}
+                        title={isPastDate(selectedDate) ? 'Дата уже прошла — нельзя создать пост' : undefined}
+                        onClick={() => openCreate(selectedDate)}>
                         <PlusIcon /> {selectedDayPosts.length === 0 ? 'Создать пост' : 'Добавить пост'}
                       </button>
                     </div>
@@ -1192,9 +1208,14 @@ export default function ContentPage() {
                       }}>
                         <div style={{ fontSize: '2.2rem', marginBottom: 10 }}>📅</div>
                         <p style={{ margin: '0 0 16px', color: MUTED, fontSize: '0.92rem', lineHeight: 1.5 }}>
-                          На выбранную дату пока нет запланированных публикаций.
+                          {isPastDate(selectedDate)
+                            ? 'Эта дата уже прошла — пост создать нельзя.'
+                            : 'На выбранную дату пока нет запланированных публикаций.'}
                         </p>
-                        <button className="cp-primary" style={primaryBtn} onClick={() => openCreate(selectedDate)}>
+                        <button className="cp-primary"
+                          style={{ ...primaryBtn, opacity: isPastDate(selectedDate) ? 0.45 : 1, cursor: isPastDate(selectedDate) ? 'not-allowed' : 'pointer' }}
+                          disabled={isPastDate(selectedDate)}
+                          onClick={() => openCreate(selectedDate)}>
                           <PlusIcon /> Создать пост
                         </button>
                       </div>
