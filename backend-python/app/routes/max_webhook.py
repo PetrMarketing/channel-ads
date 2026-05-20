@@ -2087,17 +2087,13 @@ async def process_max_update(body: dict):
                         bind_user_id = inviter_row["id"]
                         owner_max_user_id = inviter_max_id
 
-            # Method 3: most recent user who interacted with bot (last 10 min)
-            if not bind_user_id:
-                recent = await fetch_one("""
-                    SELECT id, max_user_id FROM users
-                    WHERE max_user_id IS NOT NULL AND max_dialog_chat_id IS NOT NULL
-                    AND created_at > NOW() - INTERVAL '10 minutes'
-                    ORDER BY id DESC LIMIT 1
-                """)
-                if recent:
-                    bind_user_id = recent["id"]
-                    owner_max_user_id = recent["max_user_id"]
+            # ВНИМАНИЕ: раньше тут был method 3 (привязка к «последнему юзеру,
+            # зашедшему за 10 минут»). Это вело к ситуации, когда канал чужого
+            # пользователя присваивался кому-то незарелейтенному. Убран
+            # 2026-05-20. Вместо этого — храним max_user_id владельца в
+            # channels.pending_owner_max_user_id, а при первой авторизации
+            # этого пользователя (find_or_create_max_user) автоматически
+            # привязываем все его «сиротские» каналы.
 
             if not existing:
                 tracking_code = _generate_tracking_code()
@@ -2106,11 +2102,14 @@ async def process_max_update(body: dict):
                 # Determine join_link: if chat_link looks like a URL, use it
                 _join_link = chat_link if chat_link and ("http" in chat_link or "/" in chat_link) else None
                 _avatar = locals().get("chat_avatar")
+                # Если владельца ещё нет в users — запомним max_user_id,
+                # чтобы привязать при первой авторизации
+                pending_owner = None if bind_user_id else (owner_max_user_id or None)
                 await execute("""
-                    INSERT INTO channels (channel_id, title, username, max_chat_id, max_connected, tracking_code, platform, is_active, user_id, owner_id, join_link, avatar_url)
-                    VALUES ($1, $2, $3, $4, 1, $5, 'max', $6, $7, $8, $9, $10)
-                """, chat_id_int, chat_title, chat_link, chat_id_str, tracking_code, active_status, bind_user_id, bind_user_id, _join_link, _avatar)
-                print(f"[MAX Bot] bot_added: channel created, active={active_status}, user_id={bind_user_id}, owner_max={owner_max_user_id}")
+                    INSERT INTO channels (channel_id, title, username, max_chat_id, max_connected, tracking_code, platform, is_active, user_id, owner_id, join_link, avatar_url, pending_owner_max_user_id)
+                    VALUES ($1, $2, $3, $4, 1, $5, 'max', $6, $7, $8, $9, $10, $11)
+                """, chat_id_int, chat_title, chat_link, chat_id_str, tracking_code, active_status, bind_user_id, bind_user_id, _join_link, _avatar, pending_owner)
+                print(f"[MAX Bot] bot_added: channel created, active={active_status}, user_id={bind_user_id}, owner_max={owner_max_user_id}, pending={pending_owner}")
 
                 # Activate trial
                 new_channel = await fetch_one("SELECT id FROM channels WHERE max_chat_id = $1", chat_id_str)

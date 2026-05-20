@@ -24,6 +24,14 @@ def _parse_date_value(val):
 _processor_tasks: list = []
 
 
+def _parse_hhmm(s):
+    try:
+        h, m = (s or "10:00").split(":")
+        return int(h) % 24, int(m) % 60
+    except Exception:
+        return 10, 0
+
+
 async def schedule_funnel_for_lead(lead_id: int, lead_magnet_id: int, telegram_id=None, max_user_id=None, platform="telegram"):
     """Schedule funnel steps for a lead. Cancels any pending steps and reschedules from now."""
     # Remove all previous progress for this lead (pending + sent) to start fresh
@@ -37,25 +45,60 @@ async def schedule_funnel_for_lead(lead_id: int, lead_magnet_id: int, telegram_i
     )
     cumulative_seconds = 0
     for step in steps:
-        # Calculate delay from delay_config (preferred) or delay_minutes (legacy)
-        step_delay = step.get("delay_minutes", 60) * 60
+        # Calculate delay from delay_config (preferred) or delay_minutes (legacy).
+        # delay_minutes UI всегда выставляет корректно (через delayToMinutes),
+        # поэтому это самый надёжный fallback.
+        step_delay = int(step.get("delay_minutes", 60) or 60) * 60
         delay_config = step.get("delay_config")
         if delay_config:
             import json as _json
             try:
                 cfg = _json.loads(delay_config) if isinstance(delay_config, str) else delay_config
-                val = int(cfg.get("value", 60))
-                unit = cfg.get("unit", "minutes")
-                if unit == "seconds":
-                    step_delay = val
-                elif unit == "minutes":
-                    step_delay = val * 60
-                elif unit == "hours":
-                    step_delay = val * 3600
-                elif unit == "days":
-                    step_delay = val * 86400
-            except Exception:
-                pass
+                cfg_type = (cfg.get("type") or "after_seconds").lower()
+                if cfg_type == "after_seconds":
+                    val = int(cfg.get("value", 60) or 60)
+                    unit = (cfg.get("unit") or "minutes").lower()
+                    if unit == "seconds":
+                        step_delay = val
+                    elif unit == "minutes":
+                        step_delay = val * 60
+                    elif unit == "hours":
+                        step_delay = val * 3600
+                    elif unit == "days":
+                        step_delay = val * 86400
+                elif cfg_type == "at_day_time":
+                    # Через N дней в H:M (соответствует UI delayToMinutes:
+                    # d*1440 + h*60 + m, в секундах)
+                    days = int(cfg.get("days", 1) or 0)
+                    h, m = _parse_hhmm(cfg.get("time"))
+                    step_delay = days * 86400 + h * 3600 + m * 60
+                elif cfg_type == "at_weekday_time":
+                    # Ближайший день недели N в H:M
+                    weekday = int(cfg.get("weekday", 1) or 1)
+                    h, m = _parse_hhmm(cfg.get("time"))
+                    from datetime import datetime as _dt, timedelta as _td
+                    now = _dt.utcnow()
+                    days_ahead = (weekday - now.weekday()) % 7
+                    target = (now + _td(days=days_ahead)).replace(
+                        hour=h, minute=m, second=0, microsecond=0
+                    )
+                    if target <= now:
+                        target += _td(days=7)
+                    step_delay = max(60, int((target - now).total_seconds()))
+                elif cfg_type == "at_exact_date":
+                    dt = cfg.get("datetime") or ""
+                    if dt:
+                        from datetime import datetime as _dt
+                        try:
+                            target = _dt.fromisoformat(dt.replace("Z", "+00:00"))
+                            if target.tzinfo:
+                                target = target.replace(tzinfo=None)
+                            now = _dt.utcnow()
+                            step_delay = max(60, int((target - now).total_seconds()))
+                        except Exception:
+                            pass
+            except Exception as e:
+                print(f"[FunnelProcessor] delay_config parse error for step {step.get('id')}: {e}")
         cumulative_seconds += step_delay
         await execute(
             """INSERT INTO funnel_progress (lead_id, funnel_step_id, telegram_id, max_user_id, platform, scheduled_at, status)

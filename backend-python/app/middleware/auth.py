@@ -107,7 +107,10 @@ async def find_or_create_tg_user(tg_user: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def find_or_create_max_user(max_user_id: str, name: str = "", dialog_chat_id: str = "") -> Dict[str, Any]:
-    """Look up or create a user from MAX data, returning user dict and JWT."""
+    """Look up or create a user from MAX data, returning user dict and JWT.
+
+    Также подхватывает каналы-сироты (pending_owner_max_user_id) — если бот
+    был добавлен в канал админом ДО первой регистрации пользователя в сервисе."""
     user = await fetch_one("SELECT * FROM users WHERE max_user_id = $1", max_user_id)
     if not user:
         uid = await execute_returning_id(
@@ -123,6 +126,20 @@ async def find_or_create_max_user(max_user_id: str, name: str = "", dialog_chat_
             await execute("UPDATE users SET max_dialog_chat_id = $1 WHERE id = $2", dialog_chat_id, user["id"])
         except Exception:
             pass  # Column might not exist yet
+
+    # Привязываем каналы-сироты этого max_user_id (бот был добавлен админом
+    # ДО регистрации владельца — записан в pending_owner_max_user_id).
+    if user:
+        from ..database import execute as _exec
+        try:
+            await _exec(
+                """UPDATE channels
+                   SET user_id = $1, owner_id = $1, pending_owner_max_user_id = NULL
+                   WHERE pending_owner_max_user_id = $2 AND user_id IS NULL""",
+                user["id"], str(max_user_id),
+            )
+        except Exception as e:
+            print(f"[Auth] orphan channel attach error for max_user_id={max_user_id}: {e}")
 
     token = jwt.encode({"userId": user["id"]}, settings.JWT_SECRET, algorithm="HS256")
     return {"user": user, "token": token}
