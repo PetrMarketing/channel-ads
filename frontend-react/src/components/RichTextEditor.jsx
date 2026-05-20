@@ -76,7 +76,10 @@ function getTextLength(html) {
 }
 
 export default function RichTextEditor({ value, onChange, placeholder, rows = 5, showEmoji = false, maxLength, hasFile }) {
-  const effectiveMax = maxLength || (hasFile ? 1024 : 4096);
+  // Лимит символов не зависит от наличия вложения — всегда 4096
+  // (раньше при файле было 1024 из-за лимита caption в Telegram, но
+  // мы публикуем в MAX и медиа-группой, где текст идёт отдельным сообщением).
+  const effectiveMax = maxLength || 4096;
   const editorRef = useRef(null);
   const [showToolbar, setShowToolbar] = useState(false);
   const [toolbarPos, setToolbarPos] = useState({ top: 0, left: 0 });
@@ -326,9 +329,7 @@ export default function RichTextEditor({ value, onChange, placeholder, rows = 5,
         <span style={{ color: getTextLength(value) > effectiveMax ? 'var(--error, #e63946)' : undefined }}>
           {getTextLength(value) > effectiveMax
             ? `Превышен лимит на ${getTextLength(value) - effectiveMax} симв.`
-            : hasFile !== undefined
-              ? (hasFile ? 'С вложением: до 1024 симв.' : 'Без вложения: до 4096 симв.')
-              : ''}
+            : `До ${effectiveMax} симв.`}
         </span>
         <span style={{ color: getTextLength(value) > effectiveMax ? 'var(--error, #e63946)' : undefined }}>
           {getTextLength(value)} / {effectiveMax}

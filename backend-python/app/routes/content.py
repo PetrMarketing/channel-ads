@@ -32,7 +32,7 @@ from ..database import fetch_one, fetch_all, execute, execute_returning_id
 
 router = APIRouter()
 
-_POST_COLS = "id, channel_id, title, message_text, file_path, file_type, telegram_file_id, telegram_message_id, status, scheduled_at, published_at, ai_generated, inline_buttons, attach_type, erid, created_at"
+_POST_COLS = "id, channel_id, title, message_text, file_path, file_type, telegram_file_id, telegram_message_id, status, scheduled_at, published_at, ai_generated, inline_buttons, attach_type, erid, created_at, attachment_paths, attachment_tokens"
 
 
 async def _get_owned_channel(tc: str, uid: int):
@@ -89,6 +89,7 @@ async def create_post(tc: str, request: Request, user: Dict[str, Any] = Depends(
     file_path = None
     file_type = None
     file_data = None
+    attachment_paths = []  # до 10 файлов
 
     attach_type = None
     if "multipart/form-data" in content_type:
@@ -99,9 +100,21 @@ async def create_post(tc: str, request: Request, user: Dict[str, Any] = Depends(
         inline_buttons_raw = form.get("inline_buttons")
         inline_buttons = json.dumps(json.loads(inline_buttons_raw)) if inline_buttons_raw else None
         attach_type = form.get("attach_type") or None
-        uploaded_file = form.get("file")
-        if uploaded_file and hasattr(uploaded_file, "read"):
-            file_path, file_type, file_data = await _save_upload(uploaded_file)
+        # Поле `files` (множественное) — до 10 файлов. Совместимость с `file` (1).
+        files_list = form.getlist("files")[:10]
+        if not files_list:
+            single = form.get("file")
+            if single:
+                files_list = [single]
+        for uf in files_list:
+            if uf and hasattr(uf, "read"):
+                fp, ft, fd = await _save_upload(uf)
+                if fp:
+                    attachment_paths.append(fp)
+                    # Первый файл дублируем в file_path/type/data — для
+                    # совместимости со старыми ветками (edit, preview и т.п.)
+                    if file_path is None:
+                        file_path, file_type, file_data = fp, ft, fd
     else:
         body = await request.json()
         title = body.get("title")
@@ -118,11 +131,12 @@ async def create_post(tc: str, request: Request, user: Dict[str, Any] = Depends(
         erid = body.get("erid") or None
 
     post_id = await execute_returning_id(
-        """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, inline_buttons, status, file_path, file_type, file_data, attach_type, erid)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id""",
+        """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, inline_buttons, status, file_path, file_type, file_data, attach_type, erid, attachment_paths)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id""",
         channel["id"], title, message_text, scheduled_dt, inline_buttons,
         "scheduled" if scheduled_dt else "draft",
         file_path, file_type, file_data, attach_type, erid,
+        attachment_paths if attachment_paths else None,
     )
     post = await fetch_one(f"SELECT {_POST_COLS} FROM content_posts WHERE id = $1", post_id)
     return {"success": True, "post": post}
@@ -138,6 +152,7 @@ async def update_post(tc: str, post_id: int, request: Request, user: Dict[str, A
     file_path = None
     file_type = None
     file_data = None
+    attachment_paths = []
 
     if "multipart/form-data" in content_type:
         form = await request.form()
@@ -149,9 +164,18 @@ async def update_post(tc: str, post_id: int, request: Request, user: Dict[str, A
         inline_buttons_raw = form.get("inline_buttons")
         if inline_buttons_raw is not None:
             body["inline_buttons"] = json.loads(inline_buttons_raw)
-        uploaded_file = form.get("file")
-        if uploaded_file and hasattr(uploaded_file, "read"):
-            file_path, file_type, file_data = await _save_upload(uploaded_file)
+        files_list = form.getlist("files")[:10]
+        if not files_list:
+            single = form.get("file")
+            if single:
+                files_list = [single]
+        for uf in files_list:
+            if uf and hasattr(uf, "read"):
+                fp, ft, fd = await _save_upload(uf)
+                if fp:
+                    attachment_paths.append(fp)
+                    if file_path is None:
+                        file_path, file_type, file_data = fp, ft, fd
     else:
         body = await request.json()
 
@@ -177,6 +201,10 @@ async def update_post(tc: str, post_id: int, request: Request, user: Dict[str, A
         fields.append(f"file_data = ${idx}")
         params.append(file_data)
         idx += 1
+        fields.append(f"attachment_paths = ${idx}")
+        params.append(attachment_paths if attachment_paths else None)
+        idx += 1
+        fields.append("attachment_tokens = NULL")
         # Reset cached platform file IDs so both platforms re-upload the new file
         fields.append("telegram_file_id = NULL")
         fields.append("max_file_token = NULL")
@@ -190,6 +218,8 @@ async def update_post(tc: str, post_id: int, request: Request, user: Dict[str, A
         fields.append(f"file_data = ${idx}")
         params.append(None)
         idx += 1
+        fields.append("attachment_paths = NULL")
+        fields.append("attachment_tokens = NULL")
         fields.append("telegram_file_id = NULL")
         fields.append("max_file_token = NULL")
     if not fields:
@@ -338,6 +368,8 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
                 inline_buttons=resolved_buttons,
                 attach_type=post.get("attach_type"),
                 max_file_token=post.get("max_file_token"),
+                attachment_paths=post.get("attachment_paths") or [],
+                attachment_tokens=post.get("attachment_tokens") or [],
             )
         except Exception as e:
             # Откат захвата чтобы шедулер мог попробовать ещё раз

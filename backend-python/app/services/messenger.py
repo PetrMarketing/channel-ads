@@ -217,6 +217,46 @@ async def send_telegram_message(chat_id: int, text: str, **kwargs):
             return await resp.json()
 
 
+async def send_telegram_media_group(chat_id: int, photo_paths: list, caption: str = "", **kwargs):
+    """Отправляет до 10 фото одним альбомом. caption у первого элемента —
+    общий текст к группе. Возвращает {message_ids: [...]} как aggregate."""
+    token = settings.TELEGRAM_BOT_TOKEN
+    if not token or not photo_paths:
+        return None
+    photo_paths = [p for p in photo_paths if p and os.path.exists(p)][:10]
+    if not photo_paths:
+        return None
+    url = f"{settings.TELEGRAM_API_URL}/bot{token}/sendMediaGroup"
+    import json as _j
+    media = []
+    for i, p in enumerate(photo_paths):
+        item = {"type": "photo", "media": f"attach://photo_{i}"}
+        if i == 0 and caption:
+            item["caption"] = caption
+            item["parse_mode"] = "HTML"
+        media.append(item)
+    data = aiohttp.FormData()
+    data.add_field("chat_id", str(chat_id))
+    data.add_field("media", _j.dumps(media))
+    files = []
+    try:
+        for i, p in enumerate(photo_paths):
+            f = open(p, "rb")
+            files.append(f)
+            data.add_field(f"photo_{i}", f, filename=os.path.basename(p), content_type="application/octet-stream")
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=data) as resp:
+                result = await resp.json()
+    finally:
+        for f in files:
+            try: f.close()
+            except: pass
+    if result.get("ok") and isinstance(result.get("result"), list):
+        msg_ids = [m.get("message_id") for m in result["result"] if m.get("message_id")]
+        return {"ok": True, "message_ids": msg_ids, "message_id": msg_ids[0] if msg_ids else None}
+    return result
+
+
 async def send_telegram_photo(chat_id: int, photo, caption: str = "", **kwargs):
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
@@ -500,6 +540,11 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
     inline_buttons = kwargs.get("inline_buttons")
     attach_type_override = kwargs.get("attach_type")
     max_file_token = kwargs.get("max_file_token")
+    # До 10 файлов-вложений (медиа-группа / альбом).
+    # Если задан и attachment_paths из >1 элемента — отправляем альбомом,
+    # иначе фолбэк на одиночный file_path.
+    attachment_paths = kwargs.get("attachment_paths") or []
+    attachment_tokens = kwargs.get("attachment_tokens") or []
     send_type = _resolve_send_type(file_type, attach_type_override)
 
     # Restore file from DB if missing on disk (Render ephemeral FS)
@@ -519,8 +564,24 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
         attachments = None
         _max_type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
         max_attach_type = _max_type_map.get(send_type, "file")
+        # МНОЖЕСТВЕННЫЕ вложения (до 10 фото-альбом).
+        # Приоритет: кэшированные токены → пути к файлам → одиночный file_path.
+        if attachment_tokens and len(attachment_tokens) > 1:
+            attachments = [{"type": max_attach_type, "payload": {"token": t}} for t in attachment_tokens[:10] if t]
+        elif attachment_paths and len(attachment_paths) > 1:
+            attachments = []
+            for p in attachment_paths[:10]:
+                if not p or not os.path.exists(p):
+                    continue
+                up = await max_api.upload_file(p, file_type or "file")
+                if up.get("success"):
+                    tok = _extract_max_file_token(up.get("data", {}))
+                    if tok:
+                        attachments.append({"type": max_attach_type, "payload": {"token": tok}})
+            if not attachments:
+                attachments = None
         # Use cached max_file_token if available
-        if max_file_token:
+        elif max_file_token:
             attachments = [{"type": max_attach_type, "payload": {"token": max_file_token}}]
         elif file_path:
             upload_result = await max_api.upload_file(file_path, file_type or "file")
@@ -552,6 +613,11 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
         kw: Dict[str, Any] = {}
         if reply_markup:
             kw["reply_markup"] = reply_markup
+        # Альбом из >1 фото — sendMediaGroup. Caption уходит с первым.
+        if attachment_paths and len(attachment_paths) > 1 and send_type == "photo":
+            valid_paths = [p for p in attachment_paths if p and os.path.exists(p)]
+            if valid_paths:
+                return await send_telegram_media_group(chat_id, valid_paths, caption=text)
         source = telegram_file_id or file_path
         # If source is a local path that no longer exists, skip file send
         if source and not telegram_file_id and not os.path.exists(source):

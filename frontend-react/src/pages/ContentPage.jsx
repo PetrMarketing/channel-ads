@@ -357,6 +357,8 @@ export default function ContentPage() {
   const [form, setForm] = useState({ title: '', message_text: '', scheduled_at: '', inline_buttons: '', attach_type: '', erid: '' });
   const [showEridModal, setShowEridModal] = useState(false);
   const [postFile, setPostFile] = useState(null);
+  // Доп. файлы поверх postFile (вместе до 10 фото — медиа-группа в канале)
+  const [extraFiles, setExtraFiles] = useState([]);
   const [removeExistingFile, setRemoveExistingFile] = useState(false);
   const [saving, setSaving] = useState(false);
   const [leadMagnets, setLeadMagnets] = useState([]);
@@ -405,7 +407,7 @@ export default function ContentPage() {
 
   const openCreate = (prefillDate) => {
     setEditingPost(null);
-    setPostFile(null);
+    setPostFile(null); setExtraFiles([]);
     setRemoveExistingFile(false);
     setErrors({});
     let scheduledAt;
@@ -425,7 +427,7 @@ export default function ContentPage() {
 
   const openEdit = (post) => {
     setEditingPost(post);
-    setPostFile(null);
+    setPostFile(null); setExtraFiles([]);
     setRemoveExistingFile(false);
     setErrors({});
     let btns = '';
@@ -497,7 +499,7 @@ export default function ContentPage() {
         return local.toISOString();
       })();
 
-      if (postFile) {
+      if (postFile || extraFiles.length > 0) {
         const fd = new FormData();
         fd.append('title', defaultTitle);
         fd.append('message_text', form.message_text);
@@ -505,7 +507,9 @@ export default function ContentPage() {
         fd.append('status', 'scheduled');
         if (parsedButtons) fd.append('inline_buttons', JSON.stringify(parsedButtons));
         if (form.attach_type) fd.append('attach_type', form.attach_type);
-        fd.append('file', postFile);
+        // Главный файл + до 9 дополнительных = до 10 файлов как `files[]`
+        const allFiles = [postFile, ...extraFiles].filter(Boolean).slice(0, 10);
+        for (const f of allFiles) fd.append('files', f);
 
         if (editingPost) {
           data = await api.upload(`/content/${tc}/${editingPost.id}`, fd, 'PUT');
@@ -1409,6 +1413,53 @@ export default function ContentPage() {
                 onRemoveExisting={editingPost?.file_path ? () => setRemoveExistingFile(true) : undefined}
               />
               <div style={hintStyle}>Фото, видео или документ. Максимум 50 МБ.</div>
+
+              {/* Доп. фото для медиа-группы (всего до 10) */}
+              {(postFile || extraFiles.length > 0) && (
+                <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: 'rgba(67, 97, 238, 0.04)', border: '1px dashed rgba(67, 97, 238, 0.30)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#4361ee' }}>
+                      📷 Доп. фото к альбому ({1 + extraFiles.length} / 10)
+                    </span>
+                    {1 + extraFiles.length < 10 && (
+                      <button type="button"
+                        onClick={() => document.getElementById('extra-files-input')?.click()}
+                        style={{
+                          background: 'none', border: '1px solid #4361ee', color: '#4361ee',
+                          borderRadius: 8, padding: '4px 12px', cursor: 'pointer',
+                          fontSize: 12, fontWeight: 600,
+                        }}>+ Добавить фото</button>
+                    )}
+                  </div>
+                  <input id="extra-files-input" type="file" accept="image/*" multiple style={{ display: 'none' }}
+                    onChange={e => {
+                      const fs = Array.from(e.target.files || []);
+                      setExtraFiles(prev => {
+                        const slots = 10 - 1 - prev.length;
+                        return [...prev, ...fs.slice(0, slots)];
+                      });
+                      e.target.value = '';
+                    }} />
+                  {extraFiles.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {extraFiles.map((f, i) => (
+                        <div key={i} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          background: '#fff', borderRadius: 8, padding: '4px 8px',
+                          fontSize: 11, border: '1px solid #e5e7eb',
+                        }}>
+                          📎 {f.name.length > 22 ? f.name.slice(0, 19) + '…' : f.name}
+                          <button type="button" onClick={() => setExtraFiles(p => p.filter((_, x) => x !== i))}
+                            style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6 }}>
+                    При публикации все фото уйдут одним альбомом (медиа-группой). Текст — общим caption.
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>

@@ -324,6 +324,8 @@ async def process_scheduled_posts():
                     inline_buttons=resolved_buttons,
                     attach_type=post.get("attach_type"),
                     max_file_token=post.get("max_file_token"),
+                    attachment_paths=post.get("attachment_paths") or [],
+                    attachment_tokens=post.get("attachment_tokens") or [],
                 )
                 # send_to_channel может вернуть {success: False, ...} — это тоже фейл
                 if isinstance(result, dict) and result.get("success") is False:
