@@ -390,10 +390,19 @@ async def process_scheduled_posts():
                             msg_id = result.get("message", {}).get("body", {}).get("mid")
                 except Exception as e:
                     print(f"[FunnelProcessor] Post {post['id']}: msg_id parse error: {e}")
-                await execute(
-                    "UPDATE content_posts SET status = 'published', published_at = NOW(), scheduled_at = NULL, telegram_message_id = $1 WHERE id = $2",
-                    str(msg_id) if msg_id else None, post["id"],
-                )
+                # UPDATE обёрнут в try — пост уже в канале, нельзя допустить
+                # проброс во внешний except, который вернёт scheduled → дубли
+                try:
+                    await execute(
+                        "UPDATE content_posts SET status = 'published', published_at = NOW(), scheduled_at = NULL, telegram_message_id = $1 WHERE id = $2",
+                        str(msg_id) if msg_id else None, post["id"],
+                    )
+                except Exception as e:
+                    print(f"[FunnelProcessor] Post {post['id']}: UPDATE to published failed: {e}, trying without msg_id")
+                    await execute(
+                        "UPDATE content_posts SET status = 'published', published_at = NOW(), scheduled_at = NULL WHERE id = $1",
+                        post["id"],
+                    )
             else:
                 # КРИТИЧНО: НЕ возвращаем 'scheduled' с retry через 5 мин —
                 # send_to_channel мог реально отправить пост, а exception
