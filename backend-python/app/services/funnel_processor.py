@@ -395,20 +395,23 @@ async def process_scheduled_posts():
                     str(msg_id) if msg_id else None, post["id"],
                 )
             else:
-                # Откат в scheduled со сдвигом времени на 5 мин — чтобы шедулер
-                # повторил позже, а не каждые 30 сек. После 3 фейлов подряд можно
-                # бы помечать failed, но это уже отдельная фича.
+                # КРИТИЧНО: НЕ возвращаем 'scheduled' с retry через 5 мин —
+                # send_to_channel мог реально отправить пост, а exception
+                # упал на парсинге ответа MAX-API. Тогда мы шлём дубликат
+                # каждые 5 минут бесконечно. Лучше пометить failed —
+                # пользователь увидит ошибку, проверит канал и вручную
+                # нажмёт «Опубликовать» если нужно.
                 await execute(
-                    """UPDATE content_posts SET status = 'scheduled',
-                       scheduled_at = NOW() + INTERVAL '5 minutes'
+                    """UPDATE content_posts SET status = 'failed',
+                       scheduled_at = NULL
                        WHERE id = $1 AND status = 'publishing'""",
                     post["id"],
                 )
-                print(f"[FunnelProcessor] Post {post['id']} send failed, retry in 5 min: {send_error}")
+                print(f"[FunnelProcessor] Post {post['id']} send failed → status='failed' (no auto-retry): {send_error}")
         except Exception as e:
-            # Сюда долетают только ошибки до try send_to_channel выше
-            # (например, ensure_file, channel lookup и т.п.) — оставляем
-            # scheduled чтобы шедулер ретраил.
+            # Сюда долетают только ошибки ДО try send_to_channel (ensure_file,
+            # channel lookup, button resolve). В канал ещё ничего не уходило —
+            # безопасно вернуть scheduled с задержкой, чтобы шедулер повторил.
             import traceback
             traceback.print_exc()
             await execute(
@@ -417,7 +420,7 @@ async def process_scheduled_posts():
                    WHERE id = $1 AND status = 'publishing'""",
                 post["id"],
             )
-            print(f"[FunnelProcessor] Post {post['id']} setup error, retry in 5 min: {e}")
+            print(f"[FunnelProcessor] Post {post['id']} setup error (before send), retry in 5 min: {e}")
 
 
 async def process_automation_queue():
