@@ -538,6 +538,72 @@ async def _cart_loop():
         await asyncio.sleep(600)  # 10 minutes
 
 
+async def refresh_channel_titles():
+    """Синхронизация title и avatar активных MAX-каналов.
+    Если владелец переименовал канал в мессенджере — у нас в БД остаётся
+    старое название, пока сюда не пришёл `bot_added` (что бывает только
+    при повторном добавлении). Раз в 6 часов опрашиваем get_chat
+    и обновляем разошедшиеся поля."""
+    from .max_api import get_max_api
+    max_api = get_max_api()
+    if not max_api:
+        return
+    rows = await fetch_all(
+        """SELECT id, max_chat_id, title, avatar_url, username
+           FROM channels
+           WHERE platform = 'max' AND is_active = 1 AND deleted_at IS NULL
+             AND max_chat_id IS NOT NULL
+           ORDER BY updated_at NULLS FIRST
+           LIMIT 200"""
+    )
+    updated_count = 0
+    for r in rows:
+        try:
+            info = await max_api.get_chat(str(r["max_chat_id"]))
+            if not info.get("success"):
+                continue
+            data = info.get("data", {}) or {}
+            new_title = (data.get("title") or "").strip()
+            new_link = data.get("link") or None
+            icon = data.get("icon") or {}
+            new_avatar = icon.get("url") if isinstance(icon, dict) else None
+
+            updates, params = [], []
+            idx = 1
+            if new_title and new_title != (r.get("title") or "").strip():
+                updates.append(f"title = ${idx}"); params.append(new_title); idx += 1
+            if new_avatar and new_avatar != r.get("avatar_url"):
+                updates.append(f"avatar_url = ${idx}"); params.append(new_avatar); idx += 1
+            if new_link and new_link != r.get("username"):
+                updates.append(f"username = ${idx}"); params.append(new_link); idx += 1
+
+            if updates:
+                params.append(r["id"])
+                await execute(
+                    f"UPDATE channels SET {', '.join(updates)} WHERE id = ${idx}",
+                    *params,
+                )
+                updated_count += 1
+                print(f"[ChannelRefresh] #{r['id']} updated: title={new_title!r}")
+        except Exception as e:
+            print(f"[ChannelRefresh] #{r.get('id')} get_chat failed: {e}")
+        # Лёгкий rate-limit для MAX API (5-10 req/sec у бота)
+        await asyncio.sleep(0.15)
+    if updated_count:
+        print(f"[ChannelRefresh] обновлено {updated_count} каналов из {len(rows)}")
+
+
+async def _channel_refresh_loop():
+    # 2 минуты после старта чтобы не дёргать сразу при boot
+    await asyncio.sleep(120)
+    while True:
+        try:
+            await refresh_channel_titles()
+        except Exception as e:
+            print(f"[ChannelRefresh] loop error: {e}")
+        await asyncio.sleep(6 * 3600)  # раз в 6 часов
+
+
 async def purge_deleted_channels():
     """Каналы в корзине >30 дней — каскадно вычищаем."""
     rows = await fetch_all(
@@ -588,8 +654,9 @@ def start_processors():
         asyncio.create_task(_automation_loop()),
         asyncio.create_task(_cart_loop()),
         asyncio.create_task(_trash_purge_loop()),
+        asyncio.create_task(_channel_refresh_loop()),
     ]
-    print("[Processors] Started (funnels: 30s, broadcasts: 60s, content: 60s, automation: 30s, carts: 10m, trash-purge: 1h)")
+    print("[Processors] Started (funnels: 30s, broadcasts: 60s, content: 60s, automation: 30s, carts: 10m, trash-purge: 1h, channel-refresh: 6h)")
 
 
 def stop_processors():
