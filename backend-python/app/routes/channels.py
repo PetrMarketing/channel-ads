@@ -152,6 +152,21 @@ async def scan_channels(user: Dict[str, Any] = Depends(get_current_user)):
     return {"success": True, "found": found}
 
 
+@router.get("/trash")
+async def list_trash(user: Dict[str, Any] = Depends(get_current_user)):
+    """Корзина — каналы удалённые юзером, ещё не вычищенные кроном.
+    Зарегистрирован ДО /{tracking_code} чтобы FastAPI не парсил «trash» как код."""
+    rows = await fetch_all(
+        """SELECT id, title, tracking_code, platform, deleted_at,
+                  EXTRACT(EPOCH FROM (deleted_at + INTERVAL '30 days' - NOW()))::int AS seconds_until_purge
+           FROM channels
+           WHERE user_id = $1 AND deleted_at IS NOT NULL
+           ORDER BY deleted_at DESC""",
+        user["id"],
+    )
+    return {"success": True, "channels": [dict(r) for r in rows]}
+
+
 @router.get("/")
 async def list_channels(user: Dict[str, Any] = Depends(get_current_user)):
     # Own channels
@@ -351,20 +366,6 @@ async def delete_channel(tracking_code: str, user: Dict[str, Any] = Depends(get_
         channel["id"],
     )
     return {"success": True, "deleted_at": "now", "restore_until_days": 30}
-
-
-@router.get("/trash")
-async def list_trash(user: Dict[str, Any] = Depends(get_current_user)):
-    """Корзина — каналы удалённые юзером, ещё не вычищенные кроном."""
-    rows = await fetch_all(
-        """SELECT id, title, tracking_code, platform, deleted_at,
-                  EXTRACT(EPOCH FROM (deleted_at + INTERVAL '30 days' - NOW()))::int AS seconds_until_purge
-           FROM channels
-           WHERE user_id = $1 AND deleted_at IS NOT NULL
-           ORDER BY deleted_at DESC""",
-        user["id"],
-    )
-    return {"success": True, "channels": [dict(r) for r in rows]}
 
 
 @router.post("/{tracking_code}/restore")
