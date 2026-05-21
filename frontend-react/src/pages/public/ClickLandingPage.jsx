@@ -122,17 +122,19 @@ export default function ClickLandingPage() {
       }
     }
 
-    // Fire YM/VK goals from the user's browser via /_ymp proxy. Image-beacon
-    // GETs use the user's IP, so the goal attaches to the same session as
-    // the visit hit — guaranteed to count in YM reports. Server-side fire
-    // after subscription stays as a backup (idempotent via cid dedupe).
-    try { reachGoals(); } catch {}
+    // ВАЖНО: НЕ fires reachGoals() здесь — это false-positive!
+    // Раньше fires при клике на кнопку → 20 «конверсий» в Директе
+    // при 0 реальных подписок. Цель должна стрелять ТОЛЬКО когда
+    // подписка реально подтверждена ботом (server-side fire через
+    // fire_server_goals_safe в /track/* эндпойнтах). Если pending_conversion
+    // не сработает в окне 60 сек — атрибуция теряется, но это правильнее
+    // чем считать «кликнул=подписался».
 
     // Hard navigate (assign, not href, to preserve back-button history).
     if (typeof window !== 'undefined') {
       window.location.assign(targetUrl);
     }
-  }, [visitId, ymClientIdPromise, getYmClientIdSync, buildBotUrl, reachGoals]);
+  }, [visitId, ymClientIdPromise, getYmClientIdSync, buildBotUrl]);
 
   if (loading) return (
     <div style={{
