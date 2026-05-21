@@ -110,7 +110,9 @@ async def find_or_create_max_user(max_user_id: str, name: str = "", dialog_chat_
     """Look up or create a user from MAX data, returning user dict and JWT.
 
     Также подхватывает каналы-сироты (pending_owner_max_user_id) — если бот
-    был добавлен в канал админом ДО первой регистрации пользователя в сервисе."""
+    был добавлен в канал админом ДО первой регистрации пользователя в сервисе.
+    Если name из MAX отличается от того что в БД — обновляет (юзер мог
+    поменять отображаемое имя в мессенджере)."""
     user = await fetch_one("SELECT * FROM users WHERE max_user_id = $1", max_user_id)
     if not user:
         uid = await execute_returning_id(
@@ -118,6 +120,15 @@ async def find_or_create_max_user(max_user_id: str, name: str = "", dialog_chat_
             max_user_id, name,
         )
         user = await fetch_one("SELECT * FROM users WHERE id = $1", uid)
+    elif name and name.strip() and name.strip() != (user.get("first_name") or "").strip():
+        # MAX вернул имя, и оно отличается от сохранённого — обновляем
+        from ..database import execute
+        try:
+            await execute("UPDATE users SET first_name = $1 WHERE id = $2", name.strip(), user["id"])
+            user = {**dict(user), "first_name": name.strip()}
+            print(f"[Auth] user {user['id']} first_name updated: '{user.get('first_name')}'")
+        except Exception as e:
+            print(f"[Auth] update first_name failed: {e}")
 
     # Store dialog chat_id for future messaging
     if dialog_chat_id and user:
