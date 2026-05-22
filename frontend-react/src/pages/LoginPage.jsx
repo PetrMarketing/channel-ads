@@ -51,26 +51,15 @@ export default function LoginPage() {
         return;
       }
 
-      // Check existing session
-      const existingToken = localStorage.getItem('token');
-      if (existingToken) {
-        try {
-          const r = await fetch(`/api/auth/me`, {
-            headers: { 'Authorization': 'Bearer ' + existingToken },
-          });
-          const data = await r.json();
-          if (data.success && data.user.id !== newUserData.id) {
-            setLoading(false);
-            setCurrentUser(data.user);
-            setNewUser(newUserData);
-            setPendingToken(botToken);
-            setShowMerge(true);
-            return;
-          }
-        } catch {}
-      }
-
-      // No conflict — log in
+      // ВАЖНО: при приходе по ссылке от бота ВСЕГДА логинимся под этим
+      // юзером без вопросов. Раньше показывали merge UI если в localStorage
+      // была другая сессия — это вызывало массовый баг во встроенном
+      // браузере MAX, где localStorage часто шарится между разными
+      // MAX-юзерами на одном устройстве. Юзер видел чужой аккаунт как
+      // «текущий» и предложение объединить.
+      //
+      // Если у юзера ДЕЙСТВИТЕЛЬНО 2 аккаунта (telegram + max) — он может
+      // объединить их вручную через настройки.
       login(botToken, newUserData);
 
       // Register referral if ref code present
