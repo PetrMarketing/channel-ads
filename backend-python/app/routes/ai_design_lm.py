@@ -84,6 +84,11 @@ async def generate_lm_ideas(tc: str, session_id: int, request: Request, user: Di
     if not session:
         raise HTTPException(status_code=404, detail="Сессия не найдена")
 
+    # Лимит 2 перегенерации (regen_count > 2 = всего 3 попытки)
+    regen_count = int(session.get("lm_ideas_regen_count") or 0)
+    if regen_count > 2:
+        raise HTTPException(status_code=400, detail="Достигнут лимит перегенераций (макс 2)")
+
     # Сохраняем пожелания
     await execute(
         "UPDATE ai_design_sessions SET lm_wishes=$1, updated_at=NOW() WHERE id=$2",
@@ -113,11 +118,13 @@ async def generate_lm_ideas(tc: str, session_id: int, request: Request, user: Di
         ideas = [{"title": "Подарок", "description": content[:200]}]
 
     await execute(
-        "UPDATE ai_design_sessions SET lm_ideas=$1, updated_at=NOW() WHERE id=$2",
+        """UPDATE ai_design_sessions
+           SET lm_ideas=$1, lm_ideas_regen_count=COALESCE(lm_ideas_regen_count,0)+1, updated_at=NOW()
+           WHERE id=$2""",
         json_mod.dumps(ideas, ensure_ascii=False), session_id
     )
 
-    return {"success": True, "ideas": ideas}
+    return {"success": True, "ideas": ideas, "regen_count": regen_count + 1}
 
 
 # ---- Выбор идеи лид-магнита ----
@@ -162,6 +169,11 @@ async def generate_lm_content(tc: str, session_id: int, user: Dict[str, Any] = D
     if not session:
         raise HTTPException(status_code=404, detail="Сессия не найдена")
 
+    # Лимит 2 перегенерации (regen_count > 2 = всего 3 попытки)
+    regen_count = int(session.get("lm_content_regen_count") or 0)
+    if regen_count > 2:
+        raise HTTPException(status_code=400, detail="Достигнут лимит перегенераций (макс 2)")
+
     chosen_idea = _parse_json_field(session.get("lm_chosen_idea", "{}"))
     niche = session.get("niche") or ""
     style = session.get("style") or "минимализм"
@@ -197,12 +209,13 @@ async def generate_lm_content(tc: str, session_id: int, user: Dict[str, Any] = D
 
     await execute(
         """UPDATE ai_design_sessions
-           SET lm_content=$1, lm_post_text=$2, lm_banner_url=$3, updated_at=NOW()
+           SET lm_content=$1, lm_post_text=$2, lm_banner_url=$3,
+               lm_content_regen_count=COALESCE(lm_content_regen_count,0)+1, updated_at=NOW()
            WHERE id=$4""",
         lm_content, post_text, banner_url, session_id
     )
 
-    return {"success": True, "lm_content": lm_content, "post_text": post_text, "banner_url": banner_url}
+    return {"success": True, "lm_content": lm_content, "post_text": post_text, "banner_url": banner_url, "regen_count": regen_count + 1}
 
 
 # ---- Установка лид-магнита (создание LM + пин + публикация) ----

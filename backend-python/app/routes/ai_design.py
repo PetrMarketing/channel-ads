@@ -121,17 +121,28 @@ async def create_session(tc: str, user: Dict[str, Any] = Depends(get_current_use
     if not u or (u["ai_tokens"] or 0) < SESSION_COST:
         raise HTTPException(status_code=402, detail=f"Недостаточно ИИ токенов. Нужно {SESSION_COST}, у вас {u['ai_tokens'] if u else 0}")
 
-    await execute("UPDATE users SET ai_tokens = ai_tokens - $1 WHERE id=$2", SESSION_COST, user["id"])
-    await execute(
-        "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1,$2,$3,$4)",
-        user["id"], SESSION_COST, "ai_design", f"Сессия оформления канала {channel['title']}"
-    )
-
-    session_id = await execute_returning_id(
-        """INSERT INTO ai_design_sessions (user_id, channel_id, tokens_spent)
-           VALUES ($1, $2, $3) RETURNING id""",
-        user["id"], channel["id"], SESSION_COST
-    )
+    # Атомарно: списание + лог + создание сессии в одной транзакции.
+    # Если что-то упадёт между шагами — откат полный, юзер не теряет
+    # токены при невидимой сессии.
+    from ..database import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Двойная проверка баланса под locked row на случай гонки
+            cur = await conn.fetchrow("SELECT ai_tokens FROM users WHERE id=$1 FOR UPDATE", user["id"])
+            if not cur or (cur["ai_tokens"] or 0) < SESSION_COST:
+                raise HTTPException(status_code=402, detail=f"Недостаточно ИИ токенов. Нужно {SESSION_COST}")
+            await conn.execute("UPDATE users SET ai_tokens = ai_tokens - $1 WHERE id=$2", SESSION_COST, user["id"])
+            await conn.execute(
+                "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1,$2,$3,$4)",
+                user["id"], SESSION_COST, "ai_design", f"Сессия оформления канала {channel['title']}"
+            )
+            row = await conn.fetchrow(
+                """INSERT INTO ai_design_sessions (user_id, channel_id, tokens_spent)
+                   VALUES ($1, $2, $3) RETURNING id""",
+                user["id"], channel["id"], SESSION_COST
+            )
+            session_id = row["id"] if row else None
 
     return {"success": True, "session_id": session_id, "tokens_spent": SESSION_COST}
 
@@ -453,6 +464,8 @@ async def get_session(tc: str, session_id: int, user: Dict[str, Any] = Depends(g
             "chosen_description": session.get("chosen_description"),
             "tokens_spent": session.get("tokens_spent"),
             "regen_count": session.get("regen_count") or 0,
+            "lm_ideas_regen_count": session.get("lm_ideas_regen_count") or 0,
+            "lm_content_regen_count": session.get("lm_content_regen_count") or 0,
             "lm_ideas": _parse_json_field(session.get("lm_ideas")),
             "lm_chosen_idea_index": session.get("lm_chosen_idea_index"),
             "lm_chosen_idea": _parse_json_field(session.get("lm_chosen_idea")),

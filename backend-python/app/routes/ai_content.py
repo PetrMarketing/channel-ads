@@ -1357,17 +1357,21 @@ def _format_palette(palette) -> str:
 
 async def _charge_tokens(user_id: int, amount: int, action: str, description: str):
     """Списывает токены атомарно. Бросает 402 если недостаточно."""
-    u = await fetch_one("SELECT ai_tokens FROM users WHERE id=$1", user_id)
-    if not u or (u["ai_tokens"] or 0) < amount:
-        raise HTTPException(
-            status_code=402,
-            detail=f"Недостаточно ИИ токенов. Нужно {amount}, у вас {u['ai_tokens'] if u else 0}",
-        )
-    await execute("UPDATE users SET ai_tokens = ai_tokens - $1 WHERE id=$2", amount, user_id)
-    await execute(
-        "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1,$2,$3,$4)",
-        user_id, amount, action, description,
-    )
+    from ..database import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            cur = await conn.fetchrow("SELECT ai_tokens FROM users WHERE id=$1 FOR UPDATE", user_id)
+            if not cur or (cur["ai_tokens"] or 0) < amount:
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Недостаточно ИИ токенов. Нужно {amount}, у вас {cur['ai_tokens'] if cur else 0}",
+                )
+            await conn.execute("UPDATE users SET ai_tokens = ai_tokens - $1 WHERE id=$2", amount, user_id)
+            await conn.execute(
+                "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1,$2,$3,$4)",
+                user_id, amount, action, description,
+            )
 
 
 async def _refund_tokens(user_id: int, amount: int, reason: str):
