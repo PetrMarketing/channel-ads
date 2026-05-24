@@ -282,7 +282,33 @@ async def generate_spec(tc: str, landing_id: int, user: Dict[str, Any] = Depends
         f"ВАЖНО: не используй markdown-разметку (###, **, __ и т.д.). Пиши простым текстом."
     )
 
-    spec = await openrouter_chat(prompt, model="anthropic/claude-sonnet-4")
+    # Каскад моделей: основная Sonnet 4 → fallback gpt-4o-mini.
+    # Любые HTTPException (402 нет кредитов, 429 rate limit, 5xx) и пустые
+    # ответы Sonnet — переходим на дешёвую модель.
+    spec = ""
+    last_error = None
+    for attempt_model in ("anthropic/claude-sonnet-4", "openai/gpt-4o-mini"):
+        try:
+            spec = (await openrouter_chat(prompt, model=attempt_model) or "").strip()
+        except HTTPException as e:
+            last_error = e.detail
+            print(f"[ai-landings] generate-spec {attempt_model} HTTPException: {e.detail}")
+            continue
+        except Exception as e:
+            last_error = str(e)
+            print(f"[ai-landings] generate-spec {attempt_model} EXC: {e}")
+            continue
+        if spec:
+            if attempt_model != "anthropic/claude-sonnet-4":
+                print(f"[ai-landings] generate-spec fallback succeeded with {attempt_model}")
+            break
+        print(f"[ai-landings] generate-spec {attempt_model} returned empty; trying next")
+
+    if not spec:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Не удалось сгенерировать ТЗ. Попробуйте через пару минут или переформулируйте бриф. ({last_error or 'пустой ответ ИИ'})",
+        )
 
     await execute(
         "UPDATE ai_landings SET technical_spec=$1, updated_at=NOW() WHERE id=$2",
@@ -369,7 +395,31 @@ async def generate_landing(tc: str, landing_id: int, user: Dict[str, Any] = Depe
         f"Верни ТОЛЬКО HTML-код без пояснений."
     )
 
-    html = await openrouter_chat(prompt, model="anthropic/claude-sonnet-4")
+    # Каскад моделей для устойчивости (402/429/empty → fallback)
+    html = ""
+    last_error = None
+    for attempt_model in ("anthropic/claude-sonnet-4", "openai/gpt-4o-mini"):
+        try:
+            html = (await openrouter_chat(prompt, model=attempt_model) or "").strip()
+        except HTTPException as e:
+            last_error = e.detail
+            print(f"[ai-landings] generate {attempt_model} HTTPException: {e.detail}")
+            continue
+        except Exception as e:
+            last_error = str(e)
+            print(f"[ai-landings] generate {attempt_model} EXC: {e}")
+            continue
+        if html:
+            if attempt_model != "anthropic/claude-sonnet-4":
+                print(f"[ai-landings] generate fallback succeeded with {attempt_model}")
+            break
+        print(f"[ai-landings] generate {attempt_model} returned empty; trying next")
+
+    if not html:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Не удалось сгенерировать лендинг. Попробуйте через пару минут. ({last_error or 'пустой ответ ИИ'})",
+        )
 
     # Очистка: убираем markdown обёртки если есть
     if html.startswith("```html"):
