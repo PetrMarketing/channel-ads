@@ -446,10 +446,22 @@ export default function ContentPage() {
     if (post.inline_buttons) {
       try { btns = typeof post.inline_buttons === 'string' ? post.inline_buttons : JSON.stringify(post.inline_buttons, null, 2); } catch { /* ignore */ }
     }
+    // scheduled_at у published/failed постов = NULL (мы его зануляем
+    // при публикации и при фейле). Чтобы юзер мог сохранить через
+    // валидацию — подставляем дефолт «сейчас + 30 мин МСК» (как в
+    // openCreate). Так редактирование не блокируется пустой датой.
+    let scheduledAt = '';
+    if (post.scheduled_at) {
+      scheduledAt = toLocalDatetime(post.scheduled_at);
+    } else {
+      const mskNowPlus30 = new Date(Date.now() + 3 * 60 * 60 * 1000 + 30 * 60 * 1000);
+      const pad = (n) => String(n).padStart(2, '0');
+      scheduledAt = `${mskNowPlus30.getUTCFullYear()}-${pad(mskNowPlus30.getUTCMonth() + 1)}-${pad(mskNowPlus30.getUTCDate())}T${pad(mskNowPlus30.getUTCHours())}:${pad(mskNowPlus30.getUTCMinutes())}`;
+    }
     setForm({
       title: post.title || '',
       message_text: post.message_text || '',
-      scheduled_at: post.scheduled_at ? toLocalDatetime(post.scheduled_at) : '',
+      scheduled_at: scheduledAt,
       inline_buttons: btns,
       attach_type: post.attach_type || '',
       erid: post.erid || '',
