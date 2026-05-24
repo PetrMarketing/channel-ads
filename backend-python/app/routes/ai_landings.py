@@ -375,8 +375,8 @@ async def generate_landing(tc: str, landing_id: int, user: Dict[str, Any] = Depe
         f"Название канала: {channel_title}\n"
         f"Ссылка на канал: {join_link}\n"
         f"{photos_desc}\n"
-        f"{'Техническое задание:\n' + spec if spec else ''}\n"
-        f"{ref_block}\n"
+        + (f"Техническое задание:\n{spec}\n" if spec else "")
+        + f"{ref_block}\n"
         f"ТРЕБОВАНИЯ:\n"
         f"1. Полный HTML документ с <!DOCTYPE html>, все стили в <style> (не inline на элементах)\n"
         f"2. Адаптивный дизайн (mobile-first)\n"
