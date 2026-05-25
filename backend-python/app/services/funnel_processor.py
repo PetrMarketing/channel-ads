@@ -32,8 +32,93 @@ def _parse_hhmm(s):
         return 10, 0
 
 
+# Все «человеческие» время в воронке — по МСК (UTC+3).
+# В БД scheduled_at храним в UTC (как и NOW() postgres).
+_MSK_OFFSET_HOURS = 3
+
+
+def _compute_step_scheduled_at(prev_at_utc, step) -> "datetime":
+    """Возвращает scheduled_at (naive UTC datetime) для шага воронки.
+
+    prev_at_utc — момент предыдущего шага (или подписки для первого).
+    Каждый шаг считается ОТ предыдущего, а не от подписки.
+
+    Поддерживаемые типы delay_config:
+      after_seconds — value секунд/минут/часов/дней после prev (без TZ).
+      at_day_time   — через N полных дней в HH:MM (МСК) от prev. Если в
+                      этот же день время уже прошло, +1 день.
+      at_weekday_time — ближайший указанный день недели в HH:MM (МСК).
+      at_exact_date — фиксированный момент (naive = МСК).
+
+    Fallback на step.delay_minutes (число минут от prev).
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    import json as _json
+
+    # Fallback: delay_minutes от UI (число минут от prev)
+    fallback_minutes = int(step.get("delay_minutes", 60) or 60)
+    target_utc = prev_at_utc + _td(minutes=fallback_minutes)
+
+    delay_config = step.get("delay_config")
+    if not delay_config:
+        return target_utc
+
+    try:
+        cfg = _json.loads(delay_config) if isinstance(delay_config, str) else delay_config
+        cfg_type = (cfg.get("type") or "after_seconds").lower()
+
+        if cfg_type == "after_seconds":
+            val = int(cfg.get("value", 60) or 60)
+            unit = (cfg.get("unit") or "minutes").lower()
+            mult = {"seconds": 1, "minutes": 60, "hours": 3600, "days": 86400}.get(unit, 60)
+            return prev_at_utc + _td(seconds=val * mult)
+
+        if cfg_type == "at_day_time":
+            days = int(cfg.get("days", 1) or 0)
+            h, m = _parse_hhmm(cfg.get("time"))
+            # Считаем в МСК: prev_msk + N дней с установкой времени
+            prev_msk = prev_at_utc + _td(hours=_MSK_OFFSET_HOURS)
+            target_msk = (prev_msk + _td(days=days)).replace(hour=h, minute=m, second=0, microsecond=0)
+            # Если получилось в прошлом (или равно prev) — +1 день
+            if target_msk <= prev_msk:
+                target_msk += _td(days=1)
+            return target_msk - _td(hours=_MSK_OFFSET_HOURS)
+
+        if cfg_type == "at_weekday_time":
+            weekday = int(cfg.get("weekday", 1) or 1)
+            h, m = _parse_hhmm(cfg.get("time"))
+            prev_msk = prev_at_utc + _td(hours=_MSK_OFFSET_HOURS)
+            days_ahead = (weekday - prev_msk.weekday()) % 7
+            target_msk = (prev_msk + _td(days=days_ahead)).replace(hour=h, minute=m, second=0, microsecond=0)
+            if target_msk <= prev_msk:
+                target_msk += _td(days=7)
+            return target_msk - _td(hours=_MSK_OFFSET_HOURS)
+
+        if cfg_type == "at_exact_date":
+            dt_str = (cfg.get("datetime") or "").strip()
+            if dt_str:
+                try:
+                    # ISO-парсинг. Поддерживаем Z и наивные значения (трактуем как МСК).
+                    target = _dt.fromisoformat(dt_str.replace("Z", "+00:00"))
+                    if target.tzinfo:
+                        # Уже с TZ — конвертим в UTC
+                        target_utc_aware = target.astimezone(__import__("datetime").timezone.utc)
+                        return target_utc_aware.replace(tzinfo=None)
+                    # naive → юзер вводил в datetime-local (это локальное время браузера,
+                    # для русских юзеров обычно МСК). Считаем naive как МСК и -3ч.
+                    return target - _td(hours=_MSK_OFFSET_HOURS)
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[FunnelProcessor] delay_config parse error for step {step.get('id')}: {e}")
+
+    return target_utc
+
+
 async def schedule_funnel_for_lead(lead_id: int, lead_magnet_id: int, telegram_id=None, max_user_id=None, platform="telegram"):
     """Schedule funnel steps for a lead. Cancels any pending steps and reschedules from now."""
+    from datetime import datetime as _dt
+
     # Remove all previous progress for this lead (pending + sent) to start fresh
     await execute(
         "DELETE FROM funnel_progress WHERE lead_id = $1",
@@ -43,68 +128,23 @@ async def schedule_funnel_for_lead(lead_id: int, lead_magnet_id: int, telegram_i
         "SELECT * FROM funnel_steps WHERE lead_magnet_id = $1 AND is_active = 1 ORDER BY step_number",
         lead_magnet_id,
     )
-    cumulative_seconds = 0
+
+    # prev_at_utc — для первого шага = подписка (now UTC), для последующих
+    # = scheduled_at предыдущего шага. Так шаги «нанизываются» по времени
+    # последовательно, а не все от подписки.
+    prev_at_utc = _dt.utcnow()
     for step in steps:
-        # Calculate delay from delay_config (preferred) or delay_minutes (legacy).
-        # delay_minutes UI всегда выставляет корректно (через delayToMinutes),
-        # поэтому это самый надёжный fallback.
-        step_delay = int(step.get("delay_minutes", 60) or 60) * 60
-        delay_config = step.get("delay_config")
-        if delay_config:
-            import json as _json
-            try:
-                cfg = _json.loads(delay_config) if isinstance(delay_config, str) else delay_config
-                cfg_type = (cfg.get("type") or "after_seconds").lower()
-                if cfg_type == "after_seconds":
-                    val = int(cfg.get("value", 60) or 60)
-                    unit = (cfg.get("unit") or "minutes").lower()
-                    if unit == "seconds":
-                        step_delay = val
-                    elif unit == "minutes":
-                        step_delay = val * 60
-                    elif unit == "hours":
-                        step_delay = val * 3600
-                    elif unit == "days":
-                        step_delay = val * 86400
-                elif cfg_type == "at_day_time":
-                    # Через N дней в H:M (соответствует UI delayToMinutes:
-                    # d*1440 + h*60 + m, в секундах)
-                    days = int(cfg.get("days", 1) or 0)
-                    h, m = _parse_hhmm(cfg.get("time"))
-                    step_delay = days * 86400 + h * 3600 + m * 60
-                elif cfg_type == "at_weekday_time":
-                    # Ближайший день недели N в H:M
-                    weekday = int(cfg.get("weekday", 1) or 1)
-                    h, m = _parse_hhmm(cfg.get("time"))
-                    from datetime import datetime as _dt, timedelta as _td
-                    now = _dt.utcnow()
-                    days_ahead = (weekday - now.weekday()) % 7
-                    target = (now + _td(days=days_ahead)).replace(
-                        hour=h, minute=m, second=0, microsecond=0
-                    )
-                    if target <= now:
-                        target += _td(days=7)
-                    step_delay = max(60, int((target - now).total_seconds()))
-                elif cfg_type == "at_exact_date":
-                    dt = cfg.get("datetime") or ""
-                    if dt:
-                        from datetime import datetime as _dt
-                        try:
-                            target = _dt.fromisoformat(dt.replace("Z", "+00:00"))
-                            if target.tzinfo:
-                                target = target.replace(tzinfo=None)
-                            now = _dt.utcnow()
-                            step_delay = max(60, int((target - now).total_seconds()))
-                        except Exception:
-                            pass
-            except Exception as e:
-                print(f"[FunnelProcessor] delay_config parse error for step {step.get('id')}: {e}")
-        cumulative_seconds += step_delay
+        target_utc = _compute_step_scheduled_at(prev_at_utc, step)
+        # Гарантируем что не уходим назад во времени (например, кто-то задал
+        # at_exact_date в прошлом)
+        if target_utc < prev_at_utc:
+            target_utc = prev_at_utc
         await execute(
             """INSERT INTO funnel_progress (lead_id, funnel_step_id, telegram_id, max_user_id, platform, scheduled_at, status)
-               VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '1 second' * $6, 'pending')""",
-            lead_id, step["id"], telegram_id, max_user_id, platform, cumulative_seconds,
+               VALUES ($1, $2, $3, $4, $5, $6, 'pending')""",
+            lead_id, step["id"], telegram_id, max_user_id, platform, target_utc,
         )
+        prev_at_utc = target_utc
     if steps:
         print(f"[FunnelProcessor] Scheduled {len(steps)} steps for lead {lead_id}, lm {lead_magnet_id}")
 
