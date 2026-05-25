@@ -34,7 +34,7 @@ async def main():
         SELECT fp.id AS fp_id, fp.lead_id, fp.funnel_step_id,
                fp.scheduled_at AS old_scheduled_at,
                fs.step_number, fs.delay_minutes, fs.delay_config,
-               l.created_at AS lead_created_at
+               l.claimed_at AS lead_subscribed_at
         FROM funnel_progress fp
         JOIN funnel_steps fs ON fs.id = fp.funnel_step_id
         JOIN leads l ON l.id = fp.lead_id
@@ -59,12 +59,15 @@ async def main():
     changes = 0
     unchanged = 0
     for lead_id, steps in by_lead.items():
-        # Baseline для первого шага = момент подписки лида
-        # (lead.created_at в БД — timestamp without TZ, naive UTC)
-        baseline = steps[0]["lead_created_at"]
+        # Baseline для первого шага = момент подписки (leads.claimed_at,
+        # naive UTC). Если пуст — берём самый ранний scheduled_at среди
+        # шагов как fallback (он точно был валиден на момент создания).
+        baseline = steps[0]["lead_subscribed_at"]
         if baseline is None:
-            print(f"  ✗ lead {lead_id}: created_at пустой, пропускаем")
-            continue
+            baseline = min(r["old_scheduled_at"] for r in steps)
+            if baseline is None:
+                print(f"  ✗ lead {lead_id}: нет baseline (ни claimed_at, ни scheduled_at), пропускаем")
+                continue
 
         prev_at_utc = baseline
         for r in steps:
