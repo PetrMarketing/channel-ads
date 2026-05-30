@@ -116,7 +116,7 @@ async def dashboard_stats(days: int = Query(30, ge=1, le=365), admin: Dict = Dep
     # Токены = ai_token_purchases
     rev_tokens = await fetch_one(
         """SELECT COALESCE(SUM(amount), 0) AS s
-           FROM ai_token_purchases WHERE status='paid' AND created_at::date >= $1""",
+           FROM ai_token_purchases WHERE payment_status='paid' AND created_at::date >= $1""",
         since,
     )
 
@@ -193,7 +193,7 @@ async def dashboard_charts(days: int = Query(30, ge=1, le=365), admin: Dict = De
     # Доход за токены
     rev_tokens_by_day = await fetch_all(
         """SELECT created_at::date AS day, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt
-           FROM ai_token_purchases WHERE status='paid' AND created_at::date >= $1
+           FROM ai_token_purchases WHERE payment_status='paid' AND created_at::date >= $1
            GROUP BY day ORDER BY day""",
         since,
     )
