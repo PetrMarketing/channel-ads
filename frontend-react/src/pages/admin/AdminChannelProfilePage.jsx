@@ -29,7 +29,7 @@ const sectionTitle = { fontSize: 14, fontWeight: 700, color: '#1a1a2e', margin: 
 const TAB_CONFIG = {
   pins: { endpoint: 'pins', key: 'pins', label: 'Закрепы', cols: ['id', 'title', 'status', 'created_at'], editable: ['title', 'message_text', 'status', 'erid'], deleteEndpoint: 'pins' },
   leadMagnets: { endpoint: 'lead-magnets', key: 'leadMagnets', label: 'Лид-магниты', cols: ['id', 'name', 'status', 'created_at'], editable: ['name', 'title', 'message_text'], deleteEndpoint: 'lead-magnets' },
-  content: { endpoint: 'content', key: 'posts', label: 'Посты', cols: ['id', 'title', 'status', 'created_at'], editable: ['title', 'message_text', 'status', 'scheduled_at', 'erid'], deleteEndpoint: 'content' },
+  content: { endpoint: 'content', key: 'posts', label: 'Посты', cols: ['id', 'title', 'status', 'scheduled_at', 'created_at'], editable: ['title', 'message_text', 'status', 'scheduled_at', 'erid'], deleteEndpoint: 'content' },
   broadcasts: { endpoint: 'broadcasts', key: 'broadcasts', label: 'Рассылки', cols: ['id', 'title', 'status', 'created_at'], editable: ['title', 'message_text', 'status'], deleteEndpoint: 'broadcasts' },
   giveaways: { endpoint: 'giveaways', key: 'giveaways', label: 'Розыгрыши', cols: ['id', 'title', 'status', 'created_at'], editable: ['title', 'message_text', 'status', 'erid', 'legal_info'], deleteEndpoint: 'giveaways' },
   funnels: { endpoint: 'funnels', key: 'funnels', label: 'Воронки', cols: ['id', 'name', 'delay_minutes', 'step_order'] },
@@ -122,7 +122,7 @@ export default function AdminChannelProfilePage() {
               <tr key={item.id} style={{ transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = ''}>
                 {cfg.cols.map(c => (
                   <td key={c} style={td}>
-                    {c === 'created_at' ? fmtDate(item[c]) :
+                    {(c === 'created_at' || c === 'scheduled_at' || c === 'published_at') ? (item[c] ? fmtDate(item[c]) : '—') :
                      c === 'status' ? <span style={statusBadge(item[c])}>{item[c] || '-'}</span> :
                      c === 'text' ? (item[c]?.slice(0, 80) || '-') :
                      c === 'message_text' ? (item[c]?.replace(/<[^>]+>/g, '').slice(0, 60) || '-') :
