@@ -452,9 +452,9 @@ async def process_scheduled_posts():
                 # нажмёт «Опубликовать» если нужно.
                 await execute(
                     """UPDATE content_posts SET status = 'failed',
-                       scheduled_at = NULL
+                       scheduled_at = NULL, last_error = $2
                        WHERE id = $1 AND status = 'publishing'""",
-                    post["id"],
+                    post["id"], (send_error or "Неизвестная ошибка")[:500],
                 )
                 print(f"[FunnelProcessor] Post {post['id']} send failed → status='failed' (no auto-retry): {send_error}")
         except Exception as e:

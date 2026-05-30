@@ -601,6 +601,13 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
                 print(f"[Messenger] MAX send with attachment failed, retrying without: {result.get('error')}")
                 result = await max_api.send_message(str(chat_id), max_text, None, max_buttons)
             if not result.get("success"):
+                err_text = str(result.get("error", "MAX API error")).lower()
+                # Распознаём типичные ошибки прав в MAX и даём понятное сообщение
+                if any(kw in err_text for kw in ("permission", "forbidden", "not allowed", "right", "права")):
+                    raise RuntimeError(
+                        "У бота недостаточно прав для публикации. "
+                        "Выдайте все права во вкладке «Администраторы» канала."
+                    )
                 raise RuntimeError(result.get("error", "MAX API error"))
         data = result.get("data", {})
         mid = (data.get("body", {}).get("mid")

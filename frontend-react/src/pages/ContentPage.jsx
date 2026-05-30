@@ -30,6 +30,7 @@ const STATUS_META = {
   scheduled:  { label: 'Ожидает публикации', grad: ['#3b82f6', ACCENT],  soft: 'rgba(59,130,246,0.10)',  text: '#3b82f6' },
   publishing: { label: 'Публикуется…',       grad: [WARNING, '#f97316'], soft: 'rgba(245,158,11,0.10)',  text: WARNING },
   published:  { label: 'Опубликовано',       grad: [SUCCESS, '#34d399'], soft: 'rgba(16,185,129,0.10)',  text: SUCCESS },
+  failed:     { label: 'Ошибка публикации',  grad: [DANGER, '#fb7185'],  soft: 'rgba(230,57,70,0.10)',   text: DANGER },
 };
 
 const cardBase = {
@@ -813,6 +814,15 @@ export default function ContentPage() {
                 </span>
               )}
             </div>
+            {post.status === 'failed' && post.last_error && (
+              <div style={{
+                marginTop: 10, padding: '8px 12px', borderRadius: 8,
+                background: 'rgba(230,57,70,0.08)', border: `1px solid ${DANGER}40`,
+                color: DANGER, fontSize: '0.82rem', lineHeight: 1.45,
+              }}>
+                ❌ Ошибка: {post.last_error}
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start' }}>

@@ -32,7 +32,7 @@ from ..database import fetch_one, fetch_all, execute, execute_returning_id
 
 router = APIRouter()
 
-_POST_COLS = "id, channel_id, title, message_text, file_path, file_type, telegram_file_id, telegram_message_id, status, scheduled_at, published_at, ai_generated, inline_buttons, attach_type, erid, created_at, attachment_paths, attachment_tokens"
+_POST_COLS = "id, channel_id, title, message_text, file_path, file_type, telegram_file_id, telegram_message_id, status, scheduled_at, published_at, ai_generated, inline_buttons, attach_type, erid, created_at, attachment_paths, attachment_tokens, last_error"
 
 
 async def _get_owned_channel(tc: str, uid: int):
@@ -379,13 +379,16 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
             )
             sent_ok = True
         except Exception as e:
-            # Откат захвата чтобы шедулер мог попробовать ещё раз
+            err_text = str(e)
+            # Откат: ставим failed с причиной, чтобы UI показал понятную ошибку
             await execute(
-                "UPDATE content_posts SET status = 'scheduled' WHERE id = $1 AND status = 'publishing'",
-                post_id,
+                """UPDATE content_posts SET status = 'failed', scheduled_at = NULL,
+                   last_error = $2
+                   WHERE id = $1 AND status = 'publishing'""",
+                post_id, err_text[:500],
             )
             traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
+            raise HTTPException(status_code=500, detail=f"Ошибка отправки: {err_text}")
 
         # send прошёл — парсим msg_id (без exception в случае ошибки парсинга)
         msg_id = None

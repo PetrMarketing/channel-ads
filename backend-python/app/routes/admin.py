@@ -88,62 +88,139 @@ async def admin_me(admin: Dict = Depends(get_current_admin)):
 # ===========================
 
 @router.get("/dashboard/stats")
-async def dashboard_stats(admin: Dict = Depends(get_current_admin)):
-    users = await fetch_one("SELECT COUNT(*) as c FROM users")
-    channels = await fetch_one("SELECT COUNT(*) as c FROM channels")
-    subscribers = await fetch_one("SELECT COUNT(*) as c FROM subscriptions")
-    active_billing = await fetch_one("SELECT COUNT(*) as c FROM channel_billing WHERE status = 'active' AND expires_at > NOW()")
-    leads = await fetch_one("SELECT COUNT(*) as c FROM leads")
+async def dashboard_stats(days: int = Query(30, ge=1, le=365), admin: Dict = Depends(get_current_admin)):
+    """Сводка за период (новые регистрации/каналы/доход и т.д.) + абсолютные
+    цифры (общее всего в системе, не зависит от периода)."""
+    from datetime import datetime, timedelta
+    since = (datetime.utcnow() - timedelta(days=days)).date()
+
+    # Абсолютные (всего в системе)
+    users_total = await fetch_one("SELECT COUNT(*) AS c FROM users")
+    channels_total = await fetch_one("SELECT COUNT(*) AS c FROM channels WHERE deleted_at IS NULL")
+    subscribers_total = await fetch_one("SELECT COUNT(*) AS c FROM subscriptions")
+    active_billing = await fetch_one("SELECT COUNT(*) AS c FROM channel_billing WHERE status='active' AND expires_at > NOW()")
+
+    # За период
+    users_period = await fetch_one("SELECT COUNT(*) AS c FROM users WHERE created_at::date >= $1", since)
+    channels_period = await fetch_one("SELECT COUNT(*) AS c FROM channels WHERE created_at::date >= $1 AND deleted_at IS NULL", since)
+    subscribers_period = await fetch_one("SELECT COUNT(*) AS c FROM subscriptions WHERE subscribed_at::date >= $1", since)
+    leads_period = await fetch_one("SELECT COUNT(*) AS c FROM leads WHERE claimed_at::date >= $1", since)
+
+    # Доход за период — раздельно по типу
+    # Подписки = billing_payments (тариф)
+    rev_subs = await fetch_one(
+        """SELECT COALESCE(SUM(amount), 0) AS s
+           FROM billing_payments WHERE status='paid' AND created_at::date >= $1""",
+        since,
+    )
+    # Токены = ai_token_purchases
+    rev_tokens = await fetch_one(
+        """SELECT COALESCE(SUM(amount), 0) AS s
+           FROM ai_token_purchases WHERE status='paid' AND created_at::date >= $1""",
+        since,
+    )
+
+    subs_amount = float(rev_subs["s"]) if rev_subs else 0
+    tokens_amount = float(rev_tokens["s"]) if rev_tokens else 0
+
+    # Активность контента за период
+    pins_p = await fetch_one("SELECT COUNT(*) AS c FROM pin_posts WHERE created_at::date >= $1", since)
+    broadcasts_p = await fetch_one("SELECT COUNT(*) AS c FROM broadcasts WHERE created_at::date >= $1", since)
+    giveaways_p = await fetch_one("SELECT COUNT(*) AS c FROM giveaways WHERE created_at::date >= $1", since)
+    lead_magnets_p = await fetch_one("SELECT COUNT(*) AS c FROM lead_magnets WHERE created_at::date >= $1", since)
+
+    # ИИ-активность за период
+    ai_design_p = await fetch_one("SELECT COUNT(*) AS c FROM ai_design_sessions WHERE created_at::date >= $1", since)
+    ai_content_p = await fetch_one("SELECT COUNT(*) AS c FROM ai_content_sessions WHERE created_at::date >= $1", since)
+
+    # Онлайн в сервисе — юзеры с активностью за последние 15 минут
+    # (используем last_activity_at если есть; иначе по последней генерации/действию)
     try:
-        pins = await fetch_one("SELECT COUNT(*) as c FROM pin_posts")
-        broadcasts = await fetch_one("SELECT COUNT(*) as c FROM broadcasts")
-        giveaways = await fetch_one("SELECT COUNT(*) as c FROM giveaways")
-        lead_magnets = await fetch_one("SELECT COUNT(*) as c FROM lead_magnets")
+        online_15min = await fetch_one(
+            "SELECT COUNT(DISTINCT user_id) AS c FROM ai_token_usage WHERE created_at > NOW() - INTERVAL '15 minutes'"
+        )
     except Exception:
-        pins = broadcasts = giveaways = lead_magnets = {"c": 0}
-    # Total revenue
-    try:
-        revenue = await fetch_one("SELECT COALESCE(SUM(amount), 0) as total FROM billing_payments WHERE status = 'paid'")
-        total_revenue = float(revenue["total"]) if revenue else 0
-    except Exception:
-        total_revenue = 0
+        online_15min = {"c": 0}
 
     return {
         "success": True,
-        "users": users["c"] if users else 0,
-        "channels": channels["c"] if channels else 0,
-        "subscribers": subscribers["c"] if subscribers else 0,
+        "period_days": days,
+        # Абсолютные (всё время)
+        "users_total": users_total["c"] if users_total else 0,
+        "channels_total": channels_total["c"] if channels_total else 0,
+        "subscribers_total": subscribers_total["c"] if subscribers_total else 0,
         "activeBillings": active_billing["c"] if active_billing else 0,
-        "leads": leads["c"] if leads else 0,
-        "pins": pins["c"] if pins else 0,
-        "broadcasts": broadcasts["c"] if broadcasts else 0,
-        "giveaways": giveaways["c"] if giveaways else 0,
-        "leadMagnets": lead_magnets["c"] if lead_magnets else 0,
-        "totalRevenue": total_revenue,
+        # За период
+        "users": users_period["c"] if users_period else 0,
+        "channels": channels_period["c"] if channels_period else 0,
+        "subscribers": subscribers_period["c"] if subscribers_period else 0,
+        "leads": leads_period["c"] if leads_period else 0,
+        "pins": pins_p["c"] if pins_p else 0,
+        "broadcasts": broadcasts_p["c"] if broadcasts_p else 0,
+        "giveaways": giveaways_p["c"] if giveaways_p else 0,
+        "leadMagnets": lead_magnets_p["c"] if lead_magnets_p else 0,
+        "aiDesign": ai_design_p["c"] if ai_design_p else 0,
+        "aiContent": ai_content_p["c"] if ai_content_p else 0,
+        # Доходы за период
+        "revenue_subs": subs_amount,
+        "revenue_tokens": tokens_amount,
+        "revenue_total": subs_amount + tokens_amount,
+        # Для обратной совместимости со старым UI
+        "totalRevenue": subs_amount + tokens_amount,
+        # Онлайн сейчас
+        "online": online_15min["c"] if online_15min else 0,
     }
 
 
 @router.get("/dashboard/charts")
-async def dashboard_charts(days: int = Query(30), admin: Dict = Depends(get_current_admin)):
-    """Get daily user registrations and revenue for charts."""
+async def dashboard_charts(days: int = Query(30, ge=1, le=365), admin: Dict = Depends(get_current_admin)):
+    """Дневные графики по периоду: регистрации, доход (подписки/токены),
+    ИИ-сессии, онлайн."""
     from datetime import datetime, timedelta
     since = (datetime.utcnow() - timedelta(days=days)).date()
 
     users_by_day = await fetch_all(
-        "SELECT created_at::date as day, COUNT(*) as cnt FROM users WHERE created_at::date >= $1 GROUP BY day ORDER BY day",
+        "SELECT created_at::date AS day, COUNT(*) AS cnt FROM users WHERE created_at::date >= $1 GROUP BY day ORDER BY day",
         since,
     )
-    revenue_by_day = await fetch_all(
-        """SELECT created_at::date as day, COALESCE(SUM(amount), 0) as total, COUNT(*) as cnt
-           FROM billing_payments WHERE status = 'paid' AND created_at::date >= $1
+    # Доход за подписки
+    rev_subs_by_day = await fetch_all(
+        """SELECT created_at::date AS day, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt
+           FROM billing_payments WHERE status='paid' AND created_at::date >= $1
            GROUP BY day ORDER BY day""",
+        since,
+    )
+    # Доход за токены
+    rev_tokens_by_day = await fetch_all(
+        """SELECT created_at::date AS day, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt
+           FROM ai_token_purchases WHERE status='paid' AND created_at::date >= $1
+           GROUP BY day ORDER BY day""",
+        since,
+    )
+    # ИИ Оформление
+    ai_design_by_day = await fetch_all(
+        """SELECT created_at::date AS day, COUNT(*) AS cnt
+           FROM ai_design_sessions WHERE created_at::date >= $1 GROUP BY day ORDER BY day""",
+        since,
+    )
+    # ИИ Контент
+    ai_content_by_day = await fetch_all(
+        """SELECT created_at::date AS day, COUNT(*) AS cnt
+           FROM ai_content_sessions WHERE created_at::date >= $1 GROUP BY day ORDER BY day""",
         since,
     )
 
     return {
         "success": True,
+        "period_days": days,
         "users_chart": [{"date": str(r["day"]), "count": r["cnt"]} for r in users_by_day],
-        "revenue_chart": [{"date": str(r["day"]), "amount": float(r["total"]), "count": r["cnt"]} for r in revenue_by_day],
+        # Старый формат revenue_chart = подписки (обратная совместимость)
+        "revenue_chart": [{"date": str(r["day"]), "amount": float(r["total"]), "count": r["cnt"]} for r in rev_subs_by_day],
+        # Новые раздельные графики
+        "revenue_subs_chart": [{"date": str(r["day"]), "amount": float(r["total"]), "count": r["cnt"]} for r in rev_subs_by_day],
+        "revenue_tokens_chart": [{"date": str(r["day"]), "amount": float(r["total"]), "count": r["cnt"]} for r in rev_tokens_by_day],
+        "ai_design_chart": [{"date": str(r["day"]), "count": r["cnt"]} for r in ai_design_by_day],
+        "ai_content_chart": [{"date": str(r["day"]), "count": r["cnt"]} for r in ai_content_by_day],
     }
 
 

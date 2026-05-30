@@ -6,7 +6,8 @@ export default function AdminDashboardPage() {
   const [charts, setCharts] = useState(null);
   const [period, setPeriod] = useState(30);
 
-  useEffect(() => { adminApi.get('/dashboard/stats').then(d => { if (d) setStats(d); }).catch(() => {}); }, []);
+  // Stats тоже зависят от периода (новые регистрации/доход/etc за выбранный период)
+  useEffect(() => { adminApi.get(`/dashboard/stats?days=${period}`).then(d => { if (d) setStats(d); }).catch(() => {}); }, [period]);
   useEffect(() => { adminApi.get(`/dashboard/charts?days=${period}`).then(d => { if (d?.success) setCharts(d); }).catch(() => {}); }, [period]);
 
   if (!stats) return (
@@ -18,15 +19,21 @@ export default function AdminDashboardPage() {
   );
 
   const metrics = [
-    { label: 'Пользователи', value: stats.users, color: '#4361ee', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z' },
-    { label: 'Каналы', value: stats.channels, color: '#2a9d8f', icon: 'M22 12h-4l-3 9L9 3l-3 9H2' },
-    { label: 'Подписчики', value: stats.subscribers, color: '#e9c46a', icon: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m7-10a4 4 0 100-8 4 4 0 000 8z' },
-    { label: 'Подписки', value: stats.activeBillings, color: '#f4a261', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
-    { label: 'Доход', value: (stats.totalRevenue || 0), color: '#e63946', icon: 'M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6', isMoney: true },
-    { label: 'Закрепы', value: stats.pins, color: '#264653', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z' },
-    { label: 'Рассылки', value: stats.broadcasts, color: '#7b68ee', icon: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z' },
-    { label: 'Розыгрыши', value: stats.giveaways, color: '#ef4444', icon: 'M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4' },
-    { label: 'Лид-магниты', value: stats.leadMagnets, color: '#06b6d4', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+    // Онлайн в сервисе (15 мин активности) — независимо от периода
+    { label: 'Онлайн сейчас', value: stats.online ?? 0, color: '#10b981', icon: 'M22 11.08V12a10 10 0 11-5.93-9.14M22 4L12 14.01l-3-3', sublabel: 'активны последние 15 мин', staticVal: true },
+    { label: `Новые юзеры за ${period}д`, value: stats.users, color: '#4361ee', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z', sublabel: `всего ${(stats.users_total || 0).toLocaleString('ru-RU')}` },
+    { label: `Каналы за ${period}д`, value: stats.channels, color: '#2a9d8f', icon: 'M22 12h-4l-3 9L9 3l-3 9H2', sublabel: `всего ${(stats.channels_total || 0).toLocaleString('ru-RU')}` },
+    { label: `Подписчики за ${period}д`, value: stats.subscribers, color: '#e9c46a', icon: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m7-10a4 4 0 100-8 4 4 0 000 8z', sublabel: `всего ${(stats.subscribers_total || 0).toLocaleString('ru-RU')}` },
+    { label: 'Активные тарифы', value: stats.activeBillings, color: '#f4a261', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', staticVal: true },
+    { label: `Доход за ${period}д`, value: stats.revenue_total || 0, color: '#e63946', icon: 'M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6', isMoney: true, sublabel: 'подписки + токены' },
+    { label: `Подписки за ${period}д`, value: stats.revenue_subs || 0, color: '#7b68ee', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', isMoney: true },
+    { label: `Токены за ${period}д`, value: stats.revenue_tokens || 0, color: '#06b6d4', icon: 'M13 10V3L4 14h7v7l9-11h-7z', isMoney: true },
+    { label: `ИИ Оформление за ${period}д`, value: stats.aiDesign, color: '#8b5cf6', icon: 'M12 19l7-7 3 3-7 7-3-3zM18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5zM2 2l7.586 7.586' },
+    { label: `ИИ Контент за ${period}д`, value: stats.aiContent, color: '#ec4899', icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8' },
+    { label: `Закрепы за ${period}д`, value: stats.pins, color: '#264653', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z' },
+    { label: `Рассылки за ${period}д`, value: stats.broadcasts, color: '#7b68ee', icon: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z' },
+    { label: `Розыгрыши за ${period}д`, value: stats.giveaways, color: '#ef4444', icon: 'M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4' },
+    { label: `Лид-магниты за ${period}д`, value: stats.leadMagnets, color: '#06b6d4', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   ];
 
   const renderSparkArea = (data, valueKey, color, w = 72, h = 28) => {
@@ -147,10 +154,13 @@ export default function AdminDashboardPage() {
               {charts?.users_chart && renderSparkArea(charts.users_chart, 'count', m.color)}
             </div>
             <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a2e', letterSpacing: -0.5, marginBottom: 2 }}>
-              {m.isMoney ? m.value.toLocaleString('ru-RU') : (typeof m.value === 'number' ? m.value.toLocaleString('ru-RU') : m.value)}
+              {m.isMoney ? Number(m.value || 0).toLocaleString('ru-RU') : (typeof m.value === 'number' ? m.value.toLocaleString('ru-RU') : m.value)}
               {m.isMoney && <span style={{ fontSize: 13, fontWeight: 500, color: '#aaa', marginLeft: 2 }}>₽</span>}
             </div>
             <div style={{ fontSize: 11, color: '#aaa', fontWeight: 500 }}>{m.label}</div>
+            {m.sublabel && (
+              <div style={{ fontSize: 10, color: '#bbb', fontWeight: 400, marginTop: 2 }}>{m.sublabel}</div>
+            )}
           </div>
         ))}
       </div>
@@ -158,7 +168,10 @@ export default function AdminDashboardPage() {
       {/* Charts */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: 16 }}>
         {renderChart(charts?.users_chart, 'Регистрации пользователей', '#4361ee')}
-        {renderChart(charts?.revenue_chart, 'Доход', '#e63946', 'amount', ' ₽')}
+        {renderChart(charts?.revenue_subs_chart, 'Доход с подписок', '#7b68ee', 'amount', ' ₽')}
+        {renderChart(charts?.revenue_tokens_chart, 'Доход с токенов', '#06b6d4', 'amount', ' ₽')}
+        {renderChart(charts?.ai_design_chart, 'Сессии ИИ Оформления', '#8b5cf6')}
+        {renderChart(charts?.ai_content_chart, 'Сессии ИИ Контента', '#ec4899')}
       </div>
 
       <style>{`
