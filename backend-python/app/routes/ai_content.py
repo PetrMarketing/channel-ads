@@ -675,6 +675,16 @@ def _build_system_prompt() -> str:
 """
 
 
+_RU_MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня",
+              "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+_RU_SEASONS = {
+    1: "зима", 2: "зима", 12: "зима",
+    3: "весна", 4: "весна", 5: "весна",
+    6: "лето", 7: "лето", 8: "лето",
+    9: "осень", 10: "осень", 11: "осень",
+}
+
+
 def _build_user_prompt_single(
     session: dict, post_index: int, total: int,
     prior_outlines: list, day_offset: int, slot_idx: int, posts_per_day: int,
@@ -701,10 +711,48 @@ def _build_user_prompt_single(
     else:
         prior_block = "(пока ничего не сгенерировано — это самый первый пост)"
 
+    # КРИТИЧНО: передаём конкретную дату публикации поста и сезон.
+    # Без этого Sonnet выбирает темы наугад (часто пишет про Новый год
+    # летом — это известный артефакт обучения на праздничном контенте).
+    start_date = session.get("start_date")
+    pub_date_block = ""
+    season_warning = ""
+    if start_date:
+        try:
+            from datetime import timedelta as _td
+            pub_d = start_date + _td(days=int(day_offset or 0))
+            month_name = _RU_MONTHS[pub_d.month - 1]
+            season = _RU_SEASONS.get(pub_d.month, "")
+            pub_date_block = (
+                f"📅 ДАТА ПУБЛИКАЦИИ ЭТОГО ПОСТА: {pub_d.day} {month_name} {pub_d.year} "
+                f"(месяц №{pub_d.month}, сезон: {season})"
+            )
+            # Запрет на «не своесезонные» темы
+            forbidden_themes = {
+                "зима": "Новый год, Рождество, новогодние подарки, ёлка, мандарины, снег, шубы, утепление",
+                "весна": "8 марта (если апрель-май), пасхальные темы вне дат, цветение вне сезона",
+                "лето": "Новый год, Рождество, школа (если июнь-июль), холодные напитки в марте",
+                "осень": "Новый год, ёлки, мандарины, школа (если октябрь-ноябрь — уже не 1 сентября)",
+            }
+            forbidden = forbidden_themes.get(season, "")
+            if forbidden:
+                season_warning = (
+                    f"⚠️ ЗАПРЕТ: пост публикуется в {season}у. НЕ упоминай и НЕ "
+                    f"обыгрывай темы из другого сезона ({forbidden}). "
+                    f"Сезонные привязки — только к {season}е и конкретному месяцу "
+                    f"({month_name})."
+                )
+        except Exception as e:
+            print(f"[ai-content] pub_date build error: {e}")
+
     return f"""\
 Сгенерируй ОДИН пост для контент-плана канала в национальном мессенджере MAX.
 
 ТЕМАТИКА КАНАЛА: {session.get('topic') or ''}
+
+{pub_date_block}
+
+{season_warning}
 
 РАСПРЕДЕЛЕНИЕ ЦЕЛЕЙ КОНТЕНТА (общий план):
 - Продажи: {session.get('goal_sales') or 0}%
