@@ -1,20 +1,26 @@
 /**
  * Виджет поддержки в правом нижнем углу.
- * С 2026-05-14 — древо вопросов (без ИИ): пользователь жмёт кнопки → готовый
- * ответ или подменю. Кнопка «Позвать оператора» открывает форму с описанием
- * и скриншотами — создаётся обычный тикет в админке.
+ * Логика:
+ *   - При открытии запрашиваем активный тикет
+ *   - Есть открытый тикет (не closed) → mode='chat' — показываем переписку
+ *     с поллингом 5с, юзер может писать новые сообщения. Древо/новый тикет
+ *     заблокированы пока поддержка не закроет тикет
+ *   - Нет тикета → mode='tree' — древо вопросов. «Позвать оператора» создаёт
+ *     тикет → переключаемся в mode='chat'
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function SupportChat() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [topics, setTopics] = useState(null);     // dict id → node
-  const [path, setPath] = useState(['root']);     // навигационный стек
-  const [mode, setMode] = useState('tree');       // tree | operator | thanks
+  const [topics, setTopics] = useState(null);
+  const [path, setPath] = useState(['root']);
+  const [mode, setMode] = useState('tree');     // tree | operator | chat
   const [operatorTopicId, setOperatorTopicId] = useState(null);
+  const [ticket, setTicket] = useState(null);   // {ticket_id, status, escalated, messages}
+  const pollRef = useRef(null);
 
   // Загружаем древо при первом открытии
   useEffect(() => {
@@ -25,26 +31,63 @@ export default function SupportChat() {
     }
   }, [open, topics]);
 
+  // При открытии — проверяем активный тикет
+  const loadTicket = useCallback(async () => {
+    try {
+      const d = await api.get('/support/ticket');
+      if (d?.success && d.ticket_id && d.status !== 'closed') {
+        setTicket(d);
+        setMode('chat');
+      } else {
+        setTicket(null);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (open) loadTicket();
+  }, [open, loadTicket]);
+
+  // Polling сообщений в chat-режиме
+  useEffect(() => {
+    if (mode !== 'chat' || !ticket?.ticket_id) {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      return;
+    }
+    pollRef.current = setInterval(async () => {
+      try {
+        const d = await api.get(`/support/ticket/${ticket.ticket_id}/messages`);
+        if (d?.success) {
+          setTicket(prev => prev ? { ...prev, messages: d.messages || [], status: d.status } : prev);
+          // Если поддержка закрыла тикет — сбрасываем chat и даём древо
+          if (d.status === 'closed') {
+            setTicket(null);
+            setMode('tree');
+            setPath(['root']);
+          }
+        }
+      } catch {}
+    }, 5000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [mode, ticket?.ticket_id]);
+
   if (!user) return null;
 
   const currentId = path[path.length - 1];
   const node = topics?.[currentId];
 
-  const goTo = (id) => {
-    setPath(p => [...p, id]);
-    setMode('tree');
-  };
-  const goBack = () => {
-    setPath(p => p.length > 1 ? p.slice(0, -1) : p);
-    setMode('tree');
-  };
-  const goRoot = () => {
-    setPath(['root']);
-    setMode('tree');
-  };
+  const goTo = (id) => { setPath(p => [...p, id]); setMode('tree'); };
+  const goBack = () => { setPath(p => p.length > 1 ? p.slice(0, -1) : p); setMode('tree'); };
+  const goRoot = () => { setPath(['root']); setMode('tree'); };
   const callOperator = () => {
     setOperatorTopicId(currentId !== 'root' ? currentId : null);
     setMode('operator');
+  };
+  const onOperatorRequestSent = (newTicketId) => {
+    // После создания тикета — сразу в chat-режим
+    setTicket({ ticket_id: newTicketId, status: 'waiting_human', messages: [] });
+    setMode('chat');
+    loadTicket();
   };
 
   return (
@@ -68,30 +111,24 @@ export default function SupportChat() {
 
       {open && (
         <div style={panelStyle}>
-          <Header onNewChat={goRoot} title={topicTitle(node)} />
+          <Header
+            mode={mode}
+            ticket={ticket}
+            title={mode === 'chat' ? `Диалог с поддержкой` : topicTitle(node)}
+            onNewChat={mode === 'chat' ? null : goRoot}
+          />
 
-          {!topics ? (
+          {mode === 'chat' && ticket ? (
+            <ChatView ticket={ticket} onUpdate={setTicket} />
+          ) : !topics ? (
             <Body><div style={{ color: '#888', textAlign: 'center', padding: 30 }}>Загрузка…</div></Body>
           ) : mode === 'operator' ? (
             <OperatorForm
               topicId={operatorTopicId}
               topicTitle={operatorTopicId ? topics[operatorTopicId]?.title : null}
               onCancel={() => setMode('tree')}
-              onDone={() => setMode('thanks')}
+              onDone={onOperatorRequestSent}
             />
-          ) : mode === 'thanks' ? (
-            <Body>
-              <div style={{
-                background: 'rgba(16, 185, 129, 0.10)', border: '1px solid rgba(16, 185, 129, 0.40)',
-                color: '#065f46', padding: 16, borderRadius: 10, fontSize: 13, lineHeight: 1.5,
-              }}>
-                ✅ Готово, заявка отправлена!<br/>
-                Оператор свяжется с вами в этом же чате — обычно отвечаем в течение нескольких часов.
-              </div>
-              <div style={{ marginTop: 16, textAlign: 'center' }}>
-                <button onClick={goRoot} style={btnGhostStyle}>← В главное меню</button>
-              </div>
-            </Body>
           ) : (
             <Body>
               <TreeView
@@ -111,24 +148,28 @@ export default function SupportChat() {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Подкомпоненты
-// ────────────────────────────────────────────────────────────────────
-
-function Header({ onNewChat, title }) {
+function Header({ mode, ticket, onNewChat, title }) {
+  const statusLabel = ticket && mode === 'chat'
+    ? ({ ai: 'ИИ', waiting_human: 'Ждём оператора', escalated: 'Передан оператору', answered: 'Оператор ответил', closed: 'Закрыт' }[ticket.status] || ticket.status)
+    : null;
   return (
     <div style={{
       padding: '14px 16px', background: 'linear-gradient(135deg, #7B68EE, #4F46E5)',
       color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     }}>
-      <div>
+      <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Поддержка</div>
-        <div style={{ fontSize: '0.72rem', opacity: 0.85 }}>{title || 'MAX Маркетинг'}</div>
+        <div style={{ fontSize: '0.72rem', opacity: 0.85 }}>
+          {title || 'MAX Маркетинг'}
+          {statusLabel && <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.18)' }}>{statusLabel}</span>}
+        </div>
       </div>
-      <button onClick={onNewChat} title="В начало" style={{
-        background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6,
-        padding: '4px 8px', cursor: 'pointer', color: '#fff', fontSize: '0.72rem',
-      }}>В меню</button>
+      {onNewChat && (
+        <button onClick={onNewChat} title="В начало" style={{
+          background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6,
+          padding: '4px 8px', cursor: 'pointer', color: '#fff', fontSize: '0.72rem',
+        }}>В меню</button>
+      )}
     </div>
   );
 }
@@ -148,15 +189,12 @@ function TreeView({ node, topics, pathLen, onPick, onBack, onRoot, onCallOperato
 
   return (
     <>
-      {/* Хлебные крошки + Назад */}
       {pathLen > 1 && (
         <div style={{ marginBottom: 10, display: 'flex', gap: 6, alignItems: 'center' }}>
           <button onClick={onBack} style={btnGhostStyle}>← Назад</button>
           <button onClick={onRoot} style={btnGhostStyle}>↺ В меню</button>
         </div>
       )}
-
-      {/* Intro / приветствие узла */}
       {node.intro && (
         <div style={{
           background: 'var(--bg-glass, #f5f5f5)',
@@ -164,8 +202,6 @@ function TreeView({ node, topics, pathLen, onPick, onBack, onRoot, onCallOperato
           fontSize: 13, lineHeight: 1.5, marginBottom: 12, whiteSpace: 'pre-wrap',
         }}>{node.intro}</div>
       )}
-
-      {/* Ответ (если есть) */}
       {hasAnswer && (
         <div style={{
           background: 'var(--bg-glass, #f5f5f5)',
@@ -173,8 +209,6 @@ function TreeView({ node, topics, pathLen, onPick, onBack, onRoot, onCallOperato
           fontSize: 13, lineHeight: 1.6, marginBottom: 12, whiteSpace: 'pre-wrap',
         }}>{linkifyText(node.answer)}</div>
       )}
-
-      {/* Подкнопки */}
       {hasChildren && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {node.children.map(c => (
@@ -185,19 +219,114 @@ function TreeView({ node, topics, pathLen, onPick, onBack, onRoot, onCallOperato
           ))}
         </div>
       )}
-
-      {/* «Позвать оператора» — всегда внизу */}
       <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border, #eee)' }}>
         <button onClick={onCallOperator} style={btnOperatorStyle}>
           👨‍💻 Позвать оператора
         </button>
-        {hasAnswer && (
-          <div style={{ fontSize: 11, color: '#888', textAlign: 'center', marginTop: 6 }}>
-            Не нашли ответ или нужна персональная помощь?
-          </div>
-        )}
       </div>
     </>
+  );
+}
+
+// Чат: переписка юзера с поддержкой
+function ChatView({ ticket, onUpdate }) {
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef(null);
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  }, [ticket.messages?.length]);
+
+  const send = async () => {
+    const t = text.trim();
+    if (!t || sending) return;
+    setSending(true);
+    try {
+      await api.post(`/support/ticket/${ticket.ticket_id}/message`, { content: t });
+      setText('');
+      // Сразу подгружаем актуальные сообщения
+      const d = await api.get(`/support/ticket/${ticket.ticket_id}/messages`);
+      if (d?.success) onUpdate({ ...ticket, messages: d.messages || [], status: d.status });
+    } catch (e) { alert(e?.message || 'Ошибка'); }
+    finally { setSending(false); }
+  };
+
+  const sendPhoto = async (file) => {
+    if (!file || sending) return;
+    setSending(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('content', text.trim());
+      setText('');
+      await api.upload(`/support/ticket/${ticket.ticket_id}/photo`, fd);
+      const d = await api.get(`/support/ticket/${ticket.ticket_id}/messages`);
+      if (d?.success) onUpdate({ ...ticket, messages: d.messages || [], status: d.status });
+    } catch (e) { alert(e?.message || 'Ошибка'); }
+    finally { setSending(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  const messages = ticket.messages || [];
+
+  return (
+    <>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', minHeight: 300, maxHeight: 380, background: 'var(--bg-glass, #fafbfc)' }}>
+        {messages.length === 0 ? (
+          <div style={{ color: '#888', textAlign: 'center', fontSize: 12, padding: 20 }}>
+            Ваше сообщение отправлено. Оператор скоро ответит — обычно в течение нескольких часов.
+          </div>
+        ) : (
+          messages.map((m) => <Msg key={m.id} m={m} />)
+        )}
+        <div ref={bottomRef} />
+      </div>
+      <div style={{ borderTop: '1px solid var(--border, #eee)', padding: 10, background: 'var(--bg-primary, #fff)' }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => fileRef.current?.click()} title="Прикрепить файл"
+            style={{ background: 'transparent', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: '0 10px', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary, #6b7280)' }}>📎</button>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={e => sendPhoto(e.target.files?.[0])} />
+          <textarea
+            value={text} onChange={e => setText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Сообщение оператору…"
+            rows={2}
+            style={{ flex: 1, padding: 8, border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', resize: 'none', boxSizing: 'border-box', background: 'var(--bg-primary, #fff)', color: 'inherit' }}
+          />
+          <button onClick={send} disabled={!text.trim() || sending}
+            style={{ background: text.trim() ? '#7B68EE' : '#e5e7eb', color: text.trim() ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, padding: '0 14px', cursor: text.trim() ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600 }}>
+            ➤
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Msg({ m }) {
+  const isUser = m.role === 'user';
+  const isAdmin = m.role === 'admin';
+  return (
+    <div style={{ marginBottom: 10, display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+      <div style={{
+        maxWidth: '78%',
+        padding: '8px 12px', borderRadius: 12,
+        background: isUser ? '#7B68EE' : (isAdmin ? '#fff' : 'rgba(245,158,11,0.08)'),
+        color: isUser ? '#fff' : 'inherit',
+        border: isAdmin ? '1px solid var(--border, #e5e7eb)' : 'none',
+        fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap',
+      }}>
+        {isAdmin && (
+          <div style={{ fontSize: 10, color: '#7B68EE', fontWeight: 700, marginBottom: 2 }}>👨‍💻 Оператор</div>
+        )}
+        {m.image_url && (
+          <img src={m.image_url} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: 4 }} />
+        )}
+        {m.content}
+      </div>
+    </div>
   );
 }
 
@@ -217,14 +346,13 @@ function OperatorForm({ topicId, topicTitle, onCancel, onDone }) {
       });
       if (!r?.success) throw new Error('fail');
       const ticketId = r.ticket_id;
-      // Отдельно догружаем файлы как фото-сообщения к этому же тикету
       for (const f of files) {
         const fd = new FormData();
         fd.append('file', f);
         fd.append('content', '');
         try { await api.upload(`/support/ticket/${ticketId}/photo`, fd); } catch {}
       }
-      onDone();
+      onDone(ticketId);
     } catch (e) {
       alert('Не удалось отправить, попробуйте ещё раз');
     } finally { setSending(false); }
@@ -233,7 +361,6 @@ function OperatorForm({ topicId, topicTitle, onCancel, onDone }) {
   return (
     <Body>
       <button onClick={onCancel} style={{ ...btnGhostStyle, marginBottom: 10 }}>← Отмена</button>
-
       <div style={{
         background: 'rgba(67, 97, 238, 0.08)', border: '1px solid rgba(67, 97, 238, 0.20)',
         padding: 12, borderRadius: 10, marginBottom: 12, fontSize: 13, lineHeight: 1.5,
@@ -246,71 +373,41 @@ function OperatorForm({ topicId, topicTitle, onCancel, onDone }) {
           </div>
         )}
       </div>
-
       <textarea
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder="Опишите ситуацию: что вы делали, что ожидали увидеть, что произошло вместо этого…"
+        value={text} onChange={e => setText(e.target.value)}
+        placeholder="Опишите ситуацию: что вы делали, что ожидали, что произошло вместо этого…"
         rows={5}
-        style={{
-          width: '100%', padding: 10, border: '1px solid var(--border, #ddd)', borderRadius: 8,
-          fontSize: 13, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box',
-          background: 'var(--bg-primary, #fff)', color: 'inherit', marginBottom: 10,
-        }}
+        style={{ width: '100%', padding: 10, border: '1px solid var(--border, #ddd)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', background: 'var(--bg-primary, #fff)', color: 'inherit', marginBottom: 10 }}
       />
-
-      {/* Превью прикреплённых */}
       {files.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
           {files.map((f, i) => (
-            <div key={i} style={{
-              padding: '4px 8px', borderRadius: 6, background: 'var(--bg-glass, #f5f5f5)',
-              fontSize: 11, display: 'flex', alignItems: 'center', gap: 6,
-            }}>
+            <div key={i} style={{ padding: '4px 8px', borderRadius: 6, background: 'var(--bg-glass, #f5f5f5)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
               📎 {f.name.length > 22 ? f.name.slice(0, 19) + '…' : f.name}
-              <button onClick={() => setFiles(p => p.filter((_, x) => x !== i))}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 14 }}>×</button>
+              <button onClick={() => setFiles(p => p.filter((_, x) => x !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 14 }}>×</button>
             </div>
           ))}
         </div>
       )}
-
       <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={() => fileRef.current?.click()} disabled={sending} style={{
-          ...btnGhostStyle, padding: '10px 14px', fontSize: 13,
-        }}>📎 Прикрепить файл</button>
+        <button onClick={() => fileRef.current?.click()} disabled={sending} style={{ ...btnGhostStyle, padding: '10px 14px', fontSize: 13 }}>📎 Прикрепить</button>
         <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
-          onChange={e => {
-            const fs = Array.from(e.target.files || []);
-            setFiles(p => [...p, ...fs].slice(0, 5));
-            e.target.value = '';
-          }} />
-        <button onClick={submit} disabled={sending || !text.trim()} style={{
-          ...btnTopicStyle, background: '#7B68EE', color: '#fff',
-          opacity: (sending || !text.trim()) ? 0.5 : 1, justifyContent: 'center',
-        }}>{sending ? 'Отправляем…' : 'Отправить оператору →'}</button>
+          onChange={e => { const fs = Array.from(e.target.files || []); setFiles(p => [...p, ...fs].slice(0, 5)); e.target.value = ''; }} />
+        <button onClick={submit} disabled={sending || !text.trim()} style={{ ...btnTopicStyle, background: '#7B68EE', color: '#fff', opacity: (sending || !text.trim()) ? 0.5 : 1, justifyContent: 'center' }}>
+          {sending ? 'Отправляем…' : 'Отправить оператору →'}
+        </button>
       </div>
     </Body>
   );
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Утилиты
-// ────────────────────────────────────────────────────────────────────
-
-function topicTitle(node) {
-  if (!node) return null;
-  if (node.title) return node.title;
-  return null;
-}
+function topicTitle(node) { return node?.title || null; }
 
 function linkifyText(text) {
   if (!text) return null;
-  // Превращаем URL в кликабельные ссылки. Текст остаётся в pre-wrap.
   const re = /\b(https?:\/\/[^\s)]+|max\.pkmarketing\.ru\/[^\s)]*|pkmarketing\.ru\/?[^\s)]*)/g;
   const parts = [];
-  let last = 0, m;
-  let i = 0;
+  let last = 0, m, i = 0;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push(<span key={`t${i}`}>{text.slice(last, m.index)}</span>);
     const url = m[0].startsWith('http') ? m[0] : `https://${m[0]}`;
@@ -329,22 +426,18 @@ const panelStyle = {
   boxShadow: '0 8px 32px rgba(0,0,0,0.18)', overflow: 'hidden',
   color: 'var(--text-primary, #1a1a2e)',
 };
-
 const btnTopicStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
   width: '100%', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
   background: 'var(--bg-glass, #f5f5f5)', color: 'inherit',
   border: '1px solid var(--border, #e5e7eb)',
   fontSize: 13, lineHeight: 1.4, textAlign: 'left', fontFamily: 'inherit',
-  transition: 'background 0.15s, border-color 0.15s',
 };
-
 const btnOperatorStyle = {
   display: 'block', width: '100%', padding: '11px 14px', borderRadius: 10, cursor: 'pointer',
   background: 'linear-gradient(135deg, #7B68EE, #4F46E5)', color: '#fff', border: 'none',
   fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
 };
-
 const btnGhostStyle = {
   display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px',
   borderRadius: 6, background: 'transparent', color: 'var(--text-secondary, #6b7280)',

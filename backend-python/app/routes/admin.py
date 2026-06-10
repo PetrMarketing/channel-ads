@@ -2428,6 +2428,43 @@ async def admin_support_reply(ticket_id: int, request: Request, admin: Dict = De
         "UPDATE support_tickets SET status='answered', escalated=TRUE, updated_at=NOW() WHERE id=$1",
         ticket_id,
     )
+
+    # Уведомление юзеру в бота MAX (если есть max_user_id)
+    try:
+        full_ticket = await fetch_one(
+            """SELECT u.max_user_id, u.telegram_id, u.max_dialog_chat_id
+               FROM support_tickets t JOIN users u ON u.id = t.user_id
+               WHERE t.id = $1""",
+            ticket_id,
+        )
+        if full_ticket:
+            from ..services.max_api import get_max_api
+            max_api = get_max_api()
+            if full_ticket.get("max_user_id") and max_api:
+                notify_text = (
+                    f"💬 Ответ от поддержки MAX Маркетинг:\n\n{content}\n\n"
+                    f"Открыть чат поддержки в кабинете: max.pkmarketing.ru"
+                )
+                try:
+                    chat_id = full_ticket.get("max_dialog_chat_id")
+                    if chat_id:
+                        await max_api.send_message(str(chat_id), notify_text[:4000])
+                    else:
+                        await max_api.send_direct_message(str(full_ticket["max_user_id"]), notify_text[:4000])
+                except Exception as e:
+                    print(f"[Support] MAX notify failed for ticket {ticket_id}: {e}")
+            elif full_ticket.get("telegram_id"):
+                from ..services.messenger import send_telegram_message
+                try:
+                    await send_telegram_message(
+                        full_ticket["telegram_id"],
+                        f"💬 Ответ от поддержки:\n\n{content}",
+                    )
+                except Exception as e:
+                    print(f"[Support] TG notify failed for ticket {ticket_id}: {e}")
+    except Exception as e:
+        print(f"[Support] notify error for ticket {ticket_id}: {e}")
+
     return {"success": True}
 
 

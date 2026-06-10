@@ -877,8 +877,38 @@ async def generate_posts(tc: str, session_id: int, user: Dict[str, Any] = Depend
         "started_at": time.time(),
     }
 
+    # ИСТОРИЯ КАНАЛА: уже опубликованные посты за последние 60 дней —
+    # чтобы новая генерация не дублировала старые темы. Каждый раз когда
+    # юзер «Сгенерировать заново» — модель видит чем уже было.
+    historical_titles = []
+    try:
+        recent_rows = await fetch_all(
+            """SELECT title, message_text FROM content_posts
+               WHERE channel_id = $1
+                 AND (status = 'published' OR status = 'scheduled')
+                 AND created_at > NOW() - INTERVAL '60 days'
+               ORDER BY created_at DESC LIMIT 40""",
+            channel["id"],
+        )
+        for r in recent_rows:
+            t = (r.get("title") or "").strip()
+            if not t:
+                # Если title пуст — берём первые 80 символов message_text без HTML
+                txt = (r.get("message_text") or "").strip()
+                import re as _re
+                t = _re.sub(r'<[^>]+>', '', txt)[:80].strip()
+            if t:
+                historical_titles.append(t)
+    except Exception as e:
+        print(f"[ai-content] history fetch error: {e}")
+
     async def _runner():
-        prior_outlines: list = []
+        # prior_outlines включает И прошлые посты канала (как историю),
+        # И новые сгенерированные в текущей сессии. Sonnet видит весь контекст.
+        prior_outlines: list = [
+            {"title": t, "rubric": "ИЗ ИСТОРИИ КАНАЛА (не повторяй)", "goal_type": ""}
+            for t in historical_titles
+        ]
         gen_count = 0
         fail_count = 0
         charged_total = 0
