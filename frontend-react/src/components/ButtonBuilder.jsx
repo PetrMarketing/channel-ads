@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-export default function ButtonBuilder({ value, onChange, leadMagnets = [], polls = [], showLeadMagnet = true, showComments = true, showPoll = true }) {
+export default function ButtonBuilder({ value, onChange, leadMagnets = [], polls = [], streams = [], showLeadMagnet = true, showComments = true, showPoll = true, showStream = true }) {
   // Controlled — buttons всегда derived из value, чтобы внешние изменения
   // (например авто-добавление кнопки при выборе лид-магнита) сразу
   // отображались в UI.
@@ -65,6 +65,11 @@ export default function ButtonBuilder({ value, onChange, leadMagnets = [], polls
                     patch.url = '';
                     patch.lead_magnet_id = '';
                   }
+                  if (newType === 'stream') {
+                    patch.text = patch.text || 'Смотреть эфир';
+                    patch.url = '';
+                    patch.lead_magnet_id = '';
+                  }
                   return patch;
                 });
                 emit(updated);
@@ -73,6 +78,7 @@ export default function ButtonBuilder({ value, onChange, leadMagnets = [], polls
               {showLeadMagnet && <option value="lead_magnet">Лид-магнит</option>}
               {showComments && <option value="comments">Комментарии</option>}
               {showPoll && <option value="poll">Опрос</option>}
+              {showStream && <option value="stream">Эфир</option>}
             </select>
             {(btn.type || 'url') === 'url' ? (() => {
               const urlVal = (btn.url || '').trim();
@@ -102,6 +108,14 @@ export default function ButtonBuilder({ value, onChange, leadMagnets = [], polls
                 <option value="">-- Выберите опрос --</option>
                 {polls.map(p => (
                   <option key={p.id} value={p.id}>{p.question}</option>
+                ))}
+              </select>
+            ) : btn.type === 'stream' ? (
+              <select className="form-input" value={btn.stream_id || ''} style={{ flex: 1 }}
+                onChange={e => updateButton(idx, 'stream_id', e.target.value)}>
+                <option value="">-- Выберите эфир --</option>
+                {streams.map(s => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
                 ))}
               </select>
             ) : null}

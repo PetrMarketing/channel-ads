@@ -399,6 +399,9 @@ from .routes import polls
 # /api/polls/{tc}/{poll_id} (с tc='public') и требует авторизации
 app.include_router(polls.public_router, prefix="/api/polls/public", tags=["polls-public"])
 app.include_router(polls.router, prefix="/api/polls", tags=["polls"])
+from .routes import streams
+app.include_router(streams.public_router, prefix="/api/streams/public", tags=["streams-public"])
+app.include_router(streams.router, prefix="/api/streams", tags=["streams"])
 
 # ========================
 # API Routes — Public
@@ -825,6 +828,11 @@ async function doRedirect() {
       window.location.href = '/polls-app/' + startParam;
       return true;
     }
+    // Handle stream_ prefix — эфиры
+    if (startParam.startsWith('stream_')) {
+      window.location.href = '/streams-app/' + startParam;
+      return true;
+    }
     // Handle book_ prefix — redirect to booking page
     if (startParam.startsWith('book_')) {
       window.location.href = '/booking/' + startParam;
@@ -919,6 +927,223 @@ const fallbackTimer = setTimeout(() => {
 </script>
 </body></html>"""
     html = html.replace('__META_REFRESH__', meta_refresh).replace('__SERVER_CODE__', code)
+    return HTMLResponse(html)
+
+
+@app.get("/streams-app")
+@app.get("/streams-app/{params}")
+async def streams_app_page(request: Request, params: str = ""):
+    """Stream miniapp — анонс/таймер + плеер + комментарии."""
+    from fastapi.responses import HTMLResponse
+    if not params:
+        params = request.query_params.get("WebAppStartParam", "") or request.query_params.get("startapp", "") or ""
+    stream_id = ""
+    if params.startswith("stream_"):
+        stream_id = params[7:]
+    elif params:
+        stream_id = params
+
+    html = f"""<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<script>
+var _waReady=false;
+var _s=document.createElement('script');_s.src='https://st.max.ru/js/max-web-app.js';
+_s.onload=function(){{_waReady=true;try{{window.WebApp.ready()}}catch(e){{}};if(window._pendingInit)window._pendingInit();}};
+_s.onerror=function(){{_waReady=true;if(window._pendingInit)window._pendingInit();}};
+document.head.appendChild(_s);
+setTimeout(function(){{if(!_waReady){{_waReady=true;if(window._pendingInit)window._pendingInit();}}}},2000);
+</script>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a14;color:#fff;min-height:100vh}}
+.app{{max-width:540px;margin:0 auto;min-height:100vh;background:#0a0a14;display:flex;flex-direction:column}}
+.cover{{position:relative;min-height:280px;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:40px 24px;text-align:center;color:#fff;overflow:hidden}}
+.cover-bg{{position:absolute;inset:0;background:#0a0a14;background-size:cover;background-position:center;filter:blur(8px);transform:scale(1.1);z-index:0}}
+.cover-overlay{{position:absolute;inset:0;background:rgba(0,0,0,0.5);z-index:1}}
+.cover-inner{{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center}}
+.ch{{font-size:.78rem;opacity:.7;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}}
+.title{{font-size:1.6rem;font-weight:800;line-height:1.2;margin-bottom:12px}}
+.desc{{font-size:.95rem;opacity:.85;max-width:480px;line-height:1.5;margin-bottom:18px}}
+.badge{{display:inline-block;background:rgba(255,255,255,0.15);padding:5px 14px;border-radius:999px;font-size:.78rem;font-weight:600;backdrop-filter:blur(8px)}}
+.live-badge{{background:#dc2626}}
+.timer{{display:flex;gap:10px;margin-top:12px;justify-content:center}}
+.timer-cell{{background:rgba(255,255,255,0.12);border-radius:10px;padding:10px 14px;min-width:64px}}
+.timer-num{{font-size:1.6rem;font-weight:800;line-height:1}}
+.timer-lbl{{font-size:.65rem;opacity:.7;text-transform:uppercase;margin-top:4px;letter-spacing:.06em}}
+.player-wrap{{background:#000;aspect-ratio:16/9;width:100%}}
+.player-wrap iframe{{width:100%;height:100%;border:0;display:block}}
+.section{{padding:18px 18px;background:#11111e}}
+.section h3{{font-size:.95rem;margin-bottom:10px;color:#fff;font-weight:700}}
+.comments-box{{background:#16162a;border-radius:12px;padding:14px;min-height:60px}}
+.comment{{padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05)}}
+.comment:last-child{{border-bottom:none}}
+.c-row{{display:flex;gap:10px;align-items:flex-start}}
+.avatar{{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#4361ee,#7b68ee);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.78rem;flex-shrink:0}}
+.c-author{{font-weight:600;font-size:.85rem;color:#fff}}
+.c-time{{font-size:.7rem;color:rgba(255,255,255,0.4);margin-left:6px}}
+.c-text{{font-size:.88rem;color:rgba(255,255,255,0.85);margin-top:2px;line-height:1.45}}
+.compose{{display:flex;gap:8px;margin-top:10px}}
+.compose input{{flex:1;padding:10px 14px;border:1px solid rgba(255,255,255,0.1);background:#11111e;color:#fff;border-radius:20px;font-size:.9rem;outline:none}}
+.compose input:focus{{border-color:#4361ee}}
+.compose button{{padding:10px 16px;border:none;border-radius:20px;background:#4361ee;color:#fff;font-weight:600;cursor:pointer;font-size:.9rem}}
+.empty{{text-align:center;padding:20px 0;color:rgba(255,255,255,0.4);font-size:.85rem}}
+.loading{{text-align:center;padding:50px;color:rgba(255,255,255,0.5)}}
+.spinner{{width:28px;height:28px;border:3px solid rgba(255,255,255,0.1);border-top-color:#4361ee;border-radius:50%;animation:sp .6s linear infinite;margin:0 auto 10px}}
+@keyframes sp{{to{{transform:rotate(360deg)}}}}
+.foot{{text-align:center;padding:12px;color:rgba(255,255,255,0.3);font-size:.75rem}}
+</style>
+</head><body>
+<div class="app" id="app"><div class="loading"><div class="spinner"></div>Загрузка...</div></div>
+<script>
+const API = '/api/streams/public';
+const STREAM_ID = '{stream_id}';
+const COMMENTS_API = '/api/comments/public';
+let stream = null, uid = '', userName = '', userUsername = '';
+
+function esc(s){{return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):''}}
+function fmtTime(iso){{try{{return new Date(iso).toLocaleString('ru-RU',{{hour:'2-digit',minute:'2-digit'}});}}catch{{return''}}}}
+
+async function resolveUser() {{
+  const start = Date.now();
+  while (Date.now() - start < 4000) {{
+    try {{
+      if (window.WebApp && window.WebApp.initDataUnsafe) {{
+        const u = window.WebApp.initDataUnsafe.user;
+        if (u && (u.user_id || u.id)) {{
+          uid = String(u.user_id || u.id);
+          userName = ((u.first_name||'')+' '+(u.last_name||'')).trim();
+          userUsername = u.username || '';
+          return;
+        }}
+      }}
+    }} catch(e) {{}}
+    await new Promise(r => setTimeout(r, 200));
+  }}
+  let stored = '';
+  try {{ stored = localStorage.getItem('stream_anon_v1') || ''; }} catch(e) {{}}
+  if (!stored) {{
+    stored = 'anon_' + Math.random().toString(36).slice(2,12);
+    try {{ localStorage.setItem('stream_anon_v1', stored); }} catch(e) {{}}
+  }}
+  uid = stored;
+}}
+
+function renderTimer(startsAt) {{
+  const diff = new Date(startsAt).getTime() - Date.now();
+  if (diff <= 0) return '<div class="badge live-badge">● LIVE СЕЙЧАС</div>';
+  const sec = Math.floor(diff / 1000);
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return '<div class="timer">' +
+    (d > 0 ? cell(d, 'дней') : '') +
+    cell(h, 'часов') + cell(m, 'минут') + cell(s, 'сек') +
+    '</div>';
+}}
+function cell(n, lbl) {{
+  return '<div class="timer-cell"><div class="timer-num">' + String(n).padStart(2,'0') + '</div><div class="timer-lbl">' + lbl + '</div></div>';
+}}
+
+function renderPlayer() {{
+  const url = stream.embed_url || stream.stream_url;
+  if (!url) return '<div class="player-wrap" style="display:flex;align-items:center;justify-content:center;color:#666">Плеер не настроен</div>';
+  return '<div class="player-wrap"><iframe src="' + esc(url) + '" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe></div>';
+}}
+
+function renderCover() {{
+  const bg = stream.bg_image_url
+    ? 'style="background-image:url(' + esc(stream.bg_image_url) + ')"'
+    : '';
+  const isLive = stream.status === 'live' || new Date(stream.starts_at).getTime() <= Date.now();
+  return '<div class="cover"><div class="cover-bg" ' + bg + '></div><div class="cover-overlay"></div>' +
+         '<div class="cover-inner">' +
+         '<div class="ch">' + esc(stream.channel_title) + '</div>' +
+         '<div class="title">' + esc(stream.title) + '</div>' +
+         (stream.description ? '<div class="desc">' + esc(stream.description) + '</div>' : '') +
+         (isLive ? '' : '<div class="badge">📅 Начало: ' + fmtTime(stream.starts_at) + '</div>') +
+         '<div id="timer">' + renderTimer(stream.starts_at) + '</div>' +
+         '</div></div>';
+}}
+
+async function loadComments() {{
+  try {{
+    const r = await fetch(COMMENTS_API + '/stream/' + STREAM_ID);
+    const d = await r.json();
+    if (d.success) renderComments(d.comments || []);
+  }} catch(e) {{}}
+}}
+
+function renderComments(items) {{
+  const box = document.getElementById('comments-box');
+  if (!box) return;
+  if (items.length === 0) {{
+    box.innerHTML = '<div class="empty">Пока нет комментариев. Будьте первым!</div>';
+  }} else {{
+    box.innerHTML = items.map(c => {{
+      const letter = (c.user_name || 'A')[0].toUpperCase();
+      return '<div class="comment"><div class="c-row">' +
+        '<div class="avatar">' + esc(letter) + '</div>' +
+        '<div style="flex:1"><span class="c-author">' + esc(c.user_name || 'Аноним') + '</span>' +
+        '<span class="c-time">' + fmtTime(c.created_at) + '</span>' +
+        '<div class="c-text">' + esc(c.comment_text) + '</div></div></div></div>';
+    }}).join('');
+  }}
+}}
+
+async function sendComment() {{
+  const input = document.getElementById('comment-input');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  await fetch(COMMENTS_API + '/stream/' + STREAM_ID, {{
+    method: 'POST', headers: {{'Content-Type':'application/json'}},
+    body: JSON.stringify({{ user_name: userName || 'Аноним', max_user_id: uid, comment_text: text }}),
+  }});
+  await loadComments();
+}}
+
+async function render() {{
+  document.getElementById('app').innerHTML =
+    renderCover() + renderPlayer() +
+    '<div class="section"><h3>💬 Комментарии</h3>' +
+    '<div class="comments-box" id="comments-box"><div class="loading"><div class="spinner"></div></div></div>' +
+    '<div class="compose"><input id="comment-input" placeholder="Написать комментарий..." />' +
+    '<button onclick="sendComment()">Отправить</button></div>' +
+    '</div><div class="foot">MAX Маркетинг · ПКРеклама</div>';
+  document.getElementById('comment-input').addEventListener('keydown', e => {{
+    if (e.key === 'Enter') sendComment();
+  }});
+  await loadComments();
+  // Обновляем таймер каждую секунду
+  setInterval(() => {{
+    const t = document.getElementById('timer');
+    if (t && stream) t.innerHTML = renderTimer(stream.starts_at);
+  }}, 1000);
+  // Перезагружаем комменты раз в 10 сек (живой чат)
+  setInterval(loadComments, 10000);
+}}
+
+async function load() {{
+  const r = await fetch(API + '/' + STREAM_ID);
+  const d = await r.json();
+  if (!d.success) {{
+    document.getElementById('app').innerHTML = '<div class="loading">Эфир не найден</div>';
+    return;
+  }}
+  stream = d.stream;
+  await render();
+}}
+
+window._pendingInit = async function() {{
+  await resolveUser();
+  await load();
+}};
+if (_waReady) {{ window._pendingInit(); }}
+</script>
+</body></html>"""
     return HTMLResponse(html)
 
 

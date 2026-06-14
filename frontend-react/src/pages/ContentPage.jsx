@@ -17,6 +17,7 @@ import FilesLibraryTab from './content/FilesLibraryTab';
 import PollsTab from './content/PollsTab';
 import ComingSoonStub from '../components/ComingSoonStub';
 import { useFeatureVisibility } from '../hooks/useFeatureVisibility';
+// streams loaded for ButtonBuilder dropdown
 
 const ACCENT = '#4361ee';
 const ACCENT2 = '#7b68ee';
@@ -376,6 +377,7 @@ export default function ContentPage() {
   const [saving, setSaving] = useState(false);
   const [leadMagnets, setLeadMagnets] = useState([]);
   const [polls, setPolls] = useState([]);
+  const [streams, setStreams] = useState([]);
   const [viewMode, setViewMode] = useState('calendar');
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
@@ -425,7 +427,15 @@ export default function ContentPage() {
     } catch { /* ignore */ }
   }, [tc, pollsVis.visibility]);
 
-  useEffect(() => { loadPosts(); loadLeadMagnets(); loadPolls(); }, [loadPosts, loadLeadMagnets, loadPolls]);
+  const loadStreams = useCallback(async () => {
+    if (!tc || streamsVis.visibility !== 'visible') return;
+    try {
+      const data = await api.get(`/streams/${tc}`);
+      if (data.success) setStreams(data.streams || []);
+    } catch { /* ignore */ }
+  }, [tc, streamsVis.visibility]);
+
+  useEffect(() => { loadPosts(); loadLeadMagnets(); loadPolls(); loadStreams(); }, [loadPosts, loadLeadMagnets, loadPolls, loadStreams]);
 
   // Дата (YYYY-MM-DD) уже прошла по МСК — нельзя создать пост на эту дату
   const isPastDate = (dateStr) => {
@@ -1562,6 +1572,8 @@ export default function ContentPage() {
                 showLeadMagnet={leadMagnets.length > 0}
                 polls={polls}
                 showPoll={pollsVis.visibility === 'visible' && polls.length > 0}
+                streams={streams}
+                showStream={streamsVis.visibility === 'visible' && streams.length > 0}
               />
               <div style={hintStyle}>Кнопки под постом: ссылки, выдача лид-магнитов и др.</div>
             </div>

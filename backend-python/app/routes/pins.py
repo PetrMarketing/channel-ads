@@ -700,6 +700,27 @@ async def _resolve_buttons(inline_buttons_json, channel, post_id=None, post_type
                 deep_url = f"https://t.me/{bot_username}?start=comments_{post_type}_{post_id}" if bot_username else ""
                 if deep_url:
                     resolved.append({"text": btn_text, "type": "url", "url": deep_url})
+        elif btn_type == "stream" and btn.get("stream_id"):
+            # Кнопка эфира — открывает миниапп со стримом
+            stream = await fetch_one(
+                "SELECT id, title, status FROM streams WHERE id = $1 AND channel_id = $2",
+                int(btn["stream_id"]), channel["id"],
+            )
+            if stream:
+                base_text = btn.get("text") or "Смотреть эфир"
+                if stream.get("status") == "live":
+                    base_text = f"🔴 {base_text} (live)"
+                elif stream.get("status") == "finished":
+                    base_text = f"📼 {base_text} (запись)"
+                if is_max:
+                    bot_link_id = await _get_max_bot_link_id()
+                    deep_url = f"https://max.ru/id{bot_link_id}_bot?startapp=stream_{stream['id']}"
+                    resolved.append({"text": base_text, "type": "link", "url": deep_url})
+                else:
+                    bot_username = await _get_tg_bot_username()
+                    deep_url = f"https://t.me/{bot_username}?startapp=stream_{stream['id']}" if bot_username else ""
+                    if deep_url:
+                        resolved.append({"text": base_text, "type": "url", "url": deep_url})
         elif btn_type == "poll" and btn.get("poll_id"):
             # Одна кнопка «Пройти опрос (N голосов)» → открывает мини-апп
             poll = await fetch_one(
