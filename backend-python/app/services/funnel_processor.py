@@ -593,7 +593,7 @@ async def refresh_channel_titles():
            FROM channels
            WHERE platform = 'max' AND is_active = 1 AND deleted_at IS NULL
              AND max_chat_id IS NOT NULL
-           ORDER BY updated_at NULLS FIRST
+           ORDER BY created_at NULLS FIRST
            LIMIT 200"""
     )
     updated_count = 0

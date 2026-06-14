@@ -380,15 +380,30 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
             sent_ok = True
         except Exception as e:
             err_text = str(e)
+            # Распознаём типовые ошибки прав и показываем понятный текст
+            err_lower = err_text.lower()
+            if any(kw in err_lower for kw in ("chat closed", "chat.denied", "forbidden",
+                                              "permission", "not allowed", "bot was kicked",
+                                              "недостаточно прав")):
+                friendly = (
+                    "❌ Бот не может публиковать в канал. "
+                    "Сделайте ПКРеклама администратором канала: "
+                    "Настройки канала → Администраторы → выдайте ВСЕ права. "
+                    "Инструкция: https://max.pkmarketing.ru/blog/kak-podklyuchit-bota-administratorom-v-max-kanale"
+                )
+                status_code = 400
+            else:
+                friendly = f"Ошибка отправки: {err_text}"
+                status_code = 500
             # Откат: ставим failed с причиной, чтобы UI показал понятную ошибку
             await execute(
                 """UPDATE content_posts SET status = 'failed', scheduled_at = NULL,
                    last_error = $2
                    WHERE id = $1 AND status = 'publishing'""",
-                post_id, err_text[:500],
+                post_id, friendly[:500],
             )
             traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"Ошибка отправки: {err_text}")
+            raise HTTPException(status_code=status_code, detail=friendly)
 
         # send прошёл — парсим msg_id (без exception в случае ошибки парсинга)
         msg_id = None
