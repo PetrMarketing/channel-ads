@@ -1185,14 +1185,21 @@ async def remove_cart_item(tc: str, user_id: str, item_id: int):
 async def checkout(tc: str, request: Request):
     channel = await fetch_one("SELECT id FROM channels WHERE tracking_code = $1", tc)
     if not channel:
+        print(f"[Shop checkout] channel not found: tc={tc}")
         raise HTTPException(status_code=404, detail="Канал не найден")
     body = await request.json()
     user_identifier = body.get("user_identifier")
+    print(f"[Shop checkout] start: tc={tc} ch={channel['id']} uid={user_identifier} body={ {k: (v if k != 'client_phone' else '***') for k,v in body.items()} }")
+
+    if not user_identifier:
+        print(f"[Shop checkout] no user_identifier")
+        raise HTTPException(status_code=400, detail="Не указан user_identifier — обновите мини-апп")
 
     cart = await fetch_one(
         "SELECT id FROM shop_carts WHERE channel_id = $1 AND user_identifier = $2", channel["id"], user_identifier)
     if not cart:
-        raise HTTPException(status_code=400, detail="Корзина пуста")
+        print(f"[Shop checkout] cart not found for uid={user_identifier} ch={channel['id']}")
+        raise HTTPException(status_code=400, detail="Корзина пуста — обновите страницу и добавьте товары снова")
 
     items = await fetch_all(
         """SELECT ci.product_id, ci.variant_id, ci.quantity,
@@ -1214,6 +1221,7 @@ async def checkout(tc: str, request: Request):
         subtotal += price * item["quantity"]
 
     discount = 0.0
+    promo_applied = False
     promo_code = body.get("promo_code")
     if promo_code:
         promo = await fetch_one(
@@ -1222,16 +1230,18 @@ async def checkout(tc: str, request: Request):
             channel["id"], promo_code)
         if promo:
             if promo.get("min_order_amount") and subtotal < float(promo["min_order_amount"]):
-                pass
+                pass  # промо не применился — used_count не инкрементируем
             elif promo.get("max_uses") and promo.get("used_count", 0) >= promo["max_uses"]:
-                pass
+                pass  # лимит превышен — used_count не инкрементируем
             else:
                 if promo["promo_type"] == "percent":
                     discount = subtotal * float(promo["discount_value"]) / 100
                 elif promo["promo_type"] == "fixed":
                     discount = float(promo["discount_value"])
                 elif promo["promo_type"] == "free_delivery":
-                    delivery_cost = 0.0
+                    # delivery_cost обнуляется ниже после расчёта delivery_cost
+                    pass
+                promo_applied = True
                 await execute("UPDATE shop_promotions SET used_count = COALESCE(used_count, 0) + 1 WHERE id = $1", promo["id"])
 
     delivery_cost = 0.0
@@ -1243,19 +1253,30 @@ async def checkout(tc: str, request: Request):
             if dm["free_from"] and subtotal >= float(dm["free_from"]):
                 delivery_cost = 0
 
+    # Free delivery promo — обнуляем доставку (применяется к итоговой цене)
+    if promo_applied and promo and promo.get("promo_type") == "free_delivery":
+        delivery_cost = 0.0
+
     total = subtotal - discount + delivery_cost
+    if total < 0:
+        total = 0.0
 
     import secrets as _sec
     order_number = f"SH-{_sec.token_hex(4).upper()}"
 
-    order_id = await execute_returning_id(
-        """INSERT INTO shop_orders (channel_id, order_number, user_identifier, client_name, client_phone, client_email,
-           client_address, delivery_method_id, discount_amount, subtotal, delivery_price, total, notes, status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'new') RETURNING id""",
-        channel["id"], order_number, user_identifier, body.get("client_name"), body.get("client_phone"),
-        body.get("client_email"), body.get("client_address"),
-        delivery_method_id, discount, subtotal, delivery_cost, total, body.get("notes"),
-    )
+    try:
+        order_id = await execute_returning_id(
+            """INSERT INTO shop_orders (channel_id, order_number, user_identifier, client_name, client_phone, client_email,
+               client_address, delivery_method_id, discount_amount, subtotal, delivery_price, total, notes, status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'new') RETURNING id""",
+            channel["id"], order_number, user_identifier, body.get("client_name"), body.get("client_phone"),
+            body.get("client_email"), body.get("client_address"),
+            delivery_method_id, discount, subtotal, delivery_cost, total, body.get("notes"),
+        )
+    except Exception as e:
+        print(f"[Shop checkout] INSERT shop_orders FAILED: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"Не удалось создать заказ. Обратитесь в поддержку. ({type(e).__name__})")
+    print(f"[Shop checkout] order created: id={order_id} num={order_number} total={total}")
 
     for item in items:
         price = float(item["variant_price"] if item["variant_price"] is not None else item["product_price"])
