@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { useChannels } from '../contexts/ChannelContext';
+import { useFeatureVisibility } from '../hooks/useFeatureVisibility';
 
 /* CoreUI-style SVG icons */
 const icons = {
@@ -139,40 +140,40 @@ const menuItems = [
   {
     category: 'marketing', label: 'Маркетинг', icon: icons.marketing,
     items: [
-      { path: '/ai-design', label: 'ИИ Оформление', icon: icons.ai, badge: 'Скоро', tour: 'ai-design' },
-      { path: '/links', label: 'Ссылки', icon: icons.links, tour: 'links' },
-      { path: '/pins', label: 'Закрепы', icon: icons.pins, tour: 'pins' },
-      { path: '/broadcasts', label: 'Рассылки', icon: icons.broadcasts, tour: 'broadcasts' },
-      { path: '/funnels', label: 'Воронки', icon: icons.funnels, tour: 'funnels' },
-      { path: '/analytics', label: 'Аналитика', icon: icons.analytics, tour: 'analytics' },
-      { path: '/ord', label: 'Отчёты о рекламе', icon: icons.analytics, tour: 'ord' },
+      { path: '/ai-design', featureKey: 'ai_design', label: 'ИИ Оформление', icon: icons.ai, tour: 'ai-design' },
+      { path: '/links', featureKey: 'links', label: 'Ссылки', icon: icons.links, tour: 'links' },
+      { path: '/pins', featureKey: 'pins', label: 'Закрепы', icon: icons.pins, tour: 'pins' },
+      { path: '/broadcasts', featureKey: 'broadcasts', label: 'Рассылки', icon: icons.broadcasts, tour: 'broadcasts' },
+      { path: '/funnels', featureKey: 'funnels', label: 'Воронки', icon: icons.funnels, tour: 'funnels' },
+      { path: '/analytics', featureKey: 'analytics', label: 'Аналитика', icon: icons.analytics, tour: 'analytics' },
+      { path: '/ord', featureKey: 'ord', label: 'Отчёты о рекламе', icon: icons.analytics, tour: 'ord' },
       { path: 'https://pkmarketing.ru', label: 'ПК Маркетинг', icon: icons.marketing, external: true },
     ],
   },
   {
     category: 'content', label: 'Контент', icon: icons.content,
     items: [
-      { path: '/content', label: 'Публикации', icon: icons.publications, tour: 'content' },
-      { path: '/giveaways', label: 'Розыгрыши', icon: icons.giveaways, tour: 'giveaways' },
-      { path: '/comments', label: 'Комментарии', icon: icons.comments, tour: 'comments' },
+      { path: '/content', featureKey: 'content', label: 'Публикации', icon: icons.publications, tour: 'content' },
+      { path: '/giveaways', featureKey: 'giveaways', label: 'Розыгрыши', icon: icons.giveaways, tour: 'giveaways' },
+      { path: '/comments', featureKey: 'comments', label: 'Комментарии', icon: icons.comments, tour: 'comments' },
     ],
   },
   {
     category: 'monetization', label: 'Монетизация', icon: icons.paidChats,
     items: [
-      { path: '/paid-chats', label: 'Платные чаты', icon: icons.paidChats, tour: 'paid-chats' },
-      { path: '/services', label: 'Услуги и запись', icon: icons.services, tour: 'services' },
-      { path: '/shop', label: 'Магазин', icon: icons.shop, tour: 'shop' },
+      { path: '/paid-chats', featureKey: 'paid_chats', label: 'Платные чаты', icon: icons.paidChats, tour: 'paid-chats' },
+      { path: '/services', featureKey: 'services', label: 'Услуги и запись', icon: icons.services, tour: 'services' },
+      { path: '/shop', featureKey: 'shop', label: 'Магазин', icon: icons.shop, tour: 'shop' },
     ],
   },
-  { path: '/staff', label: 'Сотрудники', icon: icons.staff, standalone: true, tour: 'staff' },
-  { path: '/trash', label: 'Корзина', icon: icons.trash, standalone: true },
+  { path: '/staff', featureKey: 'staff', label: 'Сотрудники', icon: icons.staff, standalone: true, tour: 'staff' },
+  { path: '/trash', featureKey: 'trash', label: 'Корзина', icon: icons.trash, standalone: true },
   {
     category: 'billing', label: 'Подписка', icon: icons.billing,
     items: [
       { path: '/billing', label: 'Тарифы', icon: icons.billing, tour: 'billing' },
-      { path: '/ai-tokens', label: 'ИИ Токены', icon: icons.ai, tour: 'ai-tokens' },
-      { path: '/referrals', label: 'Реферальная система', icon: icons.links, tour: 'referrals' },
+      { path: '/ai-tokens', featureKey: 'ai_tokens', label: 'ИИ Токены', icon: icons.ai, tour: 'ai-tokens' },
+      { path: '/referrals', featureKey: 'referrals', label: 'Реферальная система', icon: icons.links, tour: 'referrals' },
     ],
   },
 ];
@@ -180,7 +181,18 @@ const menuItems = [
 export default function Sidebar({ isOpen, mobileOpen, onClose }) {
   const location = useLocation();
   const { currentChannel } = useChannels();
+  const { get: getVisibility } = useFeatureVisibility();
   const [openCategories, setOpenCategories] = useState(new Set(['marketing']));
+
+  // Эффективный бейдж: «Скоро» если featureKey в coming_soon, иначе исходный item.badge
+  const effectiveBadge = (item) => {
+    if (item.featureKey) {
+      const f = getVisibility(item.featureKey);
+      if (f.visibility === 'coming_soon') return 'Скоро';
+      if (f.visibility === 'hidden') return null;
+    }
+    return item.badge || null;
+  };
 
   const toggleCategory = (cat) => {
     setOpenCategories(prev => {
@@ -221,7 +233,7 @@ export default function Sidebar({ isOpen, mobileOpen, onClose }) {
                 data-tour={item.tour}
               >
                 <span className="sidebar-icon gradient-icon">{item.icon}</span> {item.label}
-                {item.badge && <span style={{ marginLeft: 'auto', fontSize: '0.65rem', padding: '1px 6px', borderRadius: 8, background: 'linear-gradient(135deg, #7B68EE, #4F46E5)', color: '#fff', fontWeight: 700 }}>{item.badge}</span>}
+                {effectiveBadge(item) && <span style={{ marginLeft: 'auto', fontSize: '0.65rem', padding: '1px 6px', borderRadius: 8, background: effectiveBadge(item) === 'Скоро' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'linear-gradient(135deg, #7B68EE, #4F46E5)', color: '#fff', fontWeight: 700 }}>{effectiveBadge(item)}</span>}
               </NavLink>
             );
           }
@@ -280,6 +292,7 @@ export default function Sidebar({ isOpen, mobileOpen, onClose }) {
                     >
                       {sub.icon && <span className="sidebar-icon gradient-icon sub-icon">{sub.icon}</span>}
                       {sub.label}
+                      {effectiveBadge(sub) && <span style={{ marginLeft: 'auto', fontSize: '0.6rem', padding: '1px 6px', borderRadius: 8, background: effectiveBadge(sub) === 'Скоро' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'linear-gradient(135deg, #7B68EE, #4F46E5)', color: '#fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{effectiveBadge(sub)}</span>}
                     </NavLink>
                   ))}
                 </div>

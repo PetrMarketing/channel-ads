@@ -60,6 +60,7 @@ import AdminNotificationsPage from './pages/admin/AdminNotificationsPage';
 import AdminBroadcastsUsersPage from './pages/admin/AdminBroadcastsUsersPage';
 import AdminOnboardingPage from './pages/admin/AdminOnboardingPage';
 import AdminVisibilityPage from './pages/admin/AdminVisibilityPage';
+import FeatureGate from './components/FeatureGate';
 import AdminBlogPage from './pages/admin/AdminBlogPage';
 import AdminPromoCodesPage from './pages/admin/AdminPromoCodesPage';
 import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
@@ -277,25 +278,25 @@ export default function App() {
       {/* Dashboard (protected) */}
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<DashboardPage />} />
-        <Route path="ai-design" element={<AiDesignPage />} />
+        <Route path="ai-design" element={<FeatureGate featureKey="ai_design" title="ИИ Оформление" icon="🎨"><AiDesignPage /></FeatureGate>} />
         <Route path="ai-landing" element={<AiLandingPage />} />
-        <Route path="links" element={<LinksPage />} />
-        <Route path="pins" element={<PinsPage />} />
-        <Route path="broadcasts" element={<BroadcastsPage />} />
-        <Route path="funnels" element={<FunnelsPage />} />
-        <Route path="content" element={<ContentPage />} />
-        <Route path="giveaways" element={<GiveawaysPage />} />
+        <Route path="links" element={<FeatureGate featureKey="links" title="Ссылки" icon="🔗"><LinksPage /></FeatureGate>} />
+        <Route path="pins" element={<FeatureGate featureKey="pins" title="Закрепы" icon="📌"><PinsPage /></FeatureGate>} />
+        <Route path="broadcasts" element={<FeatureGate featureKey="broadcasts" title="Рассылки" icon="📢"><BroadcastsPage /></FeatureGate>} />
+        <Route path="funnels" element={<FeatureGate featureKey="funnels" title="Воронки" icon="🎯"><FunnelsPage /></FeatureGate>} />
+        <Route path="content" element={<FeatureGate featureKey="content" title="Публикации" icon="📝"><ContentPage /></FeatureGate>} />
+        <Route path="giveaways" element={<FeatureGate featureKey="giveaways" title="Розыгрыши" icon="🎁"><GiveawaysPage /></FeatureGate>} />
         <Route path="billing" element={<BillingPage />} />
-        <Route path="ai-tokens" element={<AiTokensPage />} />
-        <Route path="referrals" element={<ReferralPage />} />
-        <Route path="staff" element={<StaffPage />} />
-        <Route path="trash" element={<TrashPage />} />
-        <Route path="paid-chats" element={<PaidChatsPage />} />
-        <Route path="services" element={<ServicesPage />} />
-        <Route path="shop" element={<ShopPage />} />
-        <Route path="analytics" element={<AnalyticsPage />} />
-        <Route path="comments" element={<CommentsPage />} />
-        <Route path="ord" element={<OrdPage />} />
+        <Route path="ai-tokens" element={<FeatureGate featureKey="ai_tokens" title="ИИ Токены" icon="🪙"><AiTokensPage /></FeatureGate>} />
+        <Route path="referrals" element={<FeatureGate featureKey="referrals" title="Реферальная система" icon="🤝"><ReferralPage /></FeatureGate>} />
+        <Route path="staff" element={<FeatureGate featureKey="staff" title="Сотрудники" icon="👥"><StaffPage /></FeatureGate>} />
+        <Route path="trash" element={<FeatureGate featureKey="trash" title="Корзина" icon="🗑"><TrashPage /></FeatureGate>} />
+        <Route path="paid-chats" element={<FeatureGate featureKey="paid_chats" title="Платные чаты" icon="💬"><PaidChatsPage /></FeatureGate>} />
+        <Route path="services" element={<FeatureGate featureKey="services" title="Услуги и запись" icon="📅"><ServicesPage /></FeatureGate>} />
+        <Route path="shop" element={<FeatureGate featureKey="shop" title="Магазин" icon="🛍"><ShopPage /></FeatureGate>} />
+        <Route path="analytics" element={<FeatureGate featureKey="analytics" title="Аналитика" icon="📊"><AnalyticsPage /></FeatureGate>} />
+        <Route path="comments" element={<FeatureGate featureKey="comments" title="Комментарии" icon="💬"><CommentsPage /></FeatureGate>} />
+        <Route path="ord" element={<FeatureGate featureKey="ord" title="Отчёты о рекламе" icon="📄"><OrdPage /></FeatureGate>} />
         <Route path="achievements" element={<AchievementsPage />} />
       </Route>
     </Routes>
