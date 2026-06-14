@@ -987,24 +987,47 @@ function esc(s){{return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 
 function toast(text){{var t=document.getElementById('toast');t.textContent=text;t.classList.add('show');setTimeout(function(){{t.classList.remove('show')}},1800)}}
 
-async function resolveUser() {{
+function tryReadWebAppUser() {{
   try {{
     if (window.WebApp && window.WebApp.initDataUnsafe) {{
       const u = window.WebApp.initDataUnsafe.user;
-      if (u) {{
-        uid = String(u.user_id || u.id || '');
-        userName = ((u.first_name||'')+' '+(u.last_name||'')).trim();
-        userUsername = u.username || '';
-        platform = u.id && String(u.id).length < 18 ? 'telegram' : 'max';
+      if (u && (u.user_id || u.id)) {{
+        return {{
+          uid: String(u.user_id || u.id),
+          name: ((u.first_name||'')+' '+(u.last_name||'')).trim(),
+          username: u.username || '',
+          platform: (u.user_id || String(u.id||'').length >= 18) ? 'max' : 'telegram',
+        }};
       }}
     }}
   }} catch(e) {{}}
-  if (!uid) {{
-    // Фолбэк — генерим анонимный id и кладём в localStorage (для веб-просмотра)
-    uid = localStorage.getItem('poll_uid') || ('anon_' + Math.random().toString(36).slice(2,12));
-    localStorage.setItem('poll_uid', uid);
-    platform = 'max';
+  return null;
+}}
+
+async function resolveUser() {{
+  // Ждём MAX SDK до 4 секунд — initDataUnsafe.user может появиться не сразу
+  const start = Date.now();
+  while (Date.now() - start < 4000) {{
+    const u = tryReadWebAppUser();
+    if (u) {{
+      uid = u.uid;
+      userName = u.name;
+      userUsername = u.username;
+      platform = u.platform;
+      return;
+    }}
+    await new Promise(r => setTimeout(r, 200));
   }}
+  // SDK не отдал user — стабильный анонимный id, восстанавливается из localStorage
+  const ANON_KEY = 'poll_uid_anon_v2';
+  let stored = '';
+  try {{ stored = localStorage.getItem(ANON_KEY) || ''; }} catch(e) {{}}
+  if (!stored) {{
+    stored = 'anon_' + Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
+    try {{ localStorage.setItem(ANON_KEY, stored); }} catch(e) {{}}
+  }}
+  uid = stored;
+  platform = 'max';
 }}
 
 async function load() {{
