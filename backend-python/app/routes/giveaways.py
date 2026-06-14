@@ -36,7 +36,29 @@ async def list_giveaways(tc: str, user: Dict[str, Any] = Depends(get_current_use
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
     giveaways = await fetch_all(f"SELECT {_GW_COLS} FROM giveaways WHERE channel_id = $1 ORDER BY created_at DESC", channel["id"])
-    return {"success": True, "giveaways": giveaways}
+    # Подтягиваем всех победителей одним запросом
+    gw_ids = [g["id"] for g in giveaways]
+    winners_by_gw: Dict[int, list] = {}
+    if gw_ids:
+        rows = await fetch_all(
+            """SELECT giveaway_id, telegram_id, max_user_id, platform, username, first_name
+               FROM giveaway_winners WHERE giveaway_id = ANY($1) ORDER BY id""",
+            gw_ids,
+        )
+        for r in rows:
+            winners_by_gw.setdefault(r["giveaway_id"], []).append({
+                "telegram_id": r.get("telegram_id"),
+                "max_user_id": r.get("max_user_id"),
+                "platform": r.get("platform"),
+                "username": r.get("username"),
+                "first_name": r.get("first_name"),
+            })
+    out = []
+    for g in giveaways:
+        item = dict(g)
+        item["winners"] = winners_by_gw.get(g["id"], [])
+        out.append(item)
+    return {"success": True, "giveaways": out}
 
 
 @router.post("/{tc}")
@@ -377,6 +399,20 @@ async def draw_winner(tc: str, giveaway_id: int, user: Dict[str, Any] = Depends(
             winner_max_id, len(participants), giveaway_id,
         )
 
+        # Сохраняем всех победителей в отдельную таблицу
+        await execute("DELETE FROM giveaway_winners WHERE giveaway_id = $1", giveaway_id)
+        for w in winners:
+            try:
+                await execute(
+                    """INSERT INTO giveaway_winners (giveaway_id, participant_id, telegram_id,
+                                                      max_user_id, platform, username, first_name)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+                    giveaway_id, w.get("id"), w.get("telegram_id"), w.get("max_user_id"),
+                    w.get("platform") or "telegram", w.get("username"), w.get("first_name"),
+                )
+            except Exception as e:
+                print(f"[Giveaways] insert winner failed: {e}")
+
         # Notify winners
         gw_title = g.get("title") or "Розыгрыш"
         for w in winners:
@@ -388,10 +424,18 @@ async def draw_winner(tc: str, giveaway_id: int, user: Dict[str, Any] = Depends(
                     f"Организатор скоро свяжется с вами для вручения приза."
                 )
                 from ..services.messenger import send_to_user
+                sent = False
                 if w.get("platform") == "max" and w.get("max_user_id"):
                     await send_to_user(w["max_user_id"], "max", notify_text)
+                    sent = True
                 elif w.get("telegram_id"):
                     await send_to_user(w["telegram_id"], "telegram", notify_text)
+                    sent = True
+                if sent:
+                    await execute(
+                        "UPDATE giveaway_winners SET notified = TRUE WHERE giveaway_id = $1 AND COALESCE(telegram_id,0)=COALESCE($2,0) AND COALESCE(max_user_id,'')=COALESCE($3,'')",
+                        giveaway_id, w.get("telegram_id"), w.get("max_user_id"),
+                    )
             except Exception as e:
                 print(f"[Giveaways] notify winner failed: {e}")
 

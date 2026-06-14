@@ -637,7 +637,32 @@ export default function GiveawaysPage() {
                           )}
                         </div>
 
-                        {g.winner_first_name && (
+                        {(Array.isArray(g.winners) && g.winners.length > 0) ? (
+                          <div style={{
+                            marginTop: 12,
+                            padding: '10px 14px',
+                            borderRadius: 10,
+                            background: 'rgba(16,185,129,0.08)',
+                            border: `1px solid ${SUCCESS}30`,
+                            display: 'flex', flexDirection: 'column', gap: 6,
+                          }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              <TrophyIcon size={16} color={SUCCESS} strokeWidth={2.2} />
+                              <span style={{ fontSize: '0.85rem', color: DARK, fontWeight: 600 }}>
+                                {g.winners.length > 1 ? `Победители (${g.winners.length}):` : 'Победитель:'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: 24 }}>
+                              {g.winners.map((w, idx) => (
+                                <span key={idx} style={{ fontSize: '0.82rem', color: DARK }}>
+                                  <b>{w.first_name || w.username || w.max_user_id || w.telegram_id || '—'}</b>
+                                  {w.username ? <span style={{ color: SUCCESS, marginLeft: 4 }}>@{w.username}</span> : null}
+                                  {idx < g.winners.length - 1 ? ',' : ''}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : g.winner_first_name ? (
                           <div style={{
                             marginTop: 12,
                             padding: '10px 14px',
@@ -652,7 +677,7 @@ export default function GiveawaysPage() {
                               {g.winner_username ? <span style={{ color: SUCCESS, marginLeft: 6 }}>@{g.winner_username}</span> : null}
                             </span>
                           </div>
-                        )}
+                        ) : null}
                       </div>
 
                       {g.image_path && (
