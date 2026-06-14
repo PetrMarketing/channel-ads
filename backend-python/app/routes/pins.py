@@ -683,15 +683,23 @@ async def _resolve_buttons(inline_buttons_json, channel, post_id=None, post_type
                     if deep_url:
                         resolved.append({"text": btn.get("text", "Получить"), "type": "url", "url": deep_url})
         elif btn_type == "comments" and post_id:
+            # Считаем комментарии для счётчика (N)
+            cnt_row = await fetch_one(
+                "SELECT COUNT(*)::int AS cnt FROM post_comments WHERE post_type = $1 AND post_id = $2",
+                post_type, int(post_id),
+            )
+            cnt = cnt_row["cnt"] if cnt_row else 0
+            base_text = btn.get("text") or "Комментарии"
+            btn_text = f"{base_text} ({cnt})" if cnt > 0 else base_text
             if is_max:
                 bot_link_id = await _get_max_bot_link_id()
                 deep_url = f"https://max.ru/id{bot_link_id}_bot?startapp=comments_{post_type}_{post_id}"
-                resolved.append({"text": btn.get("text", "Комментарии"), "type": "link", "url": deep_url})
+                resolved.append({"text": btn_text, "type": "link", "url": deep_url})
             else:
                 bot_username = await _get_tg_bot_username()
                 deep_url = f"https://t.me/{bot_username}?start=comments_{post_type}_{post_id}" if bot_username else ""
                 if deep_url:
-                    resolved.append({"text": btn.get("text", "Комментарии"), "type": "url", "url": deep_url})
+                    resolved.append({"text": btn_text, "type": "url", "url": deep_url})
         elif btn_type == "poll" and btn.get("poll_id"):
             # Одна кнопка «Пройти опрос (N голосов)» → открывает мини-апп
             poll = await fetch_one(

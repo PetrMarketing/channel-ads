@@ -100,74 +100,17 @@ async def _refresh_poll_buttons_in_posts(poll_id: int):
     их inline-кнопки (актуальный счётчик голосов)."""
     try:
         posts = await fetch_all(
-            """SELECT cp.id, cp.message_text, cp.inline_buttons, cp.attach_type,
-                      cp.telegram_message_id, cp.channel_id,
-                      c.platform, c.channel_id as ch_channel_id, c.max_chat_id, c.tracking_code
-               FROM content_posts cp
-               JOIN channels c ON c.id = cp.channel_id
-               WHERE cp.poll_id = $1 AND cp.status = 'published'
-                 AND cp.telegram_message_id IS NOT NULL""",
+            "SELECT id FROM content_posts WHERE poll_id = $1 AND status = 'published' AND telegram_message_id IS NOT NULL",
             poll_id,
         )
         print(f"[poll_voter] refresh poll_id={poll_id}: found {len(posts)} posts")
         if not posts:
             return
-        from ..routes.pins import _resolve_buttons
+        from .post_button_refresh import refresh_post_buttons
         for post in posts:
-            try:
-                channel = {
-                    "id": post["channel_id"],
-                    "platform": post["platform"],
-                    "channel_id": post["ch_channel_id"],
-                    "max_chat_id": post["max_chat_id"],
-                    "tracking_code": post["tracking_code"],
-                }
-                resolved = await _resolve_buttons(
-                    post["inline_buttons"], channel,
-                    post_id=post["id"], post_type="content",
-                )
-                if post["platform"] == "max":
-                    r = await _edit_max_message_buttons(channel, post["telegram_message_id"],
-                                                    post["message_text"], resolved)
-                    print(f"[poll_voter] edit MAX msg {post['telegram_message_id']}: {r}")
-                else:
-                    await _edit_telegram_message_buttons(channel, post["telegram_message_id"],
-                                                          resolved)
-                    print(f"[poll_voter] edit TG msg {post['telegram_message_id']} done")
-            except Exception as e:
-                print(f"[poll_voter] refresh post {post['id']} failed: {e}")
+            await refresh_post_buttons("content", post["id"])
     except Exception as e:
         print(f"[poll_voter] _refresh_poll_buttons_in_posts: {e}")
-
-
-async def _edit_max_message_buttons(channel, message_id, text, inline_buttons_json):
-    from .max_api import get_max_api
-    from .messenger import build_max_inline_buttons, html_to_max_markdown
-    max_api = get_max_api()
-    if not max_api:
-        return {"success": False, "error": "no max_api"}
-    max_buttons = build_max_inline_buttons(inline_buttons_json)
-    max_text = html_to_max_markdown(text or "")
-    return await max_api.edit_message(str(message_id), max_text, buttons=max_buttons)
-
-
-async def _edit_telegram_message_buttons(channel, message_id, inline_buttons_json):
-    import aiohttp
-    from ..config import settings
-    from .messenger import build_reply_markup
-    token = settings.TELEGRAM_BOT_TOKEN
-    if not token or not channel.get("channel_id"):
-        return
-    reply_markup = build_reply_markup(inline_buttons_json) or {}
-    url = f"{settings.TELEGRAM_API_URL}/bot{token}/editMessageReplyMarkup"
-    payload = {
-        "chat_id": channel["channel_id"],
-        "message_id": int(message_id),
-        "reply_markup": reply_markup,
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, json=payload) as resp:
-            await resp.json()
 
 
 async def _insert_vote(poll_id, option_id, tg_id, max_uid, username, first_name):

@@ -46,7 +46,12 @@ async def delete_comment(tc: str, comment_id: int, user=Depends(get_current_user
     ch = await _get_channel(tc, user["id"])
     if not ch:
         raise HTTPException(404, "Канал не найден")
+    target = await fetch_one("SELECT post_type, post_id FROM post_comments WHERE id = $1 AND channel_id = $2", comment_id, ch["id"])
     await execute("DELETE FROM post_comments WHERE id = $1 AND channel_id = $2", comment_id, ch["id"])
+    if target:
+        import asyncio
+        from ..services.post_button_refresh import refresh_post_buttons
+        asyncio.create_task(refresh_post_buttons(target["post_type"], target["post_id"]))
     return {"success": True}
 
 
@@ -75,6 +80,10 @@ async def reply_comment(tc: str, comment_id: int, request: Request, user=Depends
         await track_event(int(ch["id"]), "comment_reply", 1)
     except Exception as e:
         print(f"[Achievements] track comment_reply skip: {e}")
+    # Live-обновление кнопки «Комментарии (N)»
+    import asyncio
+    from ..services.post_button_refresh import refresh_post_buttons
+    asyncio.create_task(refresh_post_buttons(parent["post_type"], parent["post_id"]))
     return {"success": True, "id": rid}
 
 
@@ -221,5 +230,10 @@ async def public_add_comment(post_type: str, post_id: int, request: Request):
                             f"Комментарий: {text[:200]}")
     except Exception as e:
         print(f"[Comments] Notify error: {e}")
+
+    # Live-обновление кнопки «Комментарии (N)» в канале
+    import asyncio
+    from ..services.post_button_refresh import refresh_post_buttons
+    asyncio.create_task(refresh_post_buttons(post_type, post_id))
 
     return {"success": True, "id": cid}
