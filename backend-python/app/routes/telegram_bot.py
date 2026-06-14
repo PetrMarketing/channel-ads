@@ -434,7 +434,7 @@ async def handle_start(chat_id: int, tg_user: dict, payload: str = ""):
         "👋 Добро пожаловать в сервисе MAX Маркетинг\n\n"
         "📌 <b>Как подключить канал:</b>\n"
         "1. Откройте ваш канал → Настройки → Подписчики\n"
-        "2. Добавьте меня в подписчики канала\n"
+        "2. Добавьте ПКРеклама в подписчики канала\n"
         "3. Затем, добавьте меня администратором канала\n"
         "4. Канал появятся в личном кабинете автоматически\n\n"
         f"🔗 Личный кабинет: {login_url}",
@@ -444,6 +444,33 @@ async def handle_start(chat_id: int, tg_user: dict, payload: str = ""):
             ]]
         },
     )
+
+    # Если у пользователя ещё нет каналов — отправляем ссылку на подробную инструкцию
+    try:
+        user_row = result.get("user") if isinstance(result, dict) else None
+        user_id_for_check = user_row.get("id") if user_row else None
+        if user_id_for_check:
+            has_channel = await fetch_one(
+                "SELECT id FROM channels WHERE user_id = $1 AND deleted_at IS NULL LIMIT 1",
+                user_id_for_check,
+            )
+            if not has_channel:
+                guide_url = f"{app_url.rstrip('/')}/blog/kak-podklyuchit-bota-administratorom-v-max-kanale"
+                await _send_message(
+                    chat_id,
+                    "👀 Видим, вы ещё не подключили свой канал к сервису MAX Маркетинг.\n\n"
+                    "Подключение займёт 1 минуту — мы подготовили подробную инструкцию "
+                    "с шагами для телефона и компьютера.\n\n"
+                    f"📖 <a href=\"{guide_url}\">Как подключить бота администратором в MAX-канале</a>",
+                    reply_markup={
+                        "inline_keyboard": [
+                            [{"text": "📖 Открыть инструкцию", "url": guide_url}],
+                            [{"text": "🔑 Личный кабинет", "url": login_url}],
+                        ]
+                    },
+                )
+    except Exception as e:
+        print(f"[TG Bot] no-channel guide error: {e}")
 
 
 async def handle_giveaway(chat_id: int, tg_user: dict, code: str):

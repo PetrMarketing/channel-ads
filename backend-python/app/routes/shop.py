@@ -1100,6 +1100,55 @@ async def public_appearance(tc: str):
     }
 
 
+@public_router.get("/{tc}/customer-info")
+async def get_customer_info(tc: str, uid: str):
+    """Возвращает имя клиента по user_identifier (= max_user_id).
+    Используется UI миниаппа чтобы предзаполнить поле «Имя» в чекауте,
+    т.к. window.WebApp.initDataUnsafe.user обычно пуст в MAX."""
+    channel = await fetch_one("SELECT id FROM channels WHERE tracking_code = $1", tc)
+    if not channel or not uid:
+        return {"success": True, "name": "", "phone": ""}
+    uid_str = str(uid)
+    # 1) Подписчик канала (subscriptions.first_name)
+    sub = None
+    try:
+        sub = await fetch_one(
+            """SELECT first_name FROM subscriptions
+               WHERE channel_id = $1
+                 AND (max_user_id = $2 OR (telegram_id IS NOT NULL AND telegram_id::text = $2))
+               ORDER BY subscribed_at DESC LIMIT 1""",
+            channel["id"], uid_str,
+        )
+    except Exception:
+        sub = None
+    if sub and sub.get("first_name"):
+        return {"success": True, "name": sub.get("first_name") or "", "phone": ""}
+    # 2) Зарегистрированный юзер платформы (users)
+    user = None
+    try:
+        user = await fetch_one(
+            """SELECT first_name, last_name FROM users
+               WHERE max_user_id = $1 OR (telegram_id IS NOT NULL AND telegram_id::text = $1) LIMIT 1""",
+            uid_str,
+        )
+    except Exception:
+        user = None
+    if user:
+        name = ((user.get("first_name") or "") + " " + (user.get("last_name") or "")).strip()
+        if name:
+            return {"success": True, "name": name, "phone": ""}
+    # 3) Последний заказ этого uid в этом канале
+    last_order = await fetch_one(
+        """SELECT client_name, client_phone FROM shop_orders
+           WHERE channel_id = $1 AND user_identifier = $2 AND client_name IS NOT NULL
+           ORDER BY created_at DESC LIMIT 1""",
+        channel["id"], uid_str,
+    )
+    if last_order:
+        return {"success": True, "name": last_order.get("client_name") or "", "phone": last_order.get("client_phone") or ""}
+    return {"success": True, "name": "", "phone": ""}
+
+
 @public_router.get("/{tc}/delivery-methods")
 async def public_delivery_methods(tc: str):
     channel = await fetch_one("SELECT id FROM channels WHERE tracking_code = $1", tc)
@@ -1292,27 +1341,79 @@ async def checkout(tc: str, request: Request):
     await execute("DELETE FROM shop_cart_items WHERE cart_id = $1", cart["id"])
     await execute("DELETE FROM shop_carts WHERE id = $1", cart["id"])
 
-    # Notify manager about new order
+    # Notify manager (or owner as fallback) about new order
     try:
+        from ..services.messenger import send_to_user
         shop_s = await fetch_one("SELECT manager_user_id FROM shop_settings WHERE channel_id = $1", channel["id"])
         manager_id = shop_s.get("manager_user_id") if shop_s else None
+        # Fallback на владельца канала
+        if not manager_id:
+            ch_row = await fetch_one("SELECT owner_id, user_id FROM channels WHERE id = $1", channel["id"])
+            manager_id = (ch_row.get("owner_id") or ch_row.get("user_id")) if ch_row else None
+            print(f"[Shop] No shop manager — falling back to channel owner_id={manager_id}")
         if manager_id:
-            from ..services.messenger import send_to_user
-            order_lines = [f"<b>Новый заказ {order_number}</b>\n"]
+            order_lines = [f"<b>🛒 Новый заказ {order_number}</b>\n"]
             order_lines.append(f"Клиент: {body.get('client_name', '')} {body.get('client_phone', '')}")
+            if body.get("client_address"):
+                order_lines.append(f"Адрес: {body.get('client_address')}")
             for item in items:
                 p = float(item["variant_price"] if item["variant_price"] is not None else item["product_price"])
-                order_lines.append(f"  {item['product_name']} x{item['quantity']} — {p * item['quantity']:.0f} RUB")
-            order_lines.append(f"\nИтого: <b>{total:.0f} RUB</b>")
+                order_lines.append(f"  • {item['product_name']} x{item['quantity']} — {p * item['quantity']:.0f} ₽")
+            order_lines.append(f"\nИтого: <b>{total:.0f} ₽</b>")
             admin_text = "\n".join(order_lines)
             mgr_user = await fetch_one("SELECT telegram_id, max_user_id FROM users WHERE id = $1", manager_id)
             if mgr_user:
+                sent = False
                 if mgr_user.get("max_user_id"):
-                    await send_to_user(mgr_user["max_user_id"], "max", admin_text)
-                elif mgr_user.get("telegram_id"):
-                    await send_to_user(int(mgr_user["telegram_id"]), "telegram", admin_text)
+                    try:
+                        await send_to_user(mgr_user["max_user_id"], "max", admin_text)
+                        sent = True
+                        print(f"[Shop] Manager notified via MAX uid={mgr_user['max_user_id']}")
+                    except Exception as ie:
+                        print(f"[Shop] MAX send failed: {ie}")
+                if not sent and mgr_user.get("telegram_id"):
+                    try:
+                        await send_to_user(int(mgr_user["telegram_id"]), "telegram", admin_text)
+                        print(f"[Shop] Manager notified via TG id={mgr_user['telegram_id']}")
+                    except Exception as ie:
+                        print(f"[Shop] TG send failed: {ie}")
+            else:
+                print(f"[Shop] Manager user_id={manager_id} not found in users")
+        else:
+            print(f"[Shop] No manager and no owner for channel {channel['id']} — no notification sent")
     except Exception as e:
         print(f"[Shop] Manager notification error: {e}")
+
+    # Notify client about successful order (only if we have a real messenger id)
+    try:
+        from ..services.messenger import send_to_user
+        uid_str = str(user_identifier or "")
+        if uid_str and not uid_str.startswith("anon_"):
+            client_lines = [f"✅ <b>Заказ {order_number} принят!</b>\n"]
+            for item in items:
+                p = float(item["variant_price"] if item["variant_price"] is not None else item["product_price"])
+                client_lines.append(f"  • {item['product_name']} x{item['quantity']} — {p * item['quantity']:.0f} ₽")
+            client_lines.append(f"\nИтого: <b>{total:.0f} ₽</b>")
+            client_lines.append("\nСпасибо за заказ! Менеджер свяжется с вами в ближайшее время.")
+            client_text = "\n".join(client_lines)
+            sent = False
+            # MAX user_id хранится как строка, обычно длинная
+            try:
+                await send_to_user(uid_str, "max", client_text)
+                sent = True
+                print(f"[Shop] Client notified via MAX uid={uid_str}")
+            except Exception as ie:
+                print(f"[Shop] Client MAX send failed: {ie}")
+            if not sent and uid_str.isdigit():
+                try:
+                    await send_to_user(int(uid_str), "telegram", client_text)
+                    print(f"[Shop] Client notified via TG id={uid_str}")
+                except Exception as ie:
+                    print(f"[Shop] Client TG send failed: {ie}")
+        else:
+            print(f"[Shop] Skipping client notification — anon uid={uid_str}")
+    except Exception as e:
+        print(f"[Shop] Client notification error: {e}")
 
     # Init payment if provider configured
     payment_url = None

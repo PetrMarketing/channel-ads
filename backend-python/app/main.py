@@ -1759,7 +1759,7 @@ var S = {{
   categories: [], products: [], cartItems: [], appearance: {{}}, deliveryMethods: [],
   filterCat: null, variant: null, qty: 1,
   promo: '', discount: 0, promoApplied: false,
-  orderNum: '', dmId: null, userName: ''
+  orderNum: '', dmId: null, userName: '', userPhone: ''
 }};
 
 var $=function(id){{return document.getElementById(id)}};
@@ -2006,13 +2006,24 @@ function renderCart() {{
   app.innerHTML = h;
 }}
 
-async function goCheckout() {{ await loadDM(); S.screen = 'checkout'; render(); window.scrollTo(0,0); }}
+async function loadCustomer() {{
+  if (S.userName && S.userPhone) return;
+  try {{
+    const d = await api('/customer-info?uid=' + encodeURIComponent(uid));
+    if (d && d.success) {{
+      if (!S.userName && d.name) S.userName = d.name;
+      if (!S.userPhone && d.phone) S.userPhone = d.phone;
+    }}
+  }} catch(e) {{ /* ignore */ }}
+}}
+
+async function goCheckout() {{ await loadDM(); await loadCustomer(); S.screen = 'checkout'; render(); window.scrollTo(0,0); }}
 
 function renderCheckout() {{
   let h = headerHtml('Оформление', true);
   h += `<div class="section">`;
   h += '<label class="form-label">Имя</label><input class="form-input" id="cname" placeholder="Ваше имя" value="' + (S.userName || '') + '">';
-  h += '<label class="form-label">Телефон</label><div style="display:flex;gap:8px"><input class="form-input" id="cphone" type="tel" placeholder="+7..." style="flex:1;margin:0">';
+  h += '<label class="form-label">Телефон</label><div style="display:flex;gap:8px"><input class="form-input" id="cphone" type="tel" placeholder="+7..." value="' + (S.userPhone || '') + '" style="flex:1;margin:0">';
   if (WA.requestContact) h += '<button class="btn" style="background:' + pc() + ';padding:8px 12px;font-size:0.8rem;white-space:nowrap" onclick="fillPhone()">Автозаполнение</button>';
   h += '</div>';
   h += '<label class="form-label">Адрес</label><input class="form-input" id="caddr" placeholder="Город, улица, дом">';

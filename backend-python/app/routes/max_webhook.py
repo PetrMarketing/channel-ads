@@ -623,6 +623,16 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
             "SELECT o.*, c.tracking_code FROM shop_orders o JOIN channels c ON c.id = o.channel_id WHERE o.order_number = $1",
             order_num)
         if order:
+            # Привязываем max_user_id клиента к заказу — чтобы дальше шли уведомления
+            try:
+                cur_uid = (order.get("user_identifier") or "")
+                if not cur_uid or cur_uid.startswith("anon_"):
+                    await execute(
+                        "UPDATE shop_orders SET user_identifier = $1 WHERE id = $2",
+                        str(max_user_id), order["id"])
+                    print(f"[Shop] Linked client max_user_id={max_user_id} to order {order_num}")
+            except Exception as e:
+                print(f"[Shop] Link client to order error: {e}")
             items = await fetch_all("SELECT product_name, quantity, price FROM shop_order_items WHERE order_id = $1", order["id"])
             lines = [f"**Заказ {order_num}**\n"]
             for it in items:
@@ -631,6 +641,24 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
 
             shop_s = await fetch_one("SELECT manager_user_id, manager_contact_url FROM shop_settings WHERE channel_id = $1", order["channel_id"])
             mgr_link = (shop_s.get("manager_contact_url") or "") if shop_s else ""
+            mgr_label = "Связаться с менеджером"
+            # Fallback: contact link владельца канала
+            if not mgr_link:
+                try:
+                    ch_row = await fetch_one(
+                        """SELECT u.username, u.max_user_id, u.first_name
+                           FROM channels c LEFT JOIN users u ON u.id = COALESCE(c.owner_id, c.user_id)
+                           WHERE c.id = $1""", order["channel_id"])
+                    if ch_row:
+                        if ch_row.get("username"):
+                            uname = ch_row["username"].lstrip("@")
+                            mgr_link = f"https://max.ru/{uname}"
+                        elif ch_row.get("max_user_id"):
+                            mgr_link = f"https://max.ru/u/{ch_row['max_user_id']}"
+                        if mgr_link and ch_row.get("first_name"):
+                            mgr_label = f"Написать {ch_row['first_name']}"
+                except Exception as e:
+                    print(f"[Shop] Owner fallback link error: {e}")
 
             # Генерируем свежий payment_url если есть платёжная система и заказ не оплачен
             pay_url = None
@@ -666,7 +694,7 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
             if pay_url:
                 btns.append([{"type": "link", "text": f"💳 Оплатить {float(order['total']):.0f} ₽", "url": pay_url}])
             if mgr_link:
-                btns.append([{"type": "link", "text": "Связаться с менеджером", "url": mgr_link}])
+                btns.append([{"type": "link", "text": mgr_label, "url": mgr_link}])
             await _send_to_chat(max_api, chat_id, "\n".join(lines), buttons=btns if btns else None)
             # Notify manager
             if shop_s and shop_s.get("manager_user_id"):
@@ -755,7 +783,7 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
         f"{referrer_line}👋 Добро пожаловать в сервисе MAX Маркетинг\n\n"
         f"📌 **Как подключить канал:**\n"
         f"1. Откройте ваш канал → Настройки → Подписчики\n"
-        f"2. Добавьте меня в подписчики канала\n"
+        f"2. Добавьте ПКРеклама в подписчики канала\n"
         f"3. Затем, добавьте меня администратором канала\n"
         f"4. Канал появятся в личном кабинете автоматически\n\n"
         f"🔗 Личный кабинет: {login_url}"
@@ -767,6 +795,33 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
         attachments=welcome_attachments,
         buttons=welcome_buttons,
     )
+
+    # Если у пользователя ещё нет каналов — отправляем подробную инструкцию
+    try:
+        user_row = result.get("user") if isinstance(result, dict) else None
+        user_id_for_check = user_row.get("id") if user_row else None
+        if user_id_for_check:
+            has_channel = await fetch_one(
+                "SELECT id FROM channels WHERE user_id = $1 AND deleted_at IS NULL LIMIT 1",
+                user_id_for_check,
+            )
+            if not has_channel:
+                guide_url = f"{settings.APP_URL.rstrip('/')}/blog/kak-podklyuchit-bota-administratorom-v-max-kanale"
+                guide_text = (
+                    "👀 Видим, вы ещё не подключили свой канал к сервису MAX Маркетинг.\n\n"
+                    "Подключение займёт 1 минуту — мы подготовили подробную инструкцию "
+                    "с шагами для телефона и компьютера.\n\n"
+                    f"📖 <a href=\"{guide_url}\">Как подключить бота администратором в MAX-канале</a>"
+                )
+                await _send_to_chat(
+                    max_api, chat_id, guide_text,
+                    buttons=[
+                        [{"type": "link", "text": "📖 Открыть инструкцию", "url": guide_url}],
+                        [{"type": "link", "text": "🔑 Личный кабинет", "url": login_url}],
+                    ],
+                )
+    except Exception as e:
+        print(f"[MAX Bot] no-channel guide error: {e}")
 
 
 async def _cmd_channels(max_api, chat_id: str, max_user_id: str):
@@ -2133,7 +2188,11 @@ async def process_max_update(body: dict):
                             await _send_to_user_by_id(max_api, owner_max_user_id,
                                 f"✅ Канал «{chat_title}» успешно подключен!\n\n"
                                 f"🔗 Код отслеживания: `{tracking_code}`\n\n"
-                                f"🎁 Активирован бесплатный пробный период на 2 дня!",
+                                f"🎁 Активирован бесплатный пробный период на 2 дня!\n\n"
+                                f"⚠️ <b>Важно: сделайте ПКРеклама администратором канала</b>\n"
+                                f"Откройте канал → Настройки → Администраторы → выдайте все права.\n"
+                                f"Без прав администратора не будут работать: автопостинг, рассылки, "
+                                f"воронки, лид-магниты и аналитика подписчиков.",
                                 buttons=[[{"type": "link", "text": "🔑 Перейти в кабинет", "url": _cabinet_url}]])
                         else:
                             await _send_to_user_by_id(max_api, owner_max_user_id,
