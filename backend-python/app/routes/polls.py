@@ -53,19 +53,17 @@ async def public_get_poll(poll_id: int, uid: str = "", platform: str = ""):
             "votes": cnt, "percent": (round(cnt * 100 / total, 1) if total > 0 else 0.0),
         })
 
-    # Свои голоса юзера
+    # Свои голоса юзера — ищем по обоим идентификаторам (max_user_id
+    # для миниаппа + telegram_id для старых callback-голосов с тем же числом)
     my_votes = []
     if uid:
-        if platform == "telegram" and uid.isdigit():
-            rows = await fetch_all(
-                "SELECT option_id FROM poll_votes WHERE poll_id = $1 AND voter_telegram_id = $2",
-                poll_id, int(uid),
-            )
-        else:
-            rows = await fetch_all(
-                "SELECT option_id FROM poll_votes WHERE poll_id = $1 AND voter_max_user_id = $2",
-                poll_id, str(uid),
-            )
+        rows = await fetch_all(
+            """SELECT option_id FROM poll_votes
+               WHERE poll_id = $1
+                 AND (voter_max_user_id = $2
+                      OR (voter_telegram_id IS NOT NULL AND voter_telegram_id::text = $2))""",
+            poll_id, str(uid),
+        )
         my_votes = [r["option_id"] for r in rows]
 
     return {
@@ -94,11 +92,12 @@ async def public_vote(poll_id: int, request: Request):
         raise HTTPException(status_code=400, detail="Не указан вариант или пользователь")
 
     from ..services.poll_voter import handle_poll_vote
-    tg_id = int(uid) if (platform == "telegram" and uid.isdigit()) else None
-    max_id = uid if platform != "telegram" else None
+    # Унифицируем: для миниаппа ВСЕГДА сохраняем uid как voter_max_user_id —
+    # это даёт стабильную идентификацию между устройствами одного аккаунта.
+    # voter_telegram_id используется ТОЛЬКО для голосов из inline-callback бота.
     msg = await handle_poll_vote(
         poll_id, option_id,
-        voter_telegram_id=tg_id, voter_max_user_id=max_id,
+        voter_telegram_id=None, voter_max_user_id=uid,
         voter_username=username, voter_first_name=name,
     )
     # Возвращаем актуальный стейт сразу

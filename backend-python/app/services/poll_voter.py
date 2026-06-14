@@ -28,21 +28,24 @@ async def handle_poll_vote(
     if not option:
         return "Вариант не найден"
 
-    # Проверяем, голосовал ли уже
-    voter_clause = []
-    voter_params = []
-    if voter_telegram_id is not None:
-        voter_clause.append("voter_telegram_id = $1")
-        voter_params.append(int(voter_telegram_id))
-    elif voter_max_user_id is not None:
-        voter_clause.append("voter_max_user_id = $1")
-        voter_params.append(str(voter_max_user_id))
+    # Идентифицируем юзера. Ищем существующий голос по ОБОИМ полям
+    # (max_user_id и telegram_id::text) — чтобы один и тот же 4747468,
+    # пришедший в разных полях с разных устройств, считался одним
+    # пользователем.
+    voter_key = None
+    if voter_max_user_id is not None:
+        voter_key = str(voter_max_user_id)
+    elif voter_telegram_id is not None:
+        voter_key = str(voter_telegram_id)
     else:
         return "Не удалось определить пользователя"
 
     existing = await fetch_all(
-        f"SELECT id, option_id FROM poll_votes WHERE poll_id = $2 AND {voter_clause[0]}",
-        voter_params[0], poll_id,
+        """SELECT id, option_id FROM poll_votes
+           WHERE poll_id = $1
+             AND (voter_max_user_id = $2
+                  OR (voter_telegram_id IS NOT NULL AND voter_telegram_id::text = $2))""",
+        poll_id, voter_key,
     )
 
     if not poll["allow_multiple"]:
