@@ -245,18 +245,47 @@ async def sweep_unpaid_members():
             # 6. Уже оплатил — не трогаем
             if uid in paid_set:
                 continue
+            # Дедуп: уведомление и попытку кика делаем не чаще раза в 24 часа на (chat, user)
+            already_notified = await fetch_one(
+                """SELECT id, last_notified_at, kick_attempts FROM paid_chat_kick_log
+                   WHERE paid_chat_id = $1 AND max_user_id = $2""",
+                ch["id"], uid,
+            )
+            should_notify = True
+            if already_notified:
+                last = already_notified.get("last_notified_at")
+                if last and isinstance(last, datetime):
+                    hours_since = (now - last).total_seconds() / 3600.0
+                    if hours_since < 24:
+                        should_notify = False
             # Кикаем
             try:
                 resp = await max_api.remove_chat_member(chat_id, uid)
-                if resp.get("success"):
+                ok = bool(resp.get("success"))
+                err_text = "" if ok else str(resp.get("error") or resp)
+                if ok:
                     print(f"[PaidChatChecker.sweep] Kicked unpaid uid={uid} from paid chat {chat_id} ({ch.get('title')})")
+                else:
+                    print(f"[PaidChatChecker.sweep] Failed kick uid={uid} from {chat_id}: {err_text}")
+                # Notify only once per 24h, even если кик повторяется
+                if should_notify:
                     try:
                         await _send_to_user_safe(max_api, uid,
                             f"⚠️ Для доступа к чату «{ch.get('title') or 'чат'}» необходима оплата подписки. Откройте бота и оплатите тариф.")
-                    except Exception:
-                        pass
-                else:
-                    print(f"[PaidChatChecker.sweep] Failed kick uid={uid} from {chat_id}: {resp.get('error')}")
+                    except Exception as ne:
+                        print(f"[PaidChatChecker.sweep] Notify failed uid={uid}: {ne}")
+                # Логируем попытку — UPSERT
+                await execute(
+                    """INSERT INTO paid_chat_kick_log (paid_chat_id, max_user_id, last_notified_at,
+                                                       last_kick_attempt_at, kick_attempts, last_error)
+                       VALUES ($1, $2, $3, NOW(), 1, $4)
+                       ON CONFLICT (paid_chat_id, max_user_id) DO UPDATE SET
+                         last_notified_at = CASE WHEN $5 THEN NOW() ELSE paid_chat_kick_log.last_notified_at END,
+                         last_kick_attempt_at = NOW(),
+                         kick_attempts = paid_chat_kick_log.kick_attempts + 1,
+                         last_error = $4""",
+                    ch["id"], uid, (now if should_notify else None), err_text, should_notify,
+                )
             except Exception as e:
                 print(f"[PaidChatChecker.sweep] Exception kicking uid={uid}: {e}")
             # throttle чтобы не словить rate limit
