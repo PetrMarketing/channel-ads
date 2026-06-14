@@ -14,6 +14,96 @@ from ..middleware.auth import get_current_user
 
 
 router = APIRouter()
+public_router = APIRouter()
+
+
+# ============================================================
+# PUBLIC API — для мини-аппа без авторизации в кабинете
+# ============================================================
+
+@public_router.get("/{poll_id}")
+async def public_get_poll(poll_id: int, uid: str = "", platform: str = ""):
+    """Возвращает опрос + опции с подсчётом голосов + флаг,
+    голосовал ли текущий юзер (если передан uid+platform)."""
+    poll = await fetch_one(
+        """SELECT p.id, p.question, p.is_anonymous, p.allow_multiple, p.is_closed,
+                  c.title AS channel_title, c.id AS channel_id
+           FROM polls p JOIN channels c ON c.id = p.channel_id
+           WHERE p.id = $1""",
+        poll_id,
+    )
+    if not poll:
+        raise HTTPException(status_code=404, detail="Опрос не найден")
+
+    options = await fetch_all(
+        "SELECT id, text, position FROM poll_options WHERE poll_id = $1 ORDER BY position, id",
+        poll_id,
+    )
+    counts_rows = await fetch_all(
+        "SELECT option_id, COUNT(*)::int AS cnt FROM poll_votes WHERE poll_id = $1 GROUP BY option_id",
+        poll_id,
+    )
+    counts = {r["option_id"]: r["cnt"] for r in counts_rows}
+    total = sum(counts.values())
+    options_out = []
+    for o in options:
+        cnt = counts.get(o["id"], 0)
+        options_out.append({
+            "id": o["id"], "text": o["text"], "position": o["position"],
+            "votes": cnt, "percent": (round(cnt * 100 / total, 1) if total > 0 else 0.0),
+        })
+
+    # Свои голоса юзера
+    my_votes = []
+    if uid:
+        if platform == "telegram" and uid.isdigit():
+            rows = await fetch_all(
+                "SELECT option_id FROM poll_votes WHERE poll_id = $1 AND voter_telegram_id = $2",
+                poll_id, int(uid),
+            )
+        else:
+            rows = await fetch_all(
+                "SELECT option_id FROM poll_votes WHERE poll_id = $1 AND voter_max_user_id = $2",
+                poll_id, str(uid),
+            )
+        my_votes = [r["option_id"] for r in rows]
+
+    return {
+        "success": True,
+        "poll": {
+            "id": poll["id"], "question": poll["question"],
+            "is_anonymous": poll["is_anonymous"], "allow_multiple": poll["allow_multiple"],
+            "is_closed": poll["is_closed"], "channel_title": poll.get("channel_title", ""),
+            "options": options_out, "total_votes": total,
+        },
+        "my_votes": my_votes,
+    }
+
+
+@public_router.post("/{poll_id}/vote")
+async def public_vote(poll_id: int, request: Request):
+    """Принимает голос из мини-аппа. body: {option_id, uid, platform, name}."""
+    body = await request.json()
+    option_id = int(body.get("option_id") or 0)
+    uid = str(body.get("uid") or "").strip()
+    platform = str(body.get("platform") or "").strip()
+    name = (body.get("name") or "").strip()
+    username = (body.get("username") or "").strip()
+
+    if not option_id or not uid:
+        raise HTTPException(status_code=400, detail="Не указан вариант или пользователь")
+
+    from ..services.poll_voter import handle_poll_vote
+    tg_id = int(uid) if (platform == "telegram" and uid.isdigit()) else None
+    max_id = uid if platform != "telegram" else None
+    msg = await handle_poll_vote(
+        poll_id, option_id,
+        voter_telegram_id=tg_id, voter_max_user_id=max_id,
+        voter_username=username, voter_first_name=name,
+    )
+    # Возвращаем актуальный стейт сразу
+    state = await public_get_poll(poll_id, uid=uid, platform=platform)
+    return {"success": True, "message": msg, **state}
 
 
 async def _get_owned_channel(tc: str, user_id: int):

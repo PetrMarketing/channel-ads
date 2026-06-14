@@ -693,32 +693,35 @@ async def _resolve_buttons(inline_buttons_json, channel, post_id=None, post_type
                 if deep_url:
                     resolved.append({"text": btn.get("text", "Комментарии"), "type": "url", "url": deep_url})
         elif btn_type == "poll" and btn.get("poll_id"):
-            # Прикреплённый опрос → строим отдельные callback-кнопки на каждую опцию
+            # Одна кнопка «Пройти опрос (N голосов)» → открывает мини-апп
             poll = await fetch_one(
-                "SELECT id, question, is_closed FROM polls WHERE id = $1 AND channel_id = $2",
+                "SELECT id FROM polls WHERE id = $1 AND channel_id = $2",
                 int(btn["poll_id"]), channel["id"],
             )
             if poll:
-                opts = await fetch_all(
-                    "SELECT id, text FROM poll_options WHERE poll_id = $1 ORDER BY position, id",
+                cnt_row = await fetch_one(
+                    "SELECT COUNT(*)::int AS cnt FROM poll_votes WHERE poll_id = $1",
                     poll["id"],
                 )
-                if is_max:
-                    # MAX: callback-кнопки с payload poll_<poll>_<opt>
-                    for opt in opts:
-                        resolved.append({
-                            "text": opt["text"],
-                            "type": "callback",
-                            "payload": f"poll_{poll['id']}_{opt['id']}",
-                        })
+                votes_cnt = cnt_row["cnt"] if cnt_row else 0
+                # Склонение
+                if votes_cnt % 10 == 1 and votes_cnt % 100 != 11:
+                    word = "голос"
+                elif 2 <= votes_cnt % 10 <= 4 and not (12 <= votes_cnt % 100 <= 14):
+                    word = "голоса"
                 else:
-                    # Telegram: callback_data — обработчик в telegram_bot.py
-                    for opt in opts:
-                        resolved.append({
-                            "text": opt["text"],
-                            "type": "callback",
-                            "callback_data": f"poll_{poll['id']}_{opt['id']}",
-                        })
+                    word = "голосов"
+                btn_text = btn.get("text") or "Пройти опрос"
+                btn_text = f"{btn_text} ({votes_cnt} {word})"
+                if is_max:
+                    bot_link_id = await _get_max_bot_link_id()
+                    deep_url = f"https://max.ru/id{bot_link_id}_bot?startapp=poll_{poll['id']}"
+                    resolved.append({"text": btn_text, "type": "link", "url": deep_url})
+                else:
+                    bot_username = await _get_tg_bot_username()
+                    deep_url = f"https://t.me/{bot_username}?startapp=poll_{poll['id']}" if bot_username else ""
+                    if deep_url:
+                        resolved.append({"text": btn_text, "type": "url", "url": deep_url})
         elif btn.get("url"):
             resolved.append(btn)
 

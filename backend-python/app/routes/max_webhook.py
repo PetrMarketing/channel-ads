@@ -716,6 +716,13 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
             f"🛍 Откройте каталог:",
             buttons=[[{"type": "link", "text": "🛍 Открыть каталог", "url": f"{app_url}/shop.html?code=shop_{tracking_code}"}]])
         return
+    if payload.startswith("poll_"):
+        poll_id = payload[5:]
+        app_url = settings.APP_URL.rstrip("/")
+        await _send_to_chat(max_api, chat_id,
+            "📊 Открыть опрос:",
+            buttons=[[{"type": "link", "text": "📊 Пройти опрос", "url": f"{app_url}/polls-app/poll_{poll_id}"}]])
+        return
     if payload.startswith("gw_"):
         await _find_or_create_max_user(max_user_id, first_name, dialog_chat_id=chat_id)
         await handle_giveaway(max_api, chat_id, max_user_id, "", first_name, payload)

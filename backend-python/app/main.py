@@ -395,6 +395,9 @@ from .routes import feature_visibility
 app.include_router(feature_visibility.public_router, prefix="/api/feature-visibility", tags=["feature-visibility"])
 app.include_router(feature_visibility.admin_router, prefix="/api/admin/feature-visibility", tags=["admin-feature-visibility"])
 from .routes import polls
+# public_router ПЕРЕД router — иначе /api/polls/public/{id} матчится как
+# /api/polls/{tc}/{poll_id} (с tc='public') и требует авторизации
+app.include_router(polls.public_router, prefix="/api/polls/public", tags=["polls-public"])
 app.include_router(polls.router, prefix="/api/polls", tags=["polls"])
 
 # ========================
@@ -817,6 +820,11 @@ async function doRedirect() {
       window.location.href = '/comments-app/' + startParam;
       return true;
     }
+    // Handle poll_ prefix — голосование в опросе
+    if (startParam.startsWith('poll_')) {
+      window.location.href = '/polls-app/' + startParam;
+      return true;
+    }
     // Handle book_ prefix — redirect to booking page
     if (startParam.startsWith('book_')) {
       window.location.href = '/booking/' + startParam;
@@ -911,6 +919,182 @@ const fallbackTimer = setTimeout(() => {
 </script>
 </body></html>"""
     html = html.replace('__META_REFRESH__', meta_refresh).replace('__SERVER_CODE__', code)
+    return HTMLResponse(html)
+
+
+@app.get("/polls-app")
+@app.get("/polls-app/{params}")
+async def polls_app_page(request: Request, params: str = ""):
+    """Poll miniapp — голосование с вариантами, после выбора показ процентов."""
+    from fastapi.responses import HTMLResponse
+    if not params:
+        params = request.query_params.get("WebAppStartParam", "") or request.query_params.get("startapp", "") or ""
+    poll_id = ""
+    if params.startswith("poll_"):
+        poll_id = params[5:]
+    elif params:
+        poll_id = params
+
+    html = f"""<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<script>
+var _waReady=false;
+var _s=document.createElement('script');_s.src='https://st.max.ru/js/max-web-app.js';
+_s.onload=function(){{_waReady=true;try{{window.WebApp.ready()}}catch(e){{}};if(window._pendingInit)window._pendingInit();}};
+_s.onerror=function(){{_waReady=true;if(window._pendingInit)window._pendingInit();}};
+document.head.appendChild(_s);
+setTimeout(function(){{if(!_waReady){{_waReady=true;if(window._pendingInit)window._pendingInit();}}}},2000);
+</script>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#1f2937}}
+.app{{max-width:480px;margin:0 auto;min-height:100vh;background:#fff;display:flex;flex-direction:column;padding-bottom:16px}}
+.header{{padding:20px 20px 16px;text-align:center;background:linear-gradient(135deg,#4361ee 0%,#7b68ee 100%);color:#fff}}
+.header .ch{{font-size:.78rem;opacity:.85;margin-bottom:6px;letter-spacing:.04em;text-transform:uppercase}}
+.header .q{{font-size:1.15rem;font-weight:700;line-height:1.35}}
+.header .meta{{font-size:.78rem;opacity:.85;margin-top:6px}}
+.options{{padding:14px 16px;display:flex;flex-direction:column;gap:10px}}
+.opt{{position:relative;padding:14px 18px;border-radius:12px;border:1px solid #e5e7eb;background:#fff;cursor:pointer;transition:all .15s;overflow:hidden;text-align:left;font-size:.95rem;color:#1a1a2e;font-weight:500;width:100%;font-family:inherit}}
+.opt:hover{{border-color:#4361ee;background:rgba(67,97,238,0.03)}}
+.opt:disabled{{cursor:default;opacity:1}}
+.opt.voted{{border-color:#4361ee;background:rgba(67,97,238,0.05);font-weight:600}}
+.opt-bar{{position:absolute;top:0;left:0;bottom:0;background:linear-gradient(90deg,rgba(67,97,238,0.10),rgba(123,104,238,0.18));z-index:0;border-radius:12px;transition:width .4s ease}}
+.opt-content{{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:10px}}
+.opt-pct{{font-weight:700;color:#4361ee;font-size:.92rem;white-space:nowrap}}
+.opt-cnt{{font-size:.72rem;color:#6b7280;font-weight:400}}
+.foot{{text-align:center;padding:10px 16px 8px;color:#9ca3af;font-size:.78rem}}
+.toast{{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a2e;color:#fff;padding:10px 16px;border-radius:10px;font-size:.85rem;opacity:0;transition:opacity .25s;pointer-events:none;z-index:50}}
+.toast.show{{opacity:.95}}
+.loading{{text-align:center;padding:40px;color:#9ca3af}}
+.spinner{{width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:#4361ee;border-radius:50%;animation:sp .6s linear infinite;margin:0 auto 8px}}
+@keyframes sp{{to{{transform:rotate(360deg)}}}}
+.closed-badge{{display:inline-block;background:rgba(255,255,255,0.20);padding:3px 10px;border-radius:8px;font-size:.72rem;margin-top:6px}}
+.tap-hint{{text-align:center;color:#9ca3af;font-size:.78rem;margin-top:4px}}
+</style>
+</head><body>
+<div class="app" id="app"><div class="loading"><div class="spinner"></div>Загрузка...</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const API = '/api/polls/public';
+const POLL_ID = '{poll_id}';
+let uid = '', platform = 'max', userName = '', userUsername = '';
+let state = null;
+let voted = false;
+
+function esc(s){{return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):''}}
+
+function toast(text){{var t=document.getElementById('toast');t.textContent=text;t.classList.add('show');setTimeout(function(){{t.classList.remove('show')}},1800)}}
+
+async function resolveUser() {{
+  try {{
+    if (window.WebApp && window.WebApp.initDataUnsafe) {{
+      const u = window.WebApp.initDataUnsafe.user;
+      if (u) {{
+        uid = String(u.user_id || u.id || '');
+        userName = ((u.first_name||'')+' '+(u.last_name||'')).trim();
+        userUsername = u.username || '';
+        platform = u.id && String(u.id).length < 18 ? 'telegram' : 'max';
+      }}
+    }}
+  }} catch(e) {{}}
+  if (!uid) {{
+    // Фолбэк — генерим анонимный id и кладём в localStorage (для веб-просмотра)
+    uid = localStorage.getItem('poll_uid') || ('anon_' + Math.random().toString(36).slice(2,12));
+    localStorage.setItem('poll_uid', uid);
+    platform = 'max';
+  }}
+}}
+
+async function load() {{
+  const url = API + '/' + POLL_ID + (uid ? '?uid=' + encodeURIComponent(uid) + '&platform=' + platform : '');
+  const r = await fetch(url);
+  const d = await r.json();
+  if (!d.success) {{
+    document.getElementById('app').innerHTML = '<div class="loading">Опрос не найден</div>';
+    return;
+  }}
+  state = d.poll;
+  voted = (d.my_votes && d.my_votes.length > 0);
+  render(d.my_votes || []);
+}}
+
+function render(myVotes) {{
+  const showResults = voted || state.is_closed;
+  let h = '<div class="header">';
+  if (state.channel_title) h += '<div class="ch">' + esc(state.channel_title) + '</div>';
+  h += '<div class="q">📊 ' + esc(state.question) + '</div>';
+  h += '<div class="meta">' + (state.total_votes || 0) + ' ' + plural(state.total_votes||0, 'голос', 'голоса', 'голосов') +
+       ' · ' + (state.is_anonymous ? 'анонимно' : 'открытый');
+  if (state.allow_multiple) h += ' · мульти-выбор';
+  h += '</div>';
+  if (state.is_closed) h += '<div class="closed-badge">🔒 Опрос закрыт</div>';
+  h += '</div>';
+
+  h += '<div class="options">';
+  for (const opt of state.options) {{
+    const isMine = myVotes.includes(opt.id);
+    const pct = opt.percent || 0;
+    h += '<button class="opt ' + (isMine ? 'voted' : '') + '" data-id="' + opt.id + '" ' +
+         (state.is_closed ? 'disabled' : '') + '>';
+    if (showResults) {{
+      h += '<div class="opt-bar" style="width:' + pct + '%"></div>';
+    }}
+    h += '<div class="opt-content">';
+    h += '<span>' + (isMine ? '✓ ' : '') + esc(opt.text) + '</span>';
+    if (showResults) {{
+      h += '<span class="opt-pct">' + pct + '%<span class="opt-cnt"> · ' + opt.votes + '</span></span>';
+    }}
+    h += '</div></button>';
+  }}
+  h += '</div>';
+
+  if (!showResults) h += '<div class="tap-hint">Тапните на вариант, чтобы проголосовать</div>';
+  h += '<div class="foot">MAX Маркетинг · ПКРеклама</div>';
+  document.getElementById('app').innerHTML = h;
+
+  document.querySelectorAll('.opt').forEach(el => {{
+    el.addEventListener('click', () => vote(parseInt(el.dataset.id)));
+  }});
+}}
+
+async function vote(optId) {{
+  if (state.is_closed) return;
+  try {{
+    const r = await fetch(API + '/' + POLL_ID + '/vote', {{
+      method: 'POST', headers: {{'Content-Type':'application/json'}},
+      body: JSON.stringify({{option_id: optId, uid, platform, name: userName, username: userUsername}}),
+    }});
+    const d = await r.json();
+    if (d.success) {{
+      state = d.poll;
+      voted = (d.my_votes && d.my_votes.length > 0);
+      render(d.my_votes || []);
+      if (d.message) toast(d.message);
+      try {{ window.WebApp && window.WebApp.HapticFeedback && window.WebApp.HapticFeedback.notificationOccurred('success'); }} catch(e) {{}}
+    }} else {{
+      toast(d.error || 'Ошибка');
+    }}
+  }} catch(e) {{
+    toast('Ошибка сети');
+  }}
+}}
+
+function plural(n, one, few, many) {{
+  const m = n % 10, h = n % 100;
+  if (m === 1 && h !== 11) return one;
+  if (m >= 2 && m <= 4 && (h < 10 || h >= 20)) return few;
+  return many;
+}}
+
+window._pendingInit = async function() {{
+  await resolveUser();
+  await load();
+}};
+if (_waReady) {{ window._pendingInit(); }}
+</script>
+</body></html>"""
     return HTMLResponse(html)
 
 
