@@ -106,6 +106,7 @@ async def _refresh_poll_buttons_in_posts(poll_id: int):
                  AND cp.telegram_message_id IS NOT NULL""",
             poll_id,
         )
+        print(f"[poll_voter] refresh poll_id={poll_id}: found {len(posts)} posts")
         if not posts:
             return
         from ..routes.pins import _resolve_buttons
@@ -123,11 +124,13 @@ async def _refresh_poll_buttons_in_posts(poll_id: int):
                     post_id=post["id"], post_type="content",
                 )
                 if post["platform"] == "max":
-                    await _edit_max_message_buttons(channel, post["telegram_message_id"],
+                    r = await _edit_max_message_buttons(channel, post["telegram_message_id"],
                                                     post["message_text"], resolved)
+                    print(f"[poll_voter] edit MAX msg {post['telegram_message_id']}: {r}")
                 else:
                     await _edit_telegram_message_buttons(channel, post["telegram_message_id"],
                                                           resolved)
+                    print(f"[poll_voter] edit TG msg {post['telegram_message_id']} done")
             except Exception as e:
                 print(f"[poll_voter] refresh post {post['id']} failed: {e}")
     except Exception as e:
@@ -139,10 +142,10 @@ async def _edit_max_message_buttons(channel, message_id, text, inline_buttons_js
     from .messenger import build_max_inline_buttons, html_to_max_markdown
     max_api = get_max_api()
     if not max_api:
-        return
+        return {"success": False, "error": "no max_api"}
     max_buttons = build_max_inline_buttons(inline_buttons_json)
     max_text = html_to_max_markdown(text or "")
-    await max_api.edit_message(str(message_id), max_text, buttons=max_buttons)
+    return await max_api.edit_message(str(message_id), max_text, buttons=max_buttons)
 
 
 async def _edit_telegram_message_buttons(channel, message_id, inline_buttons_json):

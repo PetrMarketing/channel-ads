@@ -11,6 +11,22 @@ from ..middleware.auth import get_current_user
 from ..config import settings
 
 
+def _extract_poll_id(inline_buttons):
+    """Возвращает poll_id если в кнопках есть type='poll'. Иначе None."""
+    if not inline_buttons:
+        return None
+    try:
+        buttons = json.loads(inline_buttons) if isinstance(inline_buttons, str) else inline_buttons
+        if not isinstance(buttons, list):
+            return None
+        for b in buttons:
+            if isinstance(b, dict) and b.get("type") == "poll" and b.get("poll_id"):
+                return int(b["poll_id"])
+    except Exception:
+        pass
+    return None
+
+
 def _parse_scheduled_at(val):
     """Convert scheduled_at string to datetime for asyncpg TIMESTAMP."""
     if not val or val == "":
@@ -131,12 +147,13 @@ async def create_post(tc: str, request: Request, user: Dict[str, Any] = Depends(
         erid = body.get("erid") or None
 
     post_id = await execute_returning_id(
-        """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, inline_buttons, status, file_path, file_type, file_data, attach_type, erid, attachment_paths)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id""",
+        """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, inline_buttons, status, file_path, file_type, file_data, attach_type, erid, attachment_paths, poll_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id""",
         channel["id"], title, message_text, scheduled_dt, inline_buttons,
         "scheduled" if scheduled_dt else "draft",
         file_path, file_type, file_data, attach_type, erid,
         attachment_paths if attachment_paths else None,
+        _extract_poll_id(inline_buttons),
     )
     post = await fetch_one(f"SELECT {_POST_COLS} FROM content_posts WHERE id = $1", post_id)
     return {"success": True, "post": post}
@@ -181,16 +198,26 @@ async def update_post(tc: str, post_id: int, request: Request, user: Dict[str, A
 
     fields, params = [], []
     idx = 1
+    poll_id_to_set = None
+    poll_id_update = False
     for key in ("title", "message_text", "scheduled_at", "status", "inline_buttons", "attach_type", "erid"):
         if key in body:
             fields.append(f"{key} = ${idx}")
             val = body[key]
-            if key == "inline_buttons" and val:
-                val = json.dumps(val)
+            if key == "inline_buttons":
+                if val:
+                    val = json.dumps(val)
+                # Синхронизируем poll_id с кнопками
+                poll_id_to_set = _extract_poll_id(val)
+                poll_id_update = True
             if key == "scheduled_at":
                 val = _parse_scheduled_at(val)
             params.append(val)
             idx += 1
+    if poll_id_update:
+        fields.append(f"poll_id = ${idx}")
+        params.append(poll_id_to_set)
+        idx += 1
     if file_path:
         fields.append(f"file_path = ${idx}")
         params.append(file_path)

@@ -992,11 +992,14 @@ function tryReadWebAppUser() {{
     if (window.WebApp && window.WebApp.initDataUnsafe) {{
       const u = window.WebApp.initDataUnsafe.user;
       if (u && (u.user_id || u.id)) {{
+        // MAX SDK даёт user.user_id (строка), TG — user.id (long int).
+        // Различаем по наличию user_id (приоритет — MAX), иначе по длине.
+        const isMax = !!u.user_id || (window.WebApp && window.WebApp.platform === 'max');
         return {{
           uid: String(u.user_id || u.id),
           name: ((u.first_name||'')+' '+(u.last_name||'')).trim(),
           username: u.username || '',
-          platform: (u.user_id || String(u.id||'').length >= 18) ? 'max' : 'telegram',
+          platform: isMax ? 'max' : 'telegram',
         }};
       }}
     }}
