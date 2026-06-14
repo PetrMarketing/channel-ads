@@ -1938,6 +1938,28 @@ async def process_max_update(body: dict):
                 print(f"[MAX Bot] message_callback: missing user_id")
                 return
 
+            # Голос за опрос — обрабатываем сразу, без открытия диалога
+            if payload.startswith("poll_") and max_user_id:
+                try:
+                    parts = payload.split("_")
+                    poll_id = int(parts[1]); option_id = int(parts[2])
+                    from ..services.poll_voter import handle_poll_vote
+                    notif = await handle_poll_vote(
+                        poll_id, option_id,
+                        voter_telegram_id=None,
+                        voter_max_user_id=max_user_id,
+                        voter_username="",
+                        voter_first_name=first_name,
+                    )
+                    if callback_id and max_api:
+                        try:
+                            await max_api.answer_callback(callback_id, notification=notif)
+                        except Exception as e:
+                            print(f"[MAX Bot] poll answer_callback failed: {e}")
+                except Exception as e:
+                    print(f"[MAX Bot] poll vote error: {e}")
+                return
+
             # Answer the callback to dismiss loading spinner
             if callback_id and max_api:
                 try:

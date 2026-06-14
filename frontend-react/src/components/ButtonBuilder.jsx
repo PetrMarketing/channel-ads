@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-export default function ButtonBuilder({ value, onChange, leadMagnets = [], showLeadMagnet = true, showComments = true }) {
+export default function ButtonBuilder({ value, onChange, leadMagnets = [], polls = [], showLeadMagnet = true, showComments = true, showPoll = true }) {
   // Controlled — buttons всегда derived из value, чтобы внешние изменения
   // (например авто-добавление кнопки при выборе лид-магнита) сразу
   // отображались в UI.
@@ -60,6 +60,11 @@ export default function ButtonBuilder({ value, onChange, leadMagnets = [], showL
                     patch.url = '';
                     patch.lead_magnet_id = '';
                   }
+                  if (newType === 'poll') {
+                    patch.text = patch.text || 'Опрос';
+                    patch.url = '';
+                    patch.lead_magnet_id = '';
+                  }
                   return patch;
                 });
                 emit(updated);
@@ -67,6 +72,7 @@ export default function ButtonBuilder({ value, onChange, leadMagnets = [], showL
               <option value="url">Ссылка</option>
               {showLeadMagnet && <option value="lead_magnet">Лид-магнит</option>}
               {showComments && <option value="comments">Комментарии</option>}
+              {showPoll && <option value="poll">Опрос</option>}
             </select>
             {(btn.type || 'url') === 'url' ? (() => {
               const urlVal = (btn.url || '').trim();
@@ -90,6 +96,14 @@ export default function ButtonBuilder({ value, onChange, leadMagnets = [], showL
               <div style={{ flex: 1, fontSize: '0.82rem', color: 'var(--text-secondary)', padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 6 }}>
                 💬 Откроет мини-приложение с комментариями к посту
               </div>
+            ) : btn.type === 'poll' ? (
+              <select className="form-input" value={btn.poll_id || ''} style={{ flex: 1 }}
+                onChange={e => updateButton(idx, 'poll_id', e.target.value)}>
+                <option value="">-- Выберите опрос --</option>
+                {polls.map(p => (
+                  <option key={p.id} value={p.id}>{p.question}</option>
+                ))}
+              </select>
             ) : null}
           </div>
         </div>

@@ -59,6 +59,7 @@ import AdminFunnelPage from './pages/admin/AdminFunnelPage';
 import AdminNotificationsPage from './pages/admin/AdminNotificationsPage';
 import AdminBroadcastsUsersPage from './pages/admin/AdminBroadcastsUsersPage';
 import AdminOnboardingPage from './pages/admin/AdminOnboardingPage';
+import AdminVisibilityPage from './pages/admin/AdminVisibilityPage';
 import AdminBlogPage from './pages/admin/AdminBlogPage';
 import AdminPromoCodesPage from './pages/admin/AdminPromoCodesPage';
 import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
@@ -268,6 +269,7 @@ export default function App() {
         <Route path="notifications" element={<AdminNotificationsPage />} />
         <Route path="broadcasts-users" element={<AdminBroadcastsUsersPage />} />
         <Route path="onboarding" element={<AdminOnboardingPage />} />
+        <Route path="visibility" element={<AdminVisibilityPage />} />
         <Route path="blog" element={<AdminBlogPage />} />
         <Route path="promocodes" element={<AdminPromoCodesPage />} />
       </Route>

@@ -14,6 +14,9 @@ import EridModal from '../components/EridModal';
 import { usePageOnboarding } from '../components/OnboardingTour';
 import AiContentTab from './content/AiContentTab';
 import FilesLibraryTab from './content/FilesLibraryTab';
+import PollsTab from './content/PollsTab';
+import ComingSoonStub from '../components/ComingSoonStub';
+import { useFeatureVisibility } from '../hooks/useFeatureVisibility';
 
 const ACCENT = '#4361ee';
 const ACCENT2 = '#7b68ee';
@@ -348,9 +351,18 @@ function EmptyContent({ onCreate }) {
   );
 }
 
+const comingBadgeStyle = {
+  marginLeft: 6, fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.05em',
+  background: 'rgba(245,158,11,0.18)', color: '#92400e',
+  padding: '1px 6px', borderRadius: 6, textTransform: 'uppercase',
+};
+
 export default function ContentPage() {
   const { currentChannel } = useChannels();
   const { showToast } = useToast();
+  const { get: getVisibility } = useFeatureVisibility();
+  const pollsVis = getVisibility('content_polls');
+  const streamsVis = getVisibility('content_streams');
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -363,6 +375,7 @@ export default function ContentPage() {
   const [removeExistingFile, setRemoveExistingFile] = useState(false);
   const [saving, setSaving] = useState(false);
   const [leadMagnets, setLeadMagnets] = useState([]);
+  const [polls, setPolls] = useState([]);
   const [viewMode, setViewMode] = useState('calendar');
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
@@ -404,7 +417,15 @@ export default function ContentPage() {
     } catch { /* ignore */ }
   }, [tc]);
 
-  useEffect(() => { loadPosts(); loadLeadMagnets(); }, [loadPosts, loadLeadMagnets]);
+  const loadPolls = useCallback(async () => {
+    if (!tc || pollsVis.visibility !== 'visible') return;
+    try {
+      const data = await api.get(`/polls/${tc}`);
+      if (data.success) setPolls(data.polls || []);
+    } catch { /* ignore */ }
+  }, [tc, pollsVis.visibility]);
+
+  useEffect(() => { loadPosts(); loadLeadMagnets(); loadPolls(); }, [loadPosts, loadLeadMagnets, loadPolls]);
 
   // Дата (YYYY-MM-DD) уже прошла по МСК — нельзя создать пост на эту дату
   const isPastDate = (dateStr) => {
@@ -1032,6 +1053,32 @@ export default function ContentPage() {
           >
             📁 Мои файлы
           </button>
+          {pollsVis.visibility !== 'hidden' && (
+            <button
+              role="tab"
+              aria-selected={viewMode === 'polls'}
+              className={`cp-tab${viewMode === 'polls' ? ' active' : ''}`}
+              onClick={() => setViewMode('polls')}
+            >
+              📊 Опросы
+              {pollsVis.visibility === 'coming_soon' && (
+                <span style={comingBadgeStyle}>скоро</span>
+              )}
+            </button>
+          )}
+          {streamsVis.visibility !== 'hidden' && (
+            <button
+              role="tab"
+              aria-selected={viewMode === 'streams'}
+              className={`cp-tab${viewMode === 'streams' ? ' active' : ''}`}
+              onClick={() => setViewMode('streams')}
+            >
+              🎬 Эфиры
+              {streamsVis.visibility === 'coming_soon' && (
+                <span style={comingBadgeStyle}>скоро</span>
+              )}
+            </button>
+          )}
         </div>
 
         {loading ? <Loading /> : (
@@ -1363,6 +1410,20 @@ export default function ContentPage() {
             {viewMode === 'files' && (
               <FilesLibraryTab tc={tc} />
             )}
+
+            {viewMode === 'polls' && (
+              pollsVis.visibility === 'coming_soon'
+                ? <ComingSoonStub title="Опросы" icon="📊"
+                    message={pollsVis.coming_soon_message || 'Создавайте опросы и прикрепляйте их к постам как кнопки — скоро в Контенте.'} />
+                : <PollsTab tc={tc} />
+            )}
+
+            {viewMode === 'streams' && (
+              streamsVis.visibility === 'coming_soon'
+                ? <ComingSoonStub title="Эфиры" icon="🎬"
+                    message={streamsVis.coming_soon_message || 'Анонсируйте прямые эфиры и собирайте подписчиков напоминаниями — скоро в Контенте.'} />
+                : <ComingSoonStub title="Эфиры" icon="🎬" message="Раздел в разработке." />
+            )}
           </>
         )}
 
@@ -1538,6 +1599,8 @@ export default function ContentPage() {
                 onChange={val => setForm(p => ({ ...p, inline_buttons: val }))}
                 leadMagnets={leadMagnets}
                 showLeadMagnet={leadMagnets.length > 0}
+                polls={polls}
+                showPoll={pollsVis.visibility === 'visible' && polls.length > 0}
               />
               <div style={hintStyle}>Кнопки под постом: ссылки, выдача лид-магнитов и др.</div>
             </div>

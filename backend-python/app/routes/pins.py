@@ -692,6 +692,33 @@ async def _resolve_buttons(inline_buttons_json, channel, post_id=None, post_type
                 deep_url = f"https://t.me/{bot_username}?start=comments_{post_type}_{post_id}" if bot_username else ""
                 if deep_url:
                     resolved.append({"text": btn.get("text", "Комментарии"), "type": "url", "url": deep_url})
+        elif btn_type == "poll" and btn.get("poll_id"):
+            # Прикреплённый опрос → строим отдельные callback-кнопки на каждую опцию
+            poll = await fetch_one(
+                "SELECT id, question, is_closed FROM polls WHERE id = $1 AND channel_id = $2",
+                int(btn["poll_id"]), channel["id"],
+            )
+            if poll:
+                opts = await fetch_all(
+                    "SELECT id, text FROM poll_options WHERE poll_id = $1 ORDER BY position, id",
+                    poll["id"],
+                )
+                if is_max:
+                    # MAX: callback-кнопки с payload poll_<poll>_<opt>
+                    for opt in opts:
+                        resolved.append({
+                            "text": opt["text"],
+                            "type": "callback",
+                            "payload": f"poll_{poll['id']}_{opt['id']}",
+                        })
+                else:
+                    # Telegram: callback_data — обработчик в telegram_bot.py
+                    for opt in opts:
+                        resolved.append({
+                            "text": opt["text"],
+                            "type": "callback",
+                            "callback_data": f"poll_{poll['id']}_{opt['id']}",
+                        })
         elif btn.get("url"):
             resolved.append(btn)
 

@@ -391,6 +391,11 @@ from .routes import client_notes
 app.include_router(client_notes.router, prefix="/api/clients", tags=["client-notes"])
 from .routes import onboarding
 app.include_router(onboarding.router, prefix="/api/onboarding", tags=["onboarding"])
+from .routes import feature_visibility
+app.include_router(feature_visibility.public_router, prefix="/api/feature-visibility", tags=["feature-visibility"])
+app.include_router(feature_visibility.admin_router, prefix="/api/admin/feature-visibility", tags=["admin-feature-visibility"])
+from .routes import polls
+app.include_router(polls.router, prefix="/api/polls", tags=["polls"])
 
 # ========================
 # API Routes — Public

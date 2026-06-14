@@ -1522,6 +1522,27 @@ async def _handle_callback_query(callback_query: dict):
         await handle_lead_magnet(chat_id, user, data)
         return
 
+    if data.startswith("poll_"):
+        # poll_<poll_id>_<option_id>
+        try:
+            parts = data.split("_")
+            poll_id = int(parts[1]); option_id = int(parts[2])
+        except Exception:
+            return
+        from ..services.poll_voter import handle_poll_vote
+        msg = await handle_poll_vote(
+            poll_id, option_id,
+            voter_telegram_id=tg_user_id,
+            voter_max_user_id=None,
+            voter_username=user.get("username"),
+            voter_first_name=user.get("first_name"),
+        )
+        try:
+            await _tg_request("answerCallbackQuery", callback_query_id=cb_id, text=msg, show_alert=False)
+        except Exception:
+            pass
+        return
+
     if data.startswith("link_yes:"):
         code = data[len("link_yes:"):]
         msg_id = callback_query.get("message", {}).get("message_id")
