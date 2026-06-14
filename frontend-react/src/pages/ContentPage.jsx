@@ -1053,32 +1053,6 @@ export default function ContentPage() {
           >
             📁 Мои файлы
           </button>
-          {pollsVis.visibility !== 'hidden' && (
-            <button
-              role="tab"
-              aria-selected={viewMode === 'polls'}
-              className={`cp-tab${viewMode === 'polls' ? ' active' : ''}`}
-              onClick={() => setViewMode('polls')}
-            >
-              📊 Опросы
-              {pollsVis.visibility === 'coming_soon' && (
-                <span style={comingBadgeStyle}>скоро</span>
-              )}
-            </button>
-          )}
-          {streamsVis.visibility !== 'hidden' && (
-            <button
-              role="tab"
-              aria-selected={viewMode === 'streams'}
-              className={`cp-tab${viewMode === 'streams' ? ' active' : ''}`}
-              onClick={() => setViewMode('streams')}
-            >
-              🎬 Эфиры
-              {streamsVis.visibility === 'coming_soon' && (
-                <span style={comingBadgeStyle}>скоро</span>
-              )}
-            </button>
-          )}
         </div>
 
         {loading ? <Loading /> : (
@@ -1411,19 +1385,6 @@ export default function ContentPage() {
               <FilesLibraryTab tc={tc} />
             )}
 
-            {viewMode === 'polls' && (
-              pollsVis.visibility === 'coming_soon'
-                ? <ComingSoonStub title="Опросы" icon="📊"
-                    message={pollsVis.coming_soon_message || 'Создавайте опросы и прикрепляйте их к постам как кнопки — скоро в Контенте.'} />
-                : <PollsTab tc={tc} />
-            )}
-
-            {viewMode === 'streams' && (
-              streamsVis.visibility === 'coming_soon'
-                ? <ComingSoonStub title="Эфиры" icon="🎬"
-                    message={streamsVis.coming_soon_message || 'Анонсируйте прямые эфиры и собирайте подписчиков напоминаниями — скоро в Контенте.'} />
-                : <ComingSoonStub title="Эфиры" icon="🎬" message="Раздел в разработке." />
-            )}
           </>
         )}
 

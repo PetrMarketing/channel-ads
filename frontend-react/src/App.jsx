@@ -61,6 +61,8 @@ import AdminBroadcastsUsersPage from './pages/admin/AdminBroadcastsUsersPage';
 import AdminOnboardingPage from './pages/admin/AdminOnboardingPage';
 import AdminVisibilityPage from './pages/admin/AdminVisibilityPage';
 import FeatureGate from './components/FeatureGate';
+import PollsPage from './pages/PollsPage';
+import StreamsPage from './pages/StreamsPage';
 import AdminBlogPage from './pages/admin/AdminBlogPage';
 import AdminPromoCodesPage from './pages/admin/AdminPromoCodesPage';
 import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
@@ -285,6 +287,8 @@ export default function App() {
         <Route path="broadcasts" element={<FeatureGate featureKey="broadcasts" title="Рассылки" icon="📢"><BroadcastsPage /></FeatureGate>} />
         <Route path="funnels" element={<FeatureGate featureKey="funnels" title="Воронки" icon="🎯"><FunnelsPage /></FeatureGate>} />
         <Route path="content" element={<FeatureGate featureKey="content" title="Публикации" icon="📝"><ContentPage /></FeatureGate>} />
+        <Route path="polls" element={<FeatureGate featureKey="content_polls" title="Опросы" icon="📊"><PollsPage /></FeatureGate>} />
+        <Route path="streams" element={<FeatureGate featureKey="content_streams" title="Эфиры" icon="🎬"><StreamsPage /></FeatureGate>} />
         <Route path="giveaways" element={<FeatureGate featureKey="giveaways" title="Розыгрыши" icon="🎁"><GiveawaysPage /></FeatureGate>} />
         <Route path="billing" element={<BillingPage />} />
         <Route path="ai-tokens" element={<FeatureGate featureKey="ai_tokens" title="ИИ Токены" icon="🪙"><AiTokensPage /></FeatureGate>} />

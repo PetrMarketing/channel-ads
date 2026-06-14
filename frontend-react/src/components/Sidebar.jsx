@@ -154,6 +154,8 @@ const menuItems = [
     category: 'content', label: 'Контент', icon: icons.content,
     items: [
       { path: '/content', featureKey: 'content', label: 'Публикации', icon: icons.publications, tour: 'content' },
+      { path: '/polls', featureKey: 'content_polls', label: 'Опросы', icon: icons.publications },
+      { path: '/streams', featureKey: 'content_streams', label: 'Эфиры', icon: icons.publications },
       { path: '/giveaways', featureKey: 'giveaways', label: 'Розыгрыши', icon: icons.giveaways, tour: 'giveaways' },
       { path: '/comments', featureKey: 'comments', label: 'Комментарии', icon: icons.comments, tour: 'comments' },
     ],
