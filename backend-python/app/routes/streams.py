@@ -12,6 +12,7 @@ from ..middleware.auth import get_current_user
 
 router = APIRouter()
 public_router = APIRouter()
+rtmp_router = APIRouter()  # для on_publish хуков nginx-rtmp, без auth
 
 
 _ALLOWED_TYPES = {"vk", "kinescope", "rutube", "encoder", "youtube"}
@@ -231,7 +232,7 @@ async def delete_stream(tc: str, stream_id: int, user: Dict[str, Any] = Depends(
 # Public API for miniapp
 # ============================================================
 
-@router.post("/rtmp-auth", include_in_schema=False)
+@rtmp_router.post("/rtmp-auth", include_in_schema=False)
 async def rtmp_auth(request: Request):
     """Хук валидации RTMP-публикации от nginx-rtmp on_publish.
     nginx делает POST с form-data name=<stream_key>. Возвращаем 200
@@ -254,7 +255,7 @@ async def rtmp_auth(request: Request):
     return PlainTextResponse("OK")
 
 
-@router.post("/rtmp-done", include_in_schema=False)
+@rtmp_router.post("/rtmp-done", include_in_schema=False)
 async def rtmp_done(request: Request):
     """Хук остановки трансляции — переводим эфир в finished."""
     from fastapi.responses import PlainTextResponse

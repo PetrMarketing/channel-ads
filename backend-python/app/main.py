@@ -401,6 +401,7 @@ app.include_router(polls.public_router, prefix="/api/polls/public", tags=["polls
 app.include_router(polls.router, prefix="/api/polls", tags=["polls"])
 from .routes import streams
 app.include_router(streams.public_router, prefix="/api/streams/public", tags=["streams-public"])
+app.include_router(streams.rtmp_router, prefix="/rtmp", tags=["rtmp"])  # без auth, для nginx-rtmp хуков
 app.include_router(streams.router, prefix="/api/streams", tags=["streams"])
 
 # ========================
