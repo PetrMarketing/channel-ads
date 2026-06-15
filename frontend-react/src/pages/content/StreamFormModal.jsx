@@ -20,14 +20,9 @@ const STREAM_TYPES = [
     hint: 'URL встраивания RUTUBE (https://rutube.ru/play/embed/…).',
   },
   {
-    key: 'browser', title: 'Через браузер',
-    desc: 'Работает в окне браузера. Минимальные возможности управления эфиром. Не более 100 зрителей.',
-    hint: 'Прямая ссылка на трансляцию (зрители открывают в браузере).',
-  },
-  {
     key: 'encoder', title: 'Видеокодер',
-    desc: 'Трансляция только с помощью специальных программ. Требует профессиональных навыков управления эфиром.',
-    hint: 'RTMP-ключ потока для OBS — отдельный URL встраивания указывается опционально.',
+    desc: 'Трансляция через OBS или другую программу-кодировщик. RTMP-ссылка и ключ генерируются автоматически — скопируйте их в OBS.',
+    hint: 'Эти данные вставьте в OBS → Настройки → Вещание.',
   },
   {
     key: 'youtube', title: 'YouTube',
@@ -72,6 +67,24 @@ export default function StreamFormModal({ tc, stream, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const copy = (text) => {
+    try { navigator.clipboard.writeText(text); showToast('Скопировано'); }
+    catch { showToast('Не удалось скопировать'); }
+  };
+
+  const regenerateKey = async () => {
+    if (!stream?.id) { showToast('Сначала сохраните эфир'); return; }
+    if (!confirm('Перевыпустить RTMP ключ? Старый перестанет работать.')) return;
+    try {
+      const d = await api.post(`/streams/${tc}/${stream.id}/regenerate-key`);
+      if (d?.success) {
+        set('stream_url', d.stream_url);
+        set('stream_key', d.stream_key);
+        showToast('Ключ обновлён');
+      }
+    } catch (e) { showToast('Ошибка'); }
+  };
 
   const save = async () => {
     if (!form.title.trim()) { showToast('Укажите заголовок'); return; }
@@ -167,29 +180,65 @@ export default function StreamFormModal({ tc, stream, onClose, onSaved }) {
           </div>
         </div>
 
-        <div>
-          <label style={labelStyle}>URL встраивания (embed)</label>
-          <input style={inputStyle} value={form.embed_url}
-            onChange={e => set('embed_url', e.target.value)}
-            placeholder={currentType?.hint || 'https://…'} />
-          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>{currentType?.hint}</div>
-        </div>
-
-        {(form.stream_type === 'browser' || form.stream_type === 'encoder') && (
+        {form.stream_type !== 'encoder' && (
           <div>
-            <label style={labelStyle}>Прямая ссылка на трансляцию (опционально)</label>
-            <input style={inputStyle} value={form.stream_url}
-              onChange={e => set('stream_url', e.target.value)}
-              placeholder="https://…" />
+            <label style={labelStyle}>URL встраивания (embed)</label>
+            <input style={inputStyle} value={form.embed_url}
+              onChange={e => set('embed_url', e.target.value)}
+              placeholder={currentType?.hint || 'https://…'} />
+            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>{currentType?.hint}</div>
           </div>
         )}
 
         {form.stream_type === 'encoder' && (
-          <div>
-            <label style={labelStyle}>Ключ потока для OBS</label>
-            <input style={inputStyle} value={form.stream_key}
-              onChange={e => set('stream_key', e.target.value)}
-              placeholder="RTMP-ключ" />
+          <div style={{ background: '#0f172a', borderRadius: 12, padding: 14, color: '#fff' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <b style={{ fontSize: 14 }}>🎛 Настройки OBS</b>
+              {stream?.id && (
+                <button type="button" onClick={regenerateKey}
+                  style={{ ...btnOutline, fontSize: 12, padding: '4px 10px',
+                           background: 'transparent', borderColor: 'rgba(255,255,255,0.2)', color: '#fff' }}>
+                  Перевыпустить ключ
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 12 }}>
+              Откройте OBS → Настройки → Вещание → Сервис: Custom — и вставьте эти данные.
+              {!stream?.id && ' RTMP-ссылка и ключ сгенерируются автоматически после сохранения.'}
+            </div>
+            {form.stream_url && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Сервер (URL)</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input readOnly value={form.stream_url}
+                    style={{ ...inputStyle, background: 'rgba(255,255,255,0.05)', color: '#fff', borderColor: 'rgba(255,255,255,0.1)', fontFamily: 'monospace', fontSize: 13 }} />
+                  <button type="button" onClick={() => copy(form.stream_url)}
+                    style={{ ...btnOutline, background: '#4361ee', color: '#fff', border: 'none' }}>📋</button>
+                </div>
+              </div>
+            )}
+            {form.stream_key && (
+              <div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Ключ потока</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input readOnly value={form.stream_key}
+                    style={{ ...inputStyle, background: 'rgba(255,255,255,0.05)', color: '#fff', borderColor: 'rgba(255,255,255,0.1)', fontFamily: 'monospace', fontSize: 13 }} />
+                  <button type="button" onClick={() => copy(form.stream_key)}
+                    style={{ ...btnOutline, background: '#4361ee', color: '#fff', border: 'none' }}>📋</button>
+                </div>
+              </div>
+            )}
+            {!form.stream_url && !form.stream_key && (
+              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, fontStyle: 'italic' }}>
+                Сохраните эфир — данные для OBS появятся здесь.
+              </div>
+            )}
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>URL встраивания для зрителей (опционально)</div>
+              <input style={inputStyle} value={form.embed_url}
+                onChange={e => set('embed_url', e.target.value)}
+                placeholder="https://… (если хотите, чтобы зрители смотрели в miniapp)" />
+            </div>
           </div>
         )}
 

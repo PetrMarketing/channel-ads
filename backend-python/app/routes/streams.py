@@ -1,9 +1,11 @@
 """Эфиры (live streams) — CRUD + публичный API для миниаппа."""
 from typing import Dict, Any, Optional
 from datetime import datetime
+import secrets
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 
+from ..config import settings
 from ..database import fetch_all, fetch_one, execute, execute_returning_id
 from ..middleware.auth import get_current_user
 
@@ -12,7 +14,16 @@ router = APIRouter()
 public_router = APIRouter()
 
 
-_ALLOWED_TYPES = {"vk", "kinescope", "rutube", "browser", "encoder", "youtube"}
+_ALLOWED_TYPES = {"vk", "kinescope", "rutube", "encoder", "youtube"}
+
+
+def _gen_encoder_credentials():
+    """Генерирует RTMP-ссылку и ключ для OBS-кодировщика."""
+    base = (settings.APP_URL or "").replace("https://", "").replace("http://", "").rstrip("/")
+    host = base.split("/")[0] if base else "stream.pkmarketing.ru"
+    stream_url = f"rtmps://{host}/live/"
+    stream_key = secrets.token_urlsafe(24)  # 32-символьный ключ
+    return stream_url, stream_key
 
 
 def _parse_dt(val) -> Optional[datetime]:
@@ -102,9 +113,19 @@ async def create_stream(tc: str, request: Request, user: Dict[str, Any] = Depend
     starts_at = _parse_dt(body.get("starts_at"))
     if not starts_at:
         raise HTTPException(status_code=400, detail="Укажите дату начала")
-    stream_type = (body.get("stream_type") or "browser").strip()
+    stream_type = (body.get("stream_type") or "encoder").strip()
     if stream_type not in _ALLOWED_TYPES:
         raise HTTPException(status_code=400, detail=f"Неверный тип трансляции")
+
+    stream_url = (body.get("stream_url") or "").strip()
+    stream_key = (body.get("stream_key") or "").strip()
+    # Для encoder автогенерируем RTMP-ссылку и ключ для OBS, если не переданы
+    if stream_type == "encoder" and (not stream_url or not stream_key):
+        gen_url, gen_key = _gen_encoder_credentials()
+        if not stream_url:
+            stream_url = gen_url
+        if not stream_key:
+            stream_key = gen_key
 
     sid = await execute_returning_id(
         """INSERT INTO streams (channel_id, title, description, starts_at, bg_image_url,
@@ -114,7 +135,7 @@ async def create_stream(tc: str, request: Request, user: Dict[str, Any] = Depend
         channel["id"], title, (body.get("description") or "").strip(),
         starts_at, (body.get("bg_image_url") or "").strip(),
         stream_type, (body.get("embed_url") or "").strip(),
-        (body.get("stream_url") or "").strip(), (body.get("stream_key") or "").strip(),
+        stream_url, stream_key,
         user["id"],
     )
     row = await fetch_one(
@@ -148,10 +169,17 @@ async def update_stream(tc: str, stream_id: int, request: Request, user: Dict[st
             raise HTTPException(status_code=400, detail="Неверная дата начала")
         fields.append(f"starts_at = ${idx}"); params.append(dt); idx += 1
     if "stream_type" in body:
-        st = (body["stream_type"] or "browser").strip()
+        st = (body["stream_type"] or "encoder").strip()
         if st not in _ALLOWED_TYPES:
             raise HTTPException(status_code=400, detail="Неверный тип")
         fields.append(f"stream_type = ${idx}"); params.append(st); idx += 1
+        # При переключении на encoder — если нет ключа, генерим
+        if st == "encoder":
+            cur = await fetch_one("SELECT stream_url, stream_key FROM streams WHERE id = $1", stream_id)
+            if cur and not cur.get("stream_key"):
+                gen_url, gen_key = _gen_encoder_credentials()
+                fields.append(f"stream_url = ${idx}"); params.append(gen_url); idx += 1
+                fields.append(f"stream_key = ${idx}"); params.append(gen_key); idx += 1
     if "status" in body:
         status = (body["status"] or "").strip()
         if status not in {"scheduled", "live", "finished"}:
@@ -166,6 +194,22 @@ async def update_stream(tc: str, stream_id: int, request: Request, user: Dict[st
     await execute(f"UPDATE streams SET {', '.join(fields)} WHERE id = ${idx}", *params)
     row = await fetch_one("SELECT * FROM streams WHERE id = $1", stream_id)
     return {"success": True, "stream": _serialize(row)}
+
+
+@router.post("/{tc}/{stream_id}/regenerate-key")
+async def regenerate_key(tc: str, stream_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    s = await fetch_one("SELECT id FROM streams WHERE id = $1 AND channel_id = $2", stream_id, channel["id"])
+    if not s:
+        raise HTTPException(status_code=404, detail="Эфир не найден")
+    gen_url, gen_key = _gen_encoder_credentials()
+    await execute(
+        "UPDATE streams SET stream_url = $1, stream_key = $2, updated_at = NOW() WHERE id = $3",
+        gen_url, gen_key, stream_id,
+    )
+    return {"success": True, "stream_url": gen_url, "stream_key": gen_key}
 
 
 @router.delete("/{tc}/{stream_id}")
