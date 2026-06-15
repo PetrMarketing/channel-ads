@@ -19,10 +19,13 @@ _ALLOWED_TYPES = {"vk", "kinescope", "rutube", "encoder", "youtube"}
 
 def _gen_encoder_credentials():
     """Генерирует RTMP-ссылку и ключ для OBS-кодировщика."""
-    base = (settings.APP_URL or "").replace("https://", "").replace("http://", "").rstrip("/")
-    host = base.split("/")[0] if base else "max.pkmarketing.ru"
-    # rtmp:// (не rtmps) — стандарт OBS, шифрования метаданных нет, но
-    # ключ потока сам по себе случайный и работает как одноразовая авторизация
+    import os as _os
+    # STREAM_RTMP_HOST переопределяет — если nginx-rtmp на другом IP
+    # или nginx-фронт не проксирует порт 1935. По умолчанию — APP_URL host.
+    host = _os.getenv("STREAM_RTMP_HOST", "").strip()
+    if not host:
+        base = (settings.APP_URL or "").replace("https://", "").replace("http://", "").rstrip("/")
+        host = base.split("/")[0] if base else "max.pkmarketing.ru"
     stream_url = f"rtmp://{host}/live"
     stream_key = secrets.token_urlsafe(24)
     return stream_url, stream_key
