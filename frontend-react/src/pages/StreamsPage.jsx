@@ -1,8 +1,65 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useChannels } from '../contexts/ChannelContext';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 import StreamFormModal from './content/StreamFormModal';
+
+// Встроенный мини-плеер для preview в админке — играет наш HLS через hls.js
+function StreamPreview({ stream }) {
+  const videoRef = useRef(null);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    let hls = null;
+    let src = '';
+    if (stream.stream_type === 'encoder' && stream.stream_key) {
+      src = `/hls/${stream.stream_key}.m3u8`;
+    } else if (stream.embed_url || stream.stream_url) {
+      // Внешние iframe-плееры — preview не покажем
+      return;
+    }
+    if (!src) return;
+    if (v.canPlayType('application/vnd.apple.mpegurl')) {
+      v.src = src; v.play().catch(() => {});
+      return;
+    }
+    const attach = () => {
+      if (!window.Hls || !window.Hls.isSupported()) return;
+      hls = new window.Hls();
+      hls.loadSource(src);
+      hls.attachMedia(v);
+    };
+    if (window.Hls) attach();
+    else {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1';
+      s.onload = attach;
+      document.head.appendChild(s);
+    }
+    return () => { if (hls) { try { hls.destroy(); } catch {} } };
+  }, [stream.stream_key, stream.stream_type, stream.embed_url, stream.stream_url]);
+
+  if (stream.stream_type !== 'encoder') {
+    if (stream.embed_url) {
+      return (
+        <iframe src={stream.embed_url} title="preview"
+          style={{ width: '100%', aspectRatio: '16/9', border: 0, borderRadius: 10, background: '#000' }}
+          allowFullScreen allow="autoplay; encrypted-media" />
+      );
+    }
+    return (
+      <div style={{ width: '100%', aspectRatio: '16/9', borderRadius: 10, background: '#0f172a',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: 13 }}>
+        Плеер не настроен
+      </div>
+    );
+  }
+
+  return (
+    <video ref={videoRef} controls autoPlay muted playsInline
+      style={{ width: '100%', aspectRatio: '16/9', borderRadius: 10, background: '#000' }} />
+  );
+}
 
 const TYPE_LABELS = {
   vk: { label: 'VK', icon: '🅥' },
@@ -88,6 +145,15 @@ export default function StreamsPage() {
     return streams.filter(s => s.status !== 'finished');
   }, [streams, tab]);
 
+  // Полл статуса эфиров каждые 5с — чтобы LIVE-индикатор включался автоматически
+  useEffect(() => {
+    if (!tc) return;
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [tc]);
+
+  const [previewId, setPreviewId] = useState(null);
+
   const onSaved = () => { setEditing(null); load(); };
 
   const remove = async (s) => {
@@ -115,6 +181,7 @@ export default function StreamsPage() {
 
   return (
     <div style={{ padding: '20px 24px' }}>
+      <style>{`@keyframes liveBlink { 0%,100%{opacity:1} 50%{opacity:.6} }`}</style>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700, color: '#1a1a2e' }}>🎬 Эфиры</h1>
@@ -165,12 +232,32 @@ export default function StreamsPage() {
                   )}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                     <b style={{ fontSize: 15, color: '#1a1a2e' }}>{s.title}</b>
                     <span style={{
                       background: 'rgba(67,97,238,0.10)', color: '#3a4cc7',
                       padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 600,
                     }}>{tp.icon} {tp.label}</span>
+                    {s.status === 'live' && (
+                      <span style={{
+                        background: '#dc2626', color: '#fff',
+                        padding: '2px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        animation: 'liveBlink 1.6s ease-in-out infinite',
+                      }}>● LIVE</span>
+                    )}
+                    {s.status === 'scheduled' && (
+                      <span style={{
+                        background: 'rgba(107,114,128,0.10)', color: '#6b7280',
+                        padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 600,
+                      }}>⏸ Не идёт</span>
+                    )}
+                    {s.status === 'finished' && (
+                      <span style={{
+                        background: 'rgba(107,114,128,0.10)', color: '#6b7280',
+                        padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 600,
+                      }}>✓ Завершён</span>
+                    )}
                   </div>
                   <div style={{ fontSize: 13, color: '#666', marginBottom: 6 }}>
                     📅 {fmtDt(s.starts_at)} · {s.status === 'finished'
@@ -183,16 +270,29 @@ export default function StreamsPage() {
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button style={btnOutline} onClick={() => setPreviewId(previewId === s.id ? null : s.id)}>
+                      {previewId === s.id ? '⌃ Скрыть превью' : '👁 Превью'}
+                    </button>
                     <button style={btnOutline} onClick={() => setEditing(s)}>Изменить</button>
                     <a style={{ ...btnOutline, textDecoration: 'none', color: '#4361ee' }}
                        href={`/streams-app/stream_${s.id}`} target="_blank" rel="noopener">
-                      Превью
+                      Как видят зрители ↗
                     </a>
                     {s.status !== 'finished' && (
                       <button style={btnOutline} onClick={() => finish(s)}>Завершить</button>
                     )}
                     <button style={{ ...btnOutline, color: '#dc2626' }} onClick={() => remove(s)}>×</button>
                   </div>
+                  {previewId === s.id && (
+                    <div style={{ marginTop: 12, borderRadius: 10, overflow: 'hidden', background: '#000' }}>
+                      <StreamPreview stream={s} />
+                      <div style={{ padding: '8px 12px', background: '#0f172a', color: '#9ca3af', fontSize: 12 }}>
+                        {s.status === 'live'
+                          ? '🔴 Поток идёт. Так же видят зрители.'
+                          : '⏸ Поток не идёт. Запустите трансляцию в OBS чтобы увидеть видео.'}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );

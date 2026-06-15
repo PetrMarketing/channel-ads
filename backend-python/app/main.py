@@ -438,19 +438,20 @@ def _short_address(addr_data):
     return ", ".join(parts) if parts else addr_data.get("display_name", "")
 
 
-@app.get("/hls/{path:path}", include_in_schema=False)
+@app.api_route("/hls/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
 async def proxy_hls(path: str):
     """Reverse-proxy для HLS-сегментов nginx-rtmp контейнера.
-    Зрители получают /hls/{key}.m3u8 и /hls/{key}-N.ts через наш домен,
-    нам не нужно отдельно открывать порт rtmp:8081 наружу."""
-    from fastapi.responses import StreamingResponse, Response
+    Зрители получают /hls/{key}.m3u8 и /hls/{key}-N.ts через наш домен."""
+    import aiohttp as _aio
+    from fastapi.responses import Response
     target = f"http://rtmp:8081/hls/{path}"
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(target, timeout=aiohttp.ClientTimeout(total=10)) as r:
+        async with _aio.ClientSession() as session:
+            async with session.get(target, timeout=_aio.ClientTimeout(total=10)) as r:
                 content = await r.read()
                 content_type = r.headers.get("content-type", "application/octet-stream")
-                return Response(content=content, media_type=content_type,
+                return Response(content=content, status_code=r.status,
+                                media_type=content_type,
                                 headers={"Cache-Control": "no-cache",
                                          "Access-Control-Allow-Origin": "*"})
     except Exception as e:
