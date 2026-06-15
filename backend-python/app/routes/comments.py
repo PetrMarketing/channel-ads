@@ -186,8 +186,6 @@ async def public_add_comment(post_type: str, post_id: int, request: Request):
     text = body.get("comment_text", "").strip()
     if not text:
         raise HTTPException(400, "Введите текст комментария")
-    if not user_name:
-        user_name = "Аноним"
     # Find channel_id from post
     if post_type == "content":
         post = await fetch_one("SELECT channel_id FROM content_posts WHERE id = $1", post_id)
@@ -199,6 +197,35 @@ async def public_add_comment(post_type: str, post_id: int, request: Request):
         raise HTTPException(400, "Неизвестный тип поста")
     if not post:
         raise HTTPException(404, "Пост не найден")
+    # Если фронт не передал имя — пробуем найти юзера в БД (users → subscriptions)
+    # по max_user_id или числовому telegram_id-подобному uid
+    if not user_name and max_user_id and not str(max_user_id).startswith("anon_"):
+        try:
+            urow = await fetch_one(
+                """SELECT first_name, last_name, username FROM users
+                   WHERE max_user_id = $1
+                      OR (telegram_id IS NOT NULL AND telegram_id::text = $1)
+                   LIMIT 1""",
+                str(max_user_id),
+            )
+            if urow:
+                user_name = (((urow.get("first_name") or "") + " " + (urow.get("last_name") or "")).strip()
+                             or urow.get("username") or "")
+            if not user_name:
+                # Фолбэк — таблица подписчиков канала
+                srow = await fetch_one(
+                    """SELECT first_name, username FROM subscriptions
+                       WHERE channel_id = $1
+                         AND (max_user_id = $2 OR (telegram_id IS NOT NULL AND telegram_id::text = $2))
+                       ORDER BY subscribed_at DESC LIMIT 1""",
+                    post["channel_id"], str(max_user_id),
+                )
+                if srow:
+                    user_name = (srow.get("first_name") or "").strip() or (srow.get("username") or "")
+        except Exception as e:
+            print(f"[Comments] name lookup error: {e}")
+    if not user_name:
+        user_name = "Аноним"
     parent_id = body.get("parent_id")
     reply_to_name = ""
     if parent_id:

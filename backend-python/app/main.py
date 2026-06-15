@@ -1034,7 +1034,10 @@ async function resolveUser() {{
         const u = window.WebApp.initDataUnsafe.user;
         if (u && (u.user_id || u.id)) {{
           uid = String(u.user_id || u.id);
-          userName = ((u.first_name||'')+' '+(u.last_name||'')).trim();
+          // MAX SDK даёт: name / display_name / first_name / last_name.
+          // Telegram: first_name / last_name. Берём первое что есть.
+          const parts = [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
+          userName = parts || u.name || u.display_name || u.username || '';
           userUsername = u.username || '';
           return;
         }}
