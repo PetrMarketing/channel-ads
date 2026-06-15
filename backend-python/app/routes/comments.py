@@ -157,6 +157,8 @@ async def public_get_comments(post_type: str, post_id: int):
         post = await fetch_one("SELECT id, title, channel_id FROM content_posts WHERE id = $1", post_id)
     elif post_type == "pin":
         post = await fetch_one("SELECT id, title, channel_id FROM pin_posts WHERE id = $1", post_id)
+    elif post_type == "stream":
+        post = await fetch_one("SELECT id, title, channel_id FROM streams WHERE id = $1", post_id)
     else:
         raise HTTPException(400, "Неизвестный тип поста")
     if not post:
@@ -191,6 +193,8 @@ async def public_add_comment(post_type: str, post_id: int, request: Request):
         post = await fetch_one("SELECT channel_id FROM content_posts WHERE id = $1", post_id)
     elif post_type == "pin":
         post = await fetch_one("SELECT channel_id FROM pin_posts WHERE id = $1", post_id)
+    elif post_type == "stream":
+        post = await fetch_one("SELECT channel_id FROM streams WHERE id = $1", post_id)
     else:
         raise HTTPException(400, "Неизвестный тип поста")
     if not post:

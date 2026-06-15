@@ -20,9 +20,11 @@ _ALLOWED_TYPES = {"vk", "kinescope", "rutube", "encoder", "youtube"}
 def _gen_encoder_credentials():
     """Генерирует RTMP-ссылку и ключ для OBS-кодировщика."""
     base = (settings.APP_URL or "").replace("https://", "").replace("http://", "").rstrip("/")
-    host = base.split("/")[0] if base else "stream.pkmarketing.ru"
-    stream_url = f"rtmps://{host}/live/"
-    stream_key = secrets.token_urlsafe(24)  # 32-символьный ключ
+    host = base.split("/")[0] if base else "max.pkmarketing.ru"
+    # rtmp:// (не rtmps) — стандарт OBS, шифрования метаданных нет, но
+    # ключ потока сам по себе случайный и работает как одноразовая авторизация
+    stream_url = f"rtmp://{host}/live"
+    stream_key = secrets.token_urlsafe(24)
     return stream_url, stream_key
 
 
@@ -225,6 +227,46 @@ async def delete_stream(tc: str, stream_id: int, user: Dict[str, Any] = Depends(
 # ============================================================
 # Public API for miniapp
 # ============================================================
+
+@router.post("/rtmp-auth", include_in_schema=False)
+async def rtmp_auth(request: Request):
+    """Хук валидации RTMP-публикации от nginx-rtmp on_publish.
+    nginx делает POST с form-data name=<stream_key>. Возвращаем 200
+    если ключ известен — иначе 403."""
+    from fastapi.responses import PlainTextResponse, Response
+    form = await request.form()
+    key = (form.get("name") or "").strip()
+    if not key:
+        return Response(status_code=403)
+    s = await fetch_one(
+        "SELECT id, channel_id FROM streams WHERE stream_key = $1 AND stream_type = 'encoder'",
+        key,
+    )
+    if not s:
+        print(f"[RTMP-auth] unknown key={key[:8]}…")
+        return Response(status_code=403)
+    # Помечаем эфир как live
+    await execute("UPDATE streams SET status = 'live', updated_at = NOW() WHERE id = $1", s["id"])
+    print(f"[RTMP-auth] stream {s['id']} → live")
+    return PlainTextResponse("OK")
+
+
+@router.post("/rtmp-done", include_in_schema=False)
+async def rtmp_done(request: Request):
+    """Хук остановки трансляции — переводим эфир в finished."""
+    from fastapi.responses import PlainTextResponse
+    form = await request.form()
+    key = (form.get("name") or "").strip()
+    if key:
+        s = await fetch_one("SELECT id FROM streams WHERE stream_key = $1", key)
+        if s:
+            await execute(
+                "UPDATE streams SET status = 'finished', ended_at = NOW(), updated_at = NOW() WHERE id = $1",
+                s["id"],
+            )
+            print(f"[RTMP-done] stream {s['id']} → finished")
+    return PlainTextResponse("OK")
+
 
 @public_router.get("/{stream_id}")
 async def public_get_stream(stream_id: int):

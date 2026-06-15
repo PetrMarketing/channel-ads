@@ -437,6 +437,25 @@ def _short_address(addr_data):
     return ", ".join(parts) if parts else addr_data.get("display_name", "")
 
 
+@app.get("/hls/{path:path}", include_in_schema=False)
+async def proxy_hls(path: str):
+    """Reverse-proxy для HLS-сегментов nginx-rtmp контейнера.
+    Зрители получают /hls/{key}.m3u8 и /hls/{key}-N.ts через наш домен,
+    нам не нужно отдельно открывать порт rtmp:8081 наружу."""
+    from fastapi.responses import StreamingResponse, Response
+    target = f"http://rtmp:8081/hls/{path}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(target, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                content = await r.read()
+                content_type = r.headers.get("content-type", "application/octet-stream")
+                return Response(content=content, media_type=content_type,
+                                headers={"Cache-Control": "no-cache",
+                                         "Access-Control-Allow-Origin": "*"})
+    except Exception as e:
+        return Response(status_code=404, content=str(e))
+
+
 @app.get("/api/geo/reverse")
 async def geo_reverse(lat: float = 0, lon: float = 0):
     """Reverse geocode via Nominatim."""
@@ -1048,9 +1067,35 @@ function cell(n, lbl) {{
 }}
 
 function renderPlayer() {{
+  // Для типа encoder играем HLS-поток с нашего RTMP-сервера
+  if (stream.stream_type === 'encoder') {{
+    return '<div class="player-wrap"><video id="hls-video" controls autoplay muted playsinline style="width:100%;height:100%;background:#000"></video></div>';
+  }}
   const url = stream.embed_url || stream.stream_url;
   if (!url) return '<div class="player-wrap" style="display:flex;align-items:center;justify-content:center;color:#666">Плеер не настроен</div>';
   return '<div class="player-wrap"><iframe src="' + esc(url) + '" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe></div>';
+}}
+
+function setupHlsPlayer() {{
+  const video = document.getElementById('hls-video');
+  if (!video || stream.stream_type !== 'encoder' || !stream.stream_key) return;
+  const hlsUrl = '/hls/' + stream.stream_key + '.m3u8';
+  if (video.canPlayType('application/vnd.apple.mpegurl')) {{
+    video.src = hlsUrl;
+    return;
+  }}
+  // Подгружаем hls.js для браузеров без нативного HLS
+  if (window.Hls) {{ attachHls(video, hlsUrl); return; }}
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1';
+  s.onload = function() {{ attachHls(video, hlsUrl); }};
+  document.head.appendChild(s);
+}}
+function attachHls(video, url) {{
+  if (!window.Hls || !window.Hls.isSupported()) return;
+  const hls = new window.Hls();
+  hls.loadSource(url);
+  hls.attachMedia(video);
 }}
 
 function renderCover() {{
@@ -1116,6 +1161,7 @@ async function render() {{
   document.getElementById('comment-input').addEventListener('keydown', e => {{
     if (e.key === 'Enter') sendComment();
   }});
+  setupHlsPlayer();
   await loadComments();
   // Обновляем таймер каждую секунду
   setInterval(() => {{
