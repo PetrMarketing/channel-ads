@@ -1080,8 +1080,9 @@ function renderPlayer() {{
 
 function setupHlsPlayer() {{
   const video = document.getElementById('hls-video');
-  if (!video || stream.stream_type !== 'encoder' || !stream.stream_key) return;
-  const hlsUrl = '/hls/' + stream.stream_key + '.m3u8';
+  if (!video || stream.stream_type !== 'encoder') return;
+  const hlsUrl = stream.playback_url || (stream.stream_key ? '/hls/' + stream.stream_key + '.m3u8' : '');
+  if (!hlsUrl) return;
   if (video.canPlayType('application/vnd.apple.mpegurl')) {{
     video.src = hlsUrl;
     return;

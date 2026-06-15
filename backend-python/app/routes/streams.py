@@ -277,11 +277,16 @@ async def public_get_stream(stream_id: int):
     row = await fetch_one(
         """SELECT s.id, s.title, s.description, s.starts_at, s.ended_at,
                   s.bg_image_url, s.stream_type, s.embed_url, s.stream_url,
-                  s.status, c.title AS channel_title
+                  s.stream_key, s.status, c.title AS channel_title
            FROM streams s JOIN channels c ON c.id = s.channel_id
            WHERE s.id = $1""",
         stream_id,
     )
     if not row:
         raise HTTPException(status_code=404, detail="Эфир не найден")
-    return {"success": True, "stream": _serialize(row)}
+    data = _serialize(row)
+    # Готовый URL воспроизведения для HLS-плеера в миниаппе
+    # (key в HLS играет роль ID потока, не даёт права писать в RTMP)
+    if data.get("stream_type") == "encoder" and data.get("stream_key"):
+        data["playback_url"] = f"/hls/{data['stream_key']}.m3u8"
+    return {"success": True, "stream": data}
