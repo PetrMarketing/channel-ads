@@ -187,11 +187,13 @@ async def tinkoff_webhook(request: Request):
     order_id = body.get("OrderId", "")
     status = body.get("Status", "")
     token = body.get("Token", "")
+    print(f"[Tinkoff webhook] received: order_id={order_id} status={status}")
 
     # Verify token
     check_params = {k: v for k, v in body.items() if k not in ("Token", "Receipt", "DATA")}
     expected_token = generate_tinkoff_token(check_params)
     if token != expected_token:
+        print(f"[Tinkoff webhook] INVALID TOKEN for order_id={order_id}")
         raise HTTPException(status_code=400, detail="Invalid token")
 
     # Find payment
@@ -203,7 +205,9 @@ async def tinkoff_webhook(request: Request):
             "SELECT * FROM billing_payments WHERE provider_payment_id = $1", order_id
         )
     if not payment:
+        print(f"[Tinkoff webhook] payment NOT FOUND for order_id={order_id} — игнорируем (возможно был от другого сервиса)")
         return {"success": True}
+    print(f"[Tinkoff webhook] payment found: id={payment['id']} status={payment.get('status')} channel_id={payment.get('channel_id')} months={payment.get('months')}")
 
     if status == "CONFIRMED":
         # IDEMPOTENCY GUARD — Tinkoff может ретраить вебхук много раз пока

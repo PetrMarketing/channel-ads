@@ -65,12 +65,26 @@ async def get_settings(tc: str, user=Depends(get_current_user)):
     return {"success": True, "settings": result}
 
 
+def _to_int_or_none(val):
+    """Безопасное приведение к int. URL/строки/мусор → None, не падаем."""
+    if val is None or val == "":
+        return None
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return None
+
+
 @router.post("/{tc}/settings")
 async def save_settings(tc: str, request: Request, user=Depends(get_current_user)):
     channel = await _get_owned_channel(tc, user["id"])
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
     body = await request.json()
+    # Доп. валидация manager_contact_url — должна быть https://t.me/ или https://max.ru/
+    mgr_contact = (body.get("manager_contact_url") or "").strip()
+    if mgr_contact and not (mgr_contact.startswith("https://t.me/") or mgr_contact.startswith("https://max.ru/")):
+        raise HTTPException(status_code=400, detail="Ссылка менеджера должна начинаться с https://t.me/ или https://max.ru/")
     existing = await fetch_one("SELECT id FROM shop_settings WHERE channel_id = $1", channel["id"])
     if existing:
         # Extra style settings stored in JSONB column
@@ -87,7 +101,7 @@ async def save_settings(tc: str, request: Request, user=Depends(get_current_user
             body.get("currency", "RUB"), float(body.get("min_order_amount", 0)),
             bool(body.get("require_phone", True)), bool(body.get("require_email", False)),
             bool(body.get("require_address", False)),
-            int(body["manager_user_id"]) if body.get("manager_user_id") else None,
+            _to_int_or_none(body.get("manager_user_id")),
             body.get("manager_contact_url", ""),
             json.dumps(body.get("banners", []), ensure_ascii=False),
             json.dumps(extra, ensure_ascii=False),
@@ -107,7 +121,7 @@ async def save_settings(tc: str, request: Request, user=Depends(get_current_user
             body.get("currency", "RUB"), float(body.get("min_order_amount", 0)),
             bool(body.get("require_phone", True)), bool(body.get("require_email", False)),
             bool(body.get("require_address", False)),
-            int(body["manager_user_id"]) if body.get("manager_user_id") else None,
+            _to_int_or_none(body.get("manager_user_id")),
             body.get("manager_contact_url", ""),
             json.dumps(body.get("banners", []), ensure_ascii=False),
             json.dumps(extra, ensure_ascii=False),

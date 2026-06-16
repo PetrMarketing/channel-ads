@@ -299,6 +299,47 @@ async def get_user(user_id: int, admin: Dict = Depends(get_current_admin)):
     return {"success": True, "user": user, "channels": channels, "staff": staff}
 
 
+@router.post("/channels/{channel_id}/extend-billing")
+async def extend_billing(channel_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
+    """Админ-фикс: вручную продлить подписку канала на N месяцев.
+    Используется когда платёж прошёл, но webhook не сработал."""
+    body = await request.json()
+    months = int(body.get("months") or 1)
+    reason = (body.get("reason") or "").strip() or "Ручное продление админом"
+    if months <= 0 or months > 60:
+        raise HTTPException(status_code=400, detail="months: от 1 до 60")
+
+    ch = await fetch_one("SELECT id, title, user_id FROM channels WHERE id = $1", channel_id)
+    if not ch:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+
+    billing = await fetch_one("SELECT * FROM channel_billing WHERE channel_id = $1", channel_id)
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    if not billing:
+        new_expires = now + timedelta(days=30 * months)
+        await execute(
+            """INSERT INTO channel_billing (channel_id, plan, status, started_at, expires_at, billing_months)
+               VALUES ($1, 'pro', 'active', $2, $3, $4)""",
+            channel_id, now, new_expires, months,
+        )
+    else:
+        cur_exp = billing.get("expires_at")
+        base = cur_exp if cur_exp and cur_exp > now else now
+        new_expires = base + timedelta(days=30 * months)
+        await execute(
+            """UPDATE channel_billing SET status = 'active', expires_at = $1,
+               notified_7d = FALSE, notified_1d = FALSE, notified_expired = FALSE
+               WHERE id = $2""",
+            new_expires, billing["id"],
+        )
+    await log_admin_action(
+        admin, "billing_extend", "channel", channel_id,
+        {"months": months, "new_expires_at": new_expires.isoformat(), "reason": reason},
+    )
+    return {"success": True, "expires_at": new_expires.isoformat()}
+
+
 @router.post("/users/{user_id}/add-tokens")
 async def add_tokens(user_id: int, request: Request, admin: Dict = Depends(get_current_admin)):
     """Изменить баланс ИИ-токенов (delta может быть положительным или отрицательным).
