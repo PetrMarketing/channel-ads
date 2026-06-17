@@ -128,6 +128,29 @@ if os.path.isdir(_assets_src):
             except Exception as _e:
                 print(f"[Assets] Failed to seed {_name}: {_e}")
 
+# Сидим bundled-картинки из репо (backend-python/uploads/) в Docker volume,
+# если их там ещё нет. Используется для статей блога с привязанными PNG —
+# Dockerfile копирует backend-python/ в образ, но volume mount /app/uploads
+# скрывает скопированное, поэтому копируем при старте.
+_uploads_src = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+if os.path.isdir(_uploads_src) and os.path.realpath(_uploads_src) != os.path.realpath(upload_dir):
+    import shutil as _shutil
+    seeded = 0
+    for _root, _dirs, _files in os.walk(_uploads_src):
+        rel = os.path.relpath(_root, _uploads_src)
+        dst_dir = upload_dir if rel == "." else os.path.join(upload_dir, rel)
+        os.makedirs(dst_dir, exist_ok=True)
+        for _fn in _files:
+            _dst = os.path.join(dst_dir, _fn)
+            if not os.path.exists(_dst):
+                try:
+                    _shutil.copy2(os.path.join(_root, _fn), _dst)
+                    seeded += 1
+                except Exception as _e:
+                    print(f"[Uploads] Seed failed {_fn}: {_e}")
+    if seeded:
+        print(f"[Uploads] Seeded {seeded} bundled file(s) from {_uploads_src}")
+
 app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 
 # Mount React SPA frontend (built by Vite)
