@@ -7,47 +7,69 @@ MIGRATIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "migra
 
 
 def _split_sql(sql: str) -> list:
-    """Split SQL into statements, handling DO $$ ... END $$ blocks."""
+    """Split SQL into statements. Honors:
+    - dollar-quoted strings $$...$$ или $tag$...$tag$ (PostgreSQL string literals)
+    - однострочные комментарии -- (только если ВСЯ строка — комментарий)
+    - точки с запятой ВНУТРИ $$...$$ не считаются разделителями
+    """
     statements = []
-    current = []
-    in_dollar = False
+    buf = []
+    i = 0
+    n = len(sql)
+    dollar_tag = None  # текущий открытый dollar-quoted tag, например '$$' или '$body$'
 
-    for line in sql.split("\n"):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("--"):
+    while i < n:
+        ch = sql[i]
+        # Если внутри dollar-quoted строки — ищем закрывающий тег
+        if dollar_tag is not None:
+            if sql.startswith(dollar_tag, i):
+                buf.append(dollar_tag)
+                i += len(dollar_tag)
+                dollar_tag = None
+                continue
+            buf.append(ch)
+            i += 1
             continue
-
-        if "DO $$" in stripped or "DO $" in stripped:
-            in_dollar = True
-        if in_dollar:
-            current.append(line)
-            if stripped.endswith("$$;") or stripped == "END $$":
-                statements.append("\n".join(current))
-                current = []
-                in_dollar = False
-            continue
-
-        # Normal mode — split by semicolons
-        if ";" in line:
-            parts = line.split(";")
-            current.append(parts[0])
-            stmt = "\n".join(current).strip()
+        # Однострочный комментарий -- (до конца строки) — но только если
+        # начинается с начала строки или после пробелов (не внутри URL/style)
+        if ch == "-" and i + 1 < n and sql[i+1] == "-":
+            # Проверяем что мы в начале токена (предыдущий символ — \n или пусто)
+            prev_nl = sql.rfind("\n", 0, i)
+            between = sql[prev_nl+1:i].strip() if prev_nl != -1 else sql[:i].strip()
+            if between == "":
+                # реальный комментарий — съедаем до конца строки
+                end = sql.find("\n", i)
+                if end == -1:
+                    i = n
+                else:
+                    i = end + 1
+                continue
+        # Открытие dollar-quoted строки: $$ или $tag$
+        if ch == "$":
+            # Пробуем найти tag: $[A-Za-z0-9_]*$
+            j = i + 1
+            while j < n and (sql[j].isalnum() or sql[j] == "_"):
+                j += 1
+            if j < n and sql[j] == "$":
+                tag = sql[i:j+1]  # $$ или $tag$
+                dollar_tag = tag
+                buf.append(tag)
+                i = j + 1
+                continue
+        # Разделитель statement'а
+        if ch == ";":
+            stmt = "".join(buf).strip()
             if stmt:
                 statements.append(stmt)
-            current = []
-            for part in parts[1:-1]:
-                if part.strip():
-                    statements.append(part.strip())
-            if parts[-1].strip():
-                current.append(parts[-1])
-        else:
-            current.append(line)
+            buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
 
-    if current:
-        stmt = "\n".join(current).strip()
-        if stmt:
-            statements.append(stmt)
-
+    tail = "".join(buf).strip()
+    if tail:
+        statements.append(tail)
     return statements
 
 

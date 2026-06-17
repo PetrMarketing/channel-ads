@@ -2583,6 +2583,23 @@ export default function AiContentTab({ tc, channelId, leadMagnets, onSwitchView 
 
   useEffect(() => { if (step === 'start') { loadSessions(); loadChannelPosts(); } }, [step, loadSessions, loadChannelPosts]);
 
+  // Авто-восстановление активной сессии при загрузке вкладки.
+  // Чтобы юзер не терял прогресс / не создавал повторную сессию после
+  // случайного reload (токены уже списаны).
+  const [autoResumedTc, setAutoResumedTc] = useState(null);
+  useEffect(() => {
+    if (!tc || tc === autoResumedTc || sessionId) return;
+    if (!pastSessions || pastSessions.length === 0) return;
+    const unfinished = pastSessions.find(s =>
+      s.status && !['completed', 'applied', 'failed', 'cancelled', 'published'].includes(s.status)
+    );
+    if (unfinished) {
+      setAutoResumedTc(tc);
+      handleOpenSession(unfinished);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tc, pastSessions, sessionId]);
+
   const reloadPosts = useCallback(async () => {
     if (!tc || !sessionId) return;
     try {

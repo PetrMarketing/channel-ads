@@ -369,6 +369,38 @@ export default function AiDesignPage() {
 
   useEffect(() => { if (step === 'start') loadPastSessions(); }, [step, loadPastSessions]);
 
+  // Авто-восстановление активной сессии при загрузке страницы.
+  // Если у юзера есть незавершённая сессия — открываем её, чтобы он
+  // не потерял прогресс и не списались токены повторно за новую.
+  const [autoResumedTc, setAutoResumedTc] = useState(null);
+  useEffect(() => {
+    if (!tc || tc === autoResumedTc) return;
+    if (sessionId) return;
+    const unfinished = pastSessions.find(s =>
+      s.status && !['completed', 'applied', 'failed', 'cancelled'].includes(s.status)
+    );
+    if (unfinished) {
+      setAutoResumedTc(tc);
+      setSessionId(unfinished.id);
+      setSessionTc(tc);
+      setAvatars(unfinished.avatars || []);
+      setDescriptions(unfinished.descriptions || []);
+      if (unfinished.chosen_avatar_url) {
+        setChosenAvatar((unfinished.avatars || []).indexOf(unfinished.chosen_avatar_url));
+      }
+      if (unfinished.chosen_description) {
+        setChosenDesc((unfinished.descriptions || []).indexOf(unfinished.chosen_description));
+      }
+      // Восстанавливаем шаг по статусу
+      const st = unfinished.status;
+      if (st === 'survey') setStep('survey');
+      else if (st === 'choose_avatar' || st === 'choose_description') setStep('choose');
+      else if (st === 'choose_lm' || st === 'lm_uploaded' || st === 'lm_idea_chosen' || st === 'lm_generated') setStep('lm');
+      else if ((unfinished.avatars || []).length || (unfinished.descriptions || []).length) setStep('choose');
+      else setStep('survey');
+    }
+  }, [tc, pastSessions, sessionId, autoResumedTc]);
+
   const sUrl = `${sessionTc}/session/${sessionId}`;
 
   const handleStartSession = async () => {
