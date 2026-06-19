@@ -269,6 +269,44 @@ export default function LinksPage() {
     }
   };
 
+  // ─── Channel-level метрика (YM + VK pixel) ───
+  // Используется как fallback для всех ссылок этого канала
+  const [channelMetrika, setChannelMetrika] = useState({
+    yandex_metrika_id: '',
+    vk_pixel_id: '',
+  });
+  const [savingChannelMetrika, setSavingChannelMetrika] = useState(false);
+  const [showChannelMetrika, setShowChannelMetrika] = useState(false);
+
+  useEffect(() => {
+    setChannelMetrika({
+      yandex_metrika_id: currentChannel?.yandex_metrika_id || '',
+      vk_pixel_id: currentChannel?.vk_pixel_id || '',
+    });
+  }, [currentChannel?.id, currentChannel?.yandex_metrika_id, currentChannel?.vk_pixel_id]);
+
+  const saveChannelMetrika = async () => {
+    if (!tc) return;
+    setSavingChannelMetrika(true);
+    try {
+      const data = await api.put(`/channels/${tc}`, {
+        yandex_metrika_id: channelMetrika.yandex_metrika_id || '',
+        vk_pixel_id: channelMetrika.vk_pixel_id || '',
+      });
+      if (data?.success) {
+        showToast('Сохранено');
+        if (currentChannel) {
+          currentChannel.yandex_metrika_id = channelMetrika.yandex_metrika_id || '';
+          currentChannel.vk_pixel_id = channelMetrika.vk_pixel_id || '';
+        }
+      }
+    } catch (e) {
+      showToast(e.message || 'Ошибка сохранения', 'error');
+    } finally {
+      setSavingChannelMetrika(false);
+    }
+  };
+
   const handleTogglePause = async (link) => {
     try {
       const data = await api.patch(`/links/${tc}/${link.id}/pause`);
@@ -397,6 +435,57 @@ export default function LinksPage() {
               Создать ссылку
             </button>
           </div>
+        </section>
+
+        {/* Channel-level метрика — общий счётчик для всех ссылок канала */}
+        <section style={{
+          background: '#fff', borderRadius: 16,
+          border: `1px solid ${BORDER}`, padding: '14px 18px', marginBottom: 16,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+               onClick={() => setShowChannelMetrika(v => !v)}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: '0.95rem', fontWeight: 700, color: DARK }}>
+                📊 Метрика канала
+              </span>
+              {(currentChannel?.yandex_metrika_id || currentChannel?.vk_pixel_id) ? (
+                <span style={pill('rgba(16,185,129,0.10)', SUCCESS)}>настроена</span>
+              ) : (
+                <span style={pill('rgba(245,158,11,0.12)', WARNING)}>не настроена · конверсии не отслеживаются</span>
+              )}
+            </div>
+            <span style={{ fontSize: '1.2rem', color: MUTED }}>{showChannelMetrika ? '▴' : '▾'}</span>
+          </div>
+          {showChannelMetrika && (
+            <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: '0.78rem', color: MUTED, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  Yandex Metrika ID
+                </label>
+                <input className="lp-input" style={inputStyle} placeholder="12345678"
+                  value={channelMetrika.yandex_metrika_id}
+                  onChange={e => setChannelMetrika(p => ({ ...p, yandex_metrika_id: e.target.value.trim() }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.78rem', color: MUTED, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  VK Pixel ID
+                </label>
+                <input className="lp-input" style={inputStyle} placeholder="3751584"
+                  value={channelMetrika.vk_pixel_id}
+                  onChange={e => setChannelMetrika(p => ({ ...p, vk_pixel_id: e.target.value.trim() }))} />
+              </div>
+              <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: '0.78rem', color: MUTED }}>
+                  Эти счётчики применяются ко всем ссылкам канала. Можно переопределить в настройках конкретной ссылки.
+                  Цель по умолчанию: <code>subscribe_channel</code>.
+                </span>
+                <button className="lp-primary" style={{ ...primaryBtn, padding: '8px 16px' }}
+                  onClick={saveChannelMetrika} disabled={savingChannelMetrika}>
+                  {savingChannelMetrika ? 'Сохранение…' : 'Сохранить'}
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         {loading ? <Loading /> : links.length === 0 && aiLandings.length === 0 ? (
