@@ -685,6 +685,73 @@ async def _trash_purge_loop():
         await asyncio.sleep(3600)
 
 
+async def _offline_conv_upload_loop():
+    """Раз в 5 минут заливаем накопившиеся offline_conversions в YM API.
+    Каждый канал с непустыми pending записями обрабатывается отдельно.
+    Server-side fire через mc.yandex.ru/watch фильтруется YM по IP датацентра,
+    а offline API через OAuth не привязан к IP — это надёжный fallback."""
+    await asyncio.sleep(60)
+    while True:
+        try:
+            await _upload_offline_conversions_for_all_channels()
+        except Exception as e:
+            print(f"[OfflineConv] loop error: {e}")
+        await asyncio.sleep(300)  # 5 min
+
+
+async def _upload_offline_conversions_for_all_channels():
+    import aiohttp
+    from ..config import settings as _settings
+    rows = await fetch_all(
+        """SELECT DISTINCT oc.channel_id, oc.ym_counter_id
+           FROM offline_conversions oc
+           WHERE oc.uploaded_at IS NULL"""
+    )
+    if not rows:
+        return
+    for r in rows:
+        ch_id = r["channel_id"]
+        counter = r["ym_counter_id"]
+        ch = await fetch_one("SELECT ym_oauth_token FROM channels WHERE id = $1", ch_id)
+        ym_token = (ch and ch.get("ym_oauth_token")) or _settings.YM_OAUTH_TOKEN
+        if not ym_token:
+            continue
+        pending = await fetch_all(
+            """SELECT id, ym_client_id, goal_name, conversion_time
+               FROM offline_conversions
+               WHERE channel_id = $1 AND ym_counter_id = $2 AND uploaded_at IS NULL
+               ORDER BY conversion_time LIMIT 1000""",
+            ch_id, counter,
+        )
+        if not pending:
+            continue
+        csv_lines = ["ClientId,Target,DateTime"]
+        for c in pending:
+            t = c["conversion_time"]
+            t_str = t.strftime("%Y-%m-%d %H:%M:%S") if hasattr(t, "strftime") else str(t)
+            csv_lines.append(f"{c['ym_client_id']},{c['goal_name']},{t_str}")
+        csv_data = "\n".join(csv_lines)
+        url = f"https://api-metrika.yandex.net/management/v1/counter/{counter}/offline_conversions/upload?client_id_type=CLIENT_ID"
+        headers = {"Authorization": f"OAuth {ym_token}"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                data = aiohttp.FormData()
+                data.add_field("file", csv_data, filename="conversions.csv", content_type="text/csv")
+                async with session.post(url, data=data, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    body = await resp.text()
+                    if resp.status == 200:
+                        for c in pending:
+                            await execute("UPDATE offline_conversions SET uploaded_at = NOW() WHERE id = $1", c["id"])
+                        print(f"[OfflineConv] uploaded {len(pending)} conversions to YM counter={counter}")
+                    else:
+                        err = body[:500]
+                        for c in pending:
+                            await execute("UPDATE offline_conversions SET upload_error = $1 WHERE id = $2", err, c["id"])
+                        print(f"[OfflineConv] YM upload failed counter={counter} status={resp.status}: {err[:200]}")
+        except Exception as e:
+            print(f"[OfflineConv] YM upload exception counter={counter}: {e}")
+
+
 def start_processors():
     global _processor_tasks
     _processor_tasks = [
@@ -695,8 +762,9 @@ def start_processors():
         asyncio.create_task(_cart_loop()),
         asyncio.create_task(_trash_purge_loop()),
         asyncio.create_task(_channel_refresh_loop()),
+        asyncio.create_task(_offline_conv_upload_loop()),
     ]
-    print("[Processors] Started (funnels: 30s, broadcasts: 60s, content: 60s, automation: 30s, carts: 10m, trash-purge: 1h, channel-refresh: 6h)")
+    print("[Processors] Started (funnels: 30s, broadcasts: 60s, content: 60s, automation: 30s, carts: 10m, trash-purge: 1h, channel-refresh: 6h, offline-conv: 5m)")
 
 
 def stop_processors():

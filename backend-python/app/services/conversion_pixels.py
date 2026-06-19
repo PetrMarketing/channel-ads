@@ -301,6 +301,53 @@ async def _fire_goals_for_link(
     return out
 
 
+async def _record_offline_conversion_for_subscription(
+    subscription_id: int, channel_id: int, link_id: Optional[int],
+    ym_client_id: Optional[str], visit_id: Optional[int] = None,
+) -> None:
+    """Записывает offline_conversion для подписки чтобы потом залить в YM API.
+    Server-side fire через measurement-protocol фильтруется YM по IP датацентра,
+    а offline conversions API принимает ClientId + Target + DateTime без
+    привязки к IP — это РАБОТАЕТ. Уникальность по subscription_id защищает
+    от дублей.
+    """
+    if not subscription_id or not channel_id or not ym_client_id:
+        return
+    try:
+        # Резолвим goal_name + ym_counter_id (link > channel)
+        link = None
+        if link_id:
+            link = await fetch_one(
+                """SELECT tl.ym_counter_id AS tl_counter, tl.ym_goal_name AS tl_goal,
+                          c.yandex_metrika_id AS c_counter
+                   FROM tracking_links tl JOIN channels c ON c.id = tl.channel_id
+                   WHERE tl.id = $1""", link_id,
+            )
+        if not link:
+            link = await fetch_one(
+                "SELECT yandex_metrika_id AS c_counter FROM channels WHERE id = $1",
+                channel_id,
+            )
+        if not link:
+            return
+        counter_id = (link.get("tl_counter") or link.get("c_counter") or "")
+        counter_id = str(counter_id).strip() if counter_id else ""
+        if not counter_id:
+            return  # нет YM-счётчика — некуда заливать
+        goal_name = link.get("tl_goal") or _DEFAULT_GOAL
+        await execute(
+            """INSERT INTO offline_conversions
+                 (subscription_id, channel_id, visit_id, ym_client_id, ym_counter_id, goal_name, conversion_time)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW())
+               ON CONFLICT (subscription_id) DO NOTHING""",
+            subscription_id, channel_id, visit_id,
+            str(ym_client_id), counter_id, goal_name,
+        )
+        print(f"[track] offline conversion recorded sub={subscription_id} cid={ym_client_id} counter={counter_id} goal={goal_name}")
+    except Exception as e:
+        print(f"[track] offline conversion insert failed sub={subscription_id}: {e}")
+
+
 async def _persist_pending_pixel_status(pending_id: int, outcome: dict) -> None:
     """Write per-pixel HTTP outcome onto the pending_conversions row so the
     user can audit every step (subscribed_at | ym_fired_at/code/error |
@@ -411,6 +458,12 @@ async def claim_and_fire_pending_for_channel(
         log_prefix=f"pending {pending_id} → (sub={subscription_id})",
     )
     await _persist_pending_pixel_status(pending_id, outcome)
+    # Запасной канал атрибуции: оффлайн-конверсия в YM (через OAuth API).
+    # Этот путь не фильтруется по IP, в отличие от mc.yandex.ru/watch fire.
+    await _record_offline_conversion_for_subscription(
+        subscription_id, channel_id, link_id, ym_client_id,
+        visit_id=None,
+    )
 
 
 async def claim_orphan_for_pending(
@@ -479,6 +532,11 @@ async def claim_orphan_for_pending(
         log_prefix=f"orphan {orphan_id} → (sub={sub_id}, pending={pending_id})",
     )
     await _persist_pending_pixel_status(pending_id, outcome)
+    # Запасной канал — offline conversion в YM
+    await _record_offline_conversion_for_subscription(
+        sub_id, channel_id, link_id, ym_client_id,
+        visit_id=None,
+    )
 
 
 async def claim_orphan_for_pending_safe(
