@@ -161,10 +161,18 @@ def estimate_step_cost(tool_name: str, args: dict) -> int:
 SYSTEM_PROMPT = """Ты — помощник в сервисе MAX Маркетинг для управления каналами в мессенджере MAX.
 Пользователь даёт тебе задачу на естественном языке. Твоя работа:
 1. Разобрать её на конкретные действия — какие инструменты вызвать и с какими параметрами
-2. Если задача неполная (нет даты, темы, текста) — вызови инструмент с пустыми/предположительными значениями, а в конечном ответе для пользователя укажи что нужно уточнить
+2. Если задача неполная (нет даты, темы, текста) — вызови инструмент с пустыми/предположительными значениями, а в конечном ответе укажи что нужно уточнить
 3. ВСЕГДА сначала вызывай нужные tools, потом коротко резюмируй для подтверждения юзером
 
-Текущая дата: {today_msk}. МСК = UTC+3.
+КРИТИЧЕСКИ ВАЖНО про параметры:
+- with_image=true ставь ТОЛЬКО если юзер ЯВНО попросил картинку/изображение/фото/иллюстрацию.
+  Если просто «сделай пост» — НЕ ставь with_image, не приписывай юзеру лишних трат.
+- message_text — заполняй ТОЛЬКО если юзер дал готовый текст в кавычках.
+  Если просит на тему чего-то — оставь message_text пустым, а topic заполни.
+- scheduled_at указывай в ISO формате МСК времени (например 2026-06-22T10:00:00).
+  Если время не указано — поставь 10:00, если дата не указана — на сегодня вечером.
+
+Сегодня: {today_msk}. МСК = UTC+3.
 """
 
 
@@ -291,8 +299,10 @@ async def execute_step(user_id: int, step: dict) -> dict:
         message_text = (args.get("message_text") or "").strip()
         title = (args.get("title") or "").strip() or "Пост"
         topic = (args.get("topic") or "").strip()
+        with_image = bool(args.get("with_image"))
+        image_topic = (args.get("image_topic") or "").strip() or topic or title
 
-        # Если нужна генерация — дёргаем ИИ-контент LLM прямо здесь (минимально)
+        # Генерация текста если нужна
         if not message_text and topic:
             try:
                 gen = await _quick_generate_post(topic)
@@ -301,18 +311,51 @@ async def execute_step(user_id: int, step: dict) -> dict:
             except Exception as e:
                 print(f"[ai-assistant] generate post error: {e}")
 
+        # Генерация картинки если запрошена
+        image_path = None
+        image_file_data = None
+        image_error = None
+        if with_image:
+            try:
+                from .ai_openrouter import openrouter_image_gen, save_image_result
+                img_prompt = (
+                    f"Иллюстрация к посту в канал на тему: «{image_topic}». "
+                    "Высокое качество, без текста на картинке."
+                )
+                img_result = await openrouter_image_gen(img_prompt)
+                if img_result and img_result.get("image_base64"):
+                    saved = save_image_result(img_result["image_base64"], suffix=".png")
+                    if saved:
+                        image_path = saved
+                        try:
+                            with open(image_path, "rb") as _f:
+                                image_file_data = _f.read()
+                        except Exception:
+                            image_file_data = None
+                else:
+                    image_error = "ИИ не вернул картинку"
+            except Exception as e:
+                image_error = str(e)[:200]
+                print(f"[ai-assistant] image gen error: {e}")
+
         from ..database import execute_returning_id
         post_id = await execute_returning_id(
-            """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, status)
-               VALUES ($1,$2,$3,$4,$5) RETURNING id""",
+            """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, status,
+                                          file_path, file_type, file_data, attach_type)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id""",
             ch["id"], title, message_text or "(пусто, заполните в кабинете)",
             scheduled,
             "scheduled" if scheduled else "draft",
+            image_path, "photo" if image_path else None, image_file_data, "photo" if image_path else None,
         )
         link = f"/content?post={post_id}"
+        msg = f"Пост создан в канале «{ch['title']}»"
+        if with_image:
+            msg += " с картинкой" if image_path else f" (картинку сгенерировать не удалось: {image_error or '—'})"
         return {
             "ok": True, "post_id": post_id, "channel": ch["title"],
-            "link": link, "message": f"Пост создан в канале «{ch['title']}»",
+            "image": bool(image_path),
+            "link": link, "message": msg,
         }
 
     elif tool == "create_lead_magnet":

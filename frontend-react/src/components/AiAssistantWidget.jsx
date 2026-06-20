@@ -124,6 +124,11 @@ export default function AiAssistantWidget() {
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
+  // На странице /ai-assistant виджет не показываем — там полная версия
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/ai-assistant')) {
+    return null;
+  }
+
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} title="ИИ-Помощник"

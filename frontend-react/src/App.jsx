@@ -63,6 +63,7 @@ import AdminVisibilityPage from './pages/admin/AdminVisibilityPage';
 import FeatureGate from './components/FeatureGate';
 import PollsPage from './pages/PollsPage';
 import StreamsPage from './pages/StreamsPage';
+import AiAssistantPage from './pages/AiAssistantPage';
 import AdminBlogPage from './pages/admin/AdminBlogPage';
 import AdminPromoCodesPage from './pages/admin/AdminPromoCodesPage';
 import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
@@ -280,6 +281,7 @@ export default function App() {
       {/* Dashboard (protected) */}
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<DashboardPage />} />
+        <Route path="ai-assistant" element={<AiAssistantPage />} />
         <Route path="ai-design" element={<FeatureGate featureKey="ai_design" title="ИИ Оформление" icon="🎨"><AiDesignPage /></FeatureGate>} />
         <Route path="ai-landing" element={<AiLandingPage />} />
         <Route path="links" element={<FeatureGate featureKey="links" title="Ссылки" icon="🔗"><LinksPage /></FeatureGate>} />
