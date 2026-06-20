@@ -133,25 +133,22 @@ TOOL_CATALOG: List[Dict[str, Any]] = [
 # ============================================================
 
 PARSE_COST = 1  # за каждый запрос к Помощнику (распознавание)
-TOOL_COSTS = {
-    "create_post": 1,          # если message_text задан (готовый)
-    "create_post_generated": 10,  # если только topic (генерация с нуля)
-    "create_post_with_image": 30, # генерация + картинка
-    "create_lead_magnet": 5,
-    "create_link": 0,           # бесплатно
-    "start_ai_content": 0,      # стоимость отдельно за сессию (150)
-    "start_broadcast": 0,
-}
+TEXT_GEN_COST = 10   # генерация текста поста с нуля
+IMAGE_GEN_COST = 10  # генерация одной картинки
+LEAD_MAGNET_COST = 5
 
 
 def estimate_step_cost(tool_name: str, args: dict) -> int:
     if tool_name == "create_post":
-        if args.get("with_image"):
-            return TOOL_COSTS["create_post_with_image"]
+        cost = 1  # готовый текст (минимум)
         if not args.get("message_text"):
-            return TOOL_COSTS["create_post_generated"]
-        return TOOL_COSTS["create_post"]
-    return TOOL_COSTS.get(tool_name, 0)
+            cost = TEXT_GEN_COST  # генерация с нуля
+        if args.get("with_image"):
+            cost += IMAGE_GEN_COST
+        return cost
+    if tool_name == "create_lead_magnet":
+        return LEAD_MAGNET_COST
+    return 0
 
 
 # ============================================================
@@ -316,27 +313,53 @@ async def execute_step(user_id: int, step: dict) -> dict:
         image_file_data = None
         image_error = None
         if with_image:
-            try:
-                from .ai_openrouter import openrouter_image_gen, save_image_result
-                img_prompt = (
-                    f"Иллюстрация к посту в канал на тему: «{image_topic}». "
-                    "Высокое качество, без текста на картинке."
+            # Берём последнее фото канала из медиафайлов как референс
+            ref = await fetch_one(
+                """SELECT file_path FROM content_posts
+                   WHERE channel_id = $1 AND file_path IS NOT NULL AND file_path <> ''
+                     AND (file_type = 'photo' OR file_path ~* '\\.(png|jpe?g|webp)$')
+                   ORDER BY id DESC LIMIT 1""",
+                ch["id"],
+            )
+            if not ref:
+                # Нет ни одного фото — не списываем токены за картинку и просим юзера добавить
+                image_error = (
+                    "В медиафайлах канала ещё нет фото. "
+                    "Сначала добавьте хотя бы одно фото (раздел Контент → Мои файлы), "
+                    "затем повторите задачу — ИИ возьмёт его как референс стиля."
                 )
-                img_result = await openrouter_image_gen(img_prompt)
-                if img_result and img_result.get("image_base64"):
-                    saved = save_image_result(img_result["image_base64"], suffix=".png")
-                    if saved:
-                        image_path = saved
-                        try:
-                            with open(image_path, "rb") as _f:
-                                image_file_data = _f.read()
-                        except Exception:
-                            image_file_data = None
-                else:
-                    image_error = "ИИ не вернул картинку"
-            except Exception as e:
-                image_error = str(e)[:200]
-                print(f"[ai-assistant] image gen error: {e}")
+            else:
+                try:
+                    import base64 as _b64, os as _os
+                    ref_path = ref["file_path"]
+                    if not _os.path.isabs(ref_path):
+                        ref_path = _os.path.join("/app", ref_path.lstrip("/"))
+                    if _os.path.exists(ref_path):
+                        with open(ref_path, "rb") as _rf:
+                            photo_b64 = _b64.b64encode(_rf.read()).decode()
+                    else:
+                        photo_b64 = None
+
+                    from .ai_openrouter import openrouter_image_gen, save_image_result
+                    img_prompt = (
+                        f"Иллюстрация к посту в канал на тему: «{image_topic}». "
+                        "Высокое качество, без текста на картинке."
+                    )
+                    img_result = await openrouter_image_gen(img_prompt, photo_b64)
+                    if img_result and img_result.get("image_base64"):
+                        saved = save_image_result(img_result["image_base64"], suffix=".png")
+                        if saved:
+                            image_path = saved
+                            try:
+                                with open(image_path, "rb") as _f:
+                                    image_file_data = _f.read()
+                            except Exception:
+                                image_file_data = None
+                    else:
+                        image_error = "ИИ не вернул картинку"
+                except Exception as e:
+                    image_error = str(e)[:200]
+                    print(f"[ai-assistant] image gen error: {e}")
 
         from ..database import execute_returning_id
         post_id = await execute_returning_id(
@@ -351,7 +374,23 @@ async def execute_step(user_id: int, step: dict) -> dict:
         link = f"/content?post={post_id}"
         msg = f"Пост создан в канале «{ch['title']}»"
         if with_image:
-            msg += " с картинкой" if image_path else f" (картинку сгенерировать не удалось: {image_error or '—'})"
+            if image_path:
+                msg += " с картинкой"
+            else:
+                # Возвращаем юзеру 10 ИИт за невышедшую картинку
+                try:
+                    await execute(
+                        "UPDATE users SET ai_tokens = ai_tokens + $1 WHERE id = $2",
+                        IMAGE_GEN_COST, user_id,
+                    )
+                    await execute(
+                        "INSERT INTO ai_token_usage (user_id, tokens_used, action, description) VALUES ($1,$2,$3,$4)",
+                        user_id, -IMAGE_GEN_COST, "ai_assistant_refund",
+                        f"Refund {IMAGE_GEN_COST} (картинка не сгенерирована)",
+                    )
+                except Exception:
+                    pass
+                msg += f" (картинку сгенерировать не удалось: {image_error or '—'}; 10 ИИт возвращены)"
         return {
             "ok": True, "post_id": post_id, "channel": ch["title"],
             "image": bool(image_path),

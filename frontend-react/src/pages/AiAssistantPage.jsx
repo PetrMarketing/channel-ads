@@ -181,10 +181,14 @@ export default function AiAssistantPage() {
             <ul style={{ margin: '6px 0 0 18px', paddingLeft: 0 }}>
               <li>Пост с готовым текстом — 1 ИИт</li>
               <li>Генерация поста на тему — 10 ИИт</li>
-              <li>+ картинка — ещё 20 ИИт (итого 30)</li>
+              <li>+ картинка — ещё 10 ИИт (итого 20)</li>
               <li>Лид-магнит — 5 ИИт</li>
               <li>Ссылка / рассылка — 0 ИИт</li>
             </ul>
+            <div style={{ marginTop: 8, fontSize: 11, color: WARNING }}>
+              ⚠ Для генерации картинки нужно хотя бы одно фото в медиафайлах канала
+              (Контент → Мои файлы) — ИИ возьмёт его как референс стиля.
+            </div>
           </div>
           <button onClick={submit} disabled={!query.trim() || submitting || listening}
             style={{
