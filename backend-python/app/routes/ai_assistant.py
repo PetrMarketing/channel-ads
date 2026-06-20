@@ -154,6 +154,7 @@ def _section_label(path_part: str) -> str:
 async def list_tasks(user: Dict[str, Any] = Depends(get_current_user), limit: int = 20):
     rows = await fetch_all(
         """SELECT id, raw_query, confirm_summary, status, tokens_used,
+                  plan_json, steps_results,
                   created_at, confirmed_at, finished_at
            FROM ai_assistant_tasks WHERE user_id = $1
            ORDER BY created_at DESC LIMIT $2""",

@@ -137,7 +137,7 @@ const icons = {
 
 const menuItems = [
   { path: '/', label: 'Обзор', icon: icons.dashboard, standalone: true, tour: 'dashboard' },
-  { path: '/ai-assistant', label: 'ИИ Помощник', icon: icons.ai || icons.dashboard, standalone: true, badge: 'NEW' },
+  { path: '/ai-assistant', label: 'ИИ Помощник', icon: icons.ai || icons.dashboard, standalone: true, badge: 'NEW', requireChannel: true },
   {
     category: 'marketing', label: 'Маркетинг', icon: icons.marketing,
     items: [
@@ -224,6 +224,19 @@ export default function Sidebar({ isOpen, mobileOpen, onClose }) {
       <div className="sidebar-inner">
         {menuItems.map((item) => {
           if (item.standalone) {
+            // requireChannel: пункт неактивен без выбранного канала
+            const blocked = item.requireChannel && isDisabled;
+            if (blocked) {
+              return (
+                <div key={item.path}
+                  className="sidebar-item disabled"
+                  title="Сначала выберите канал в шапке"
+                  style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                  <span className="sidebar-icon gradient-icon">{item.icon}</span> {item.label}
+                  {effectiveBadge(item) && <span style={{ marginLeft: 'auto', fontSize: '0.65rem', padding: '1px 6px', borderRadius: 8, background: 'linear-gradient(135deg, #7B68EE, #4F46E5)', color: '#fff', fontWeight: 700 }}>{effectiveBadge(item)}</span>}
+                </div>
+              );
+            }
             return (
               <NavLink
                 key={item.path}
