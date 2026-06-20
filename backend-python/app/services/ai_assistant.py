@@ -292,6 +292,11 @@ async def execute_step(user_id: int, step: dict) -> dict:
         scheduled = _parse_dt_msk(args.get("scheduled_at"))
         if scheduled:
             scheduled = scheduled - timedelta(hours=3)  # МСК → UTC
+        else:
+            # Юзер не указал дату → ставим на 30 минут вперёд по МСК
+            # (минус 3ч для UTC), чтобы пост сразу был виден на вкладке
+            # «Ожидание», а не остался невидимым черновиком
+            scheduled = datetime.utcnow() + timedelta(minutes=30)
 
         message_text = (args.get("message_text") or "").strip()
         title = (args.get("title") or "").strip() or "Пост"
@@ -371,8 +376,11 @@ async def execute_step(user_id: int, step: dict) -> dict:
             "scheduled" if scheduled else "draft",
             image_path, "photo" if image_path else None, image_file_data, "photo" if image_path else None,
         )
-        link = f"/content?post={post_id}"
-        msg = f"Пост создан в канале «{ch['title']}»"
+        link = "/content"
+        # Время публикации в МСК для подсказки
+        msk_time = (scheduled + timedelta(hours=3)).strftime("%d.%m %H:%M") if scheduled else ""
+        msg = (f"Пост создан в канале «{ch['title']}» — запланирован на {msk_time} МСК. "
+               "Перейдите в Контент → Список → Ожидание чтобы посмотреть / опубликовать сразу.")
         if with_image:
             if image_path:
                 msg += " с картинкой"
