@@ -215,6 +215,13 @@ async def parse_query_with_llm(query: str, user_context: dict) -> dict:
                     "Обновите OPENROUTER_API_KEY в настройках сервера "
                     "(получить новый — openrouter.ai/keys)."
                 )
+            if code == 402 or "credit" in str(msg).lower():
+                raise RuntimeError(
+                    "На балансе OpenRouter закончились средства — пополните "
+                    "счёт на openrouter.ai/settings/credits и попробуйте снова."
+                )
+            if code == 429 or "rate" in str(msg).lower():
+                raise RuntimeError("OpenRouter ограничивает частоту запросов — попробуйте через минуту.")
             raise RuntimeError(f"LLM error: status={status} message={msg}")
 
     msg = data["choices"][0]["message"]
