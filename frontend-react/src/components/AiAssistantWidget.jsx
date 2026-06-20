@@ -7,6 +7,12 @@ const ACCENT2 = '#4361ee';
 const DARK = '#1a1a2e';
 const BORDER = '#e5e7eb';
 const MUTED = '#6b7280';
+const REC_RED = '#dc2626';
+
+// Web Speech API — поддержка в Chrome/Edge/Yandex/Safari iOS
+const SpeechRec = typeof window !== 'undefined'
+  ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+  : null;
 
 /** Глобальный виджет ИИ-Помощника в правом нижнем углу.
  *  3 экрана: ввод запроса → подтверждение плана → результат. */
@@ -18,11 +24,59 @@ export default function AiAssistantWidget() {
   const [task, setTask] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [listening, setListening] = useState(false);
   const pollRef = useRef(null);
+  const recRef = useRef(null);
 
   const reset = () => {
     setStage('input'); setQuery(''); setTask(null); setSubmitting(false); setBusy(false);
+    stopListening();
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+
+  const stopListening = () => {
+    try { recRef.current?.stop(); } catch {}
+    recRef.current = null;
+    setListening(false);
+  };
+
+  const startListening = () => {
+    if (!SpeechRec) {
+      showToast('Голосовой ввод не поддерживается этим браузером', 'error');
+      return;
+    }
+    if (listening) { stopListening(); return; }
+    try {
+      const rec = new SpeechRec();
+      rec.lang = 'ru-RU';
+      rec.continuous = true;       // не останавливаем после первой паузы
+      rec.interimResults = true;   // показываем по ходу диктовки
+      let finalText = '';
+      rec.onstart = () => setListening(true);
+      rec.onresult = (ev) => {
+        let interim = '';
+        for (let i = ev.resultIndex; i < ev.results.length; i++) {
+          const res = ev.results[i];
+          if (res.isFinal) finalText += res[0].transcript;
+          else interim += res[0].transcript;
+        }
+        setQuery((finalText + interim).trim());
+      };
+      rec.onerror = (ev) => {
+        if (ev.error === 'not-allowed' || ev.error === 'permission-denied') {
+          showToast('Разрешите доступ к микрофону', 'error');
+        } else if (ev.error !== 'no-speech' && ev.error !== 'aborted') {
+          showToast('Ошибка распознавания: ' + ev.error, 'error');
+        }
+        stopListening();
+      };
+      rec.onend = () => setListening(false);
+      recRef.current = rec;
+      rec.start();
+    } catch (e) {
+      showToast('Не удалось включить микрофон', 'error');
+      setListening(false);
+    }
   };
 
   const submit = async () => {
@@ -112,28 +166,50 @@ export default function AiAssistantWidget() {
         {stage === 'input' && (
           <>
             <p style={{ margin: '0 0 12px', fontSize: 13, color: MUTED, lineHeight: 1.45 }}>
-              Опиши задачу — что нужно сделать. Помощник разберёт и предложит план.
+              Опишите задачу — что нужно сделать. Можно текстом или голосом 🎤.
             </p>
-            <textarea
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Например: «Сделай лид-магнит и пост на 21 июня на тему «Кому на Руси жить хорошо» с картинкой»"
-              style={{
-                width: '100%', minHeight: 100, padding: 10,
-                border: `1px solid ${BORDER}`, borderRadius: 10, fontSize: 14,
-                fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box',
-              }} />
+            <div style={{ position: 'relative' }}>
+              <textarea
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder={listening
+                  ? 'Слушаю… говорите 🎤'
+                  : 'Например: «Сделай лид-магнит и пост на 21 июня на тему "Кому на Руси жить хорошо" с картинкой»'}
+                style={{
+                  width: '100%', minHeight: 100, padding: '10px 50px 10px 10px',
+                  border: `1px solid ${listening ? REC_RED : BORDER}`, borderRadius: 10, fontSize: 14,
+                  fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box',
+                  transition: 'border-color .15s',
+                }} />
+              {SpeechRec && (
+                <button onClick={startListening}
+                  title={listening ? 'Остановить запись' : 'Голосовой ввод'}
+                  style={{
+                    position: 'absolute', right: 8, top: 8,
+                    width: 36, height: 36, borderRadius: '50%', border: 'none',
+                    background: listening ? REC_RED : '#f3f4f6',
+                    color: listening ? '#fff' : '#374151',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 16,
+                    animation: listening ? 'micPulse 1.2s ease-in-out infinite' : 'none',
+                  }}>
+                  {listening ? '⏹' : '🎤'}
+                </button>
+              )}
+              <style>{`@keyframes micPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.4); } 50% { box-shadow: 0 0 0 8px rgba(220,38,38,0); } }`}</style>
+            </div>
             <div style={{ marginTop: 8, fontSize: 11, color: MUTED }}>
               1 ИИ-токен за распознавание + стоимость каждого действия.
+              {!SpeechRec && ' Голосовой ввод не поддерживается этим браузером.'}
             </div>
-            <button onClick={submit} disabled={!query.trim() || submitting}
+            <button onClick={submit} disabled={!query.trim() || submitting || listening}
               style={{
                 marginTop: 12, width: '100%', padding: '12px 16px', borderRadius: 10, border: 'none',
                 background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
                 color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
-                opacity: (!query.trim() || submitting) ? 0.5 : 1,
+                opacity: (!query.trim() || submitting || listening) ? 0.5 : 1,
               }}>
-              {submitting ? 'Думаю…' : 'Распознать задачу →'}
+              {submitting ? 'Думаю…' : (listening ? 'Закончите запись…' : 'Распознать задачу →')}
             </button>
           </>
         )}
