@@ -209,20 +209,15 @@ async def parse_query_with_llm(query: str, user_context: dict) -> dict:
             err = (data.get("error") or {}) if isinstance(data, dict) else {}
             code = err.get("code") or status
             msg = err.get("message") or str(data)[:200]
-            if code == 401 or "User not found" in str(msg):
+            ml = str(msg).lower()
+            if code == 402 or "credit" in ml or "afford" in ml or "User not found" in str(msg) or code == 401:
                 raise RuntimeError(
-                    "OpenRouter API-ключ невалидный или отозван. "
-                    "Обновите OPENROUTER_API_KEY в настройках сервера "
-                    "(получить новый — openrouter.ai/keys)."
+                    "На сервере временно нет кредитов для ИИ. "
+                    "Мы уже занимаемся — попробуйте через 10-15 минут."
                 )
-            if code == 402 or "credit" in str(msg).lower():
-                raise RuntimeError(
-                    "На балансе OpenRouter закончились средства — пополните "
-                    "счёт на openrouter.ai/settings/credits и попробуйте снова."
-                )
-            if code == 429 or "rate" in str(msg).lower():
-                raise RuntimeError("OpenRouter ограничивает частоту запросов — попробуйте через минуту.")
-            raise RuntimeError(f"LLM error: status={status} message={msg}")
+            if code == 429 or "rate" in ml:
+                raise RuntimeError("Слишком много запросов к ИИ — попробуйте через минуту.")
+            raise RuntimeError("ИИ временно недоступен — попробуйте через несколько минут.")
 
     msg = data["choices"][0]["message"]
     tool_calls = msg.get("tool_calls") or []
