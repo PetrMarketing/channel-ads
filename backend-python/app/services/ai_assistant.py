@@ -206,7 +206,16 @@ async def parse_query_with_llm(query: str, user_context: dict) -> dict:
         # fallback
         status, data = await _call(_FALLBACK_MODEL)
         if status != 200 or "choices" not in data:
-            raise RuntimeError(f"LLM error: status={status} body={str(data)[:300]}")
+            err = (data.get("error") or {}) if isinstance(data, dict) else {}
+            code = err.get("code") or status
+            msg = err.get("message") or str(data)[:200]
+            if code == 401 or "User not found" in str(msg):
+                raise RuntimeError(
+                    "OpenRouter API-ключ невалидный или отозван. "
+                    "Обновите OPENROUTER_API_KEY в настройках сервера "
+                    "(получить новый — openrouter.ai/keys)."
+                )
+            raise RuntimeError(f"LLM error: status={status} message={msg}")
 
     msg = data["choices"][0]["message"]
     tool_calls = msg.get("tool_calls") or []
