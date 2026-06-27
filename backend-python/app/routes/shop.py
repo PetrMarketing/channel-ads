@@ -85,27 +85,48 @@ async def save_settings(tc: str, request: Request, user=Depends(get_current_user
     mgr_contact = (body.get("manager_contact_url") or "").strip()
     if mgr_contact and not (mgr_contact.startswith("https://t.me/") or mgr_contact.startswith("https://max.ru/")):
         raise HTTPException(status_code=400, detail="Ссылка менеджера должна начинаться с https://t.me/ или https://max.ru/")
-    existing = await fetch_one("SELECT id FROM shop_settings WHERE channel_id = $1", channel["id"])
+    existing = await fetch_one("SELECT id, settings, banners FROM shop_settings WHERE channel_id = $1", channel["id"])
+    extra_keys = ["header_text_color", "page_text_color", "bg_type", "bg_color",
+                  "gradient_from", "gradient_to", "gradient_direction",
+                  "page_bg_type", "page_bg_color", "page_gradient_from", "page_gradient_to", "page_gradient_direction"]
     if existing:
-        # Extra style settings stored in JSONB column
-        extra_keys = ["header_text_color", "page_text_color", "bg_type", "bg_color",
-                      "gradient_from", "gradient_to", "gradient_direction",
-                      "page_bg_type", "page_bg_color", "page_gradient_from", "page_gradient_to", "page_gradient_direction"]
-        extra = {k: body[k] for k in extra_keys if k in body}
+        # PATCH-стиль: обновляем ТОЛЬКО переданные поля, не трогаем остальные.
+        # Раньше UPDATE перезаписывал ВСЕ поля — частичные сохранения с
+        # фронта (например только welcome_text) затирали banners → [].
+        sets, params = [], []
+        idx = 1
+        scalar_map = {
+            "shop_name": "shop_name", "primary_color": "primary_color",
+            "banner_url": "banner_url", "welcome_text": "welcome_text",
+            "currency": "currency", "manager_contact_url": "manager_contact_url",
+        }
+        for k, col in scalar_map.items():
+            if k in body:
+                sets.append(f"{col} = ${idx}"); params.append(body[k] or ""); idx += 1
+        if "min_order_amount" in body:
+            sets.append(f"min_order_amount = ${idx}"); params.append(float(body.get("min_order_amount") or 0)); idx += 1
+        for k in ("require_phone", "require_email", "require_address"):
+            if k in body:
+                sets.append(f"{k} = ${idx}"); params.append(bool(body[k])); idx += 1
+        if "manager_user_id" in body:
+            sets.append(f"manager_user_id = ${idx}"); params.append(_to_int_or_none(body.get("manager_user_id"))); idx += 1
+        if "banners" in body:
+            sets.append(f"banners = ${idx}"); params.append(json.dumps(body.get("banners") or [], ensure_ascii=False)); idx += 1
+        # extras (style) — merge поверх существующих, не replace
+        incoming_extra = {k: body[k] for k in extra_keys if k in body}
+        if incoming_extra:
+            cur = existing.get("settings") or {}
+            if isinstance(cur, str):
+                try: cur = json.loads(cur)
+                except: cur = {}
+            cur.update(incoming_extra)
+            sets.append(f"settings = ${idx}"); params.append(json.dumps(cur, ensure_ascii=False)); idx += 1
+        if not sets:
+            return {"success": True}
+        params.append(channel["id"])
         await execute(
-            """UPDATE shop_settings SET shop_name=$1, primary_color=$2, banner_url=$3, welcome_text=$4,
-               currency=$5, min_order_amount=$6, require_phone=$7, require_email=$8, require_address=$9,
-               manager_user_id=$10, manager_contact_url=$11, banners=$12, settings=$13 WHERE channel_id = $14""",
-            body.get("shop_name", ""), body.get("primary_color", "#4F46E5"),
-            body.get("banner_url"), body.get("welcome_text", ""),
-            body.get("currency", "RUB"), float(body.get("min_order_amount", 0)),
-            bool(body.get("require_phone", True)), bool(body.get("require_email", False)),
-            bool(body.get("require_address", False)),
-            _to_int_or_none(body.get("manager_user_id")),
-            body.get("manager_contact_url", ""),
-            json.dumps(body.get("banners", []), ensure_ascii=False),
-            json.dumps(extra, ensure_ascii=False),
-            channel["id"],
+            f"UPDATE shop_settings SET {', '.join(sets)} WHERE channel_id = ${idx}",
+            *params,
         )
     else:
         extra_keys = ["header_text_color", "page_text_color", "bg_type", "bg_color",
@@ -607,6 +628,31 @@ async def delete_attribute(tc: str, aid: int, user=Depends(get_current_user)):
 
 
 # Product images (multiple, up to 5)
+@router.get("/{tc}/products/{pid}/images")
+async def list_product_images(tc: str, pid: int, user=Depends(get_current_user)):
+    """Возвращает список доп. фото товара. Без этого фронт после загрузки
+    не мог их прочитать (вызывал GET, получал 404 от catch-all → showed
+    пустой список → юзер думал что фото не сохранились)."""
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    prod = await fetch_one(
+        "SELECT images, image_url FROM shop_products WHERE id = $1 AND channel_id = $2",
+        pid, channel["id"],
+    )
+    if not prod:
+        return {"success": True, "images": [], "main_image_url": ""}
+    images = prod.get("images") or []
+    if isinstance(images, str):
+        try: images = json.loads(images)
+        except: images = []
+    return {
+        "success": True,
+        "images": images if isinstance(images, list) else [],
+        "main_image_url": prod.get("image_url") or "",
+    }
+
+
 @router.post("/{tc}/products/{pid}/images")
 async def upload_product_image(tc: str, pid: int, request: Request, user=Depends(get_current_user)):
     channel = await _get_owned_channel(tc, user["id"])

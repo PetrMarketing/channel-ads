@@ -152,6 +152,14 @@ async def update_step(tc: str, lm_id: int, step_id: int, request: Request, user:
         fields.append(f"file_data = ${idx}")
         params.append(file_data)
         idx += 1
+    # Ownership-check ДО UPDATE — раньше UPDATE с не подходящим WHERE
+    # давал 0 rows updated, но endpoint всё равно возвращал success=True.
+    existing = await fetch_one(
+        "SELECT id FROM funnel_steps WHERE id = $1 AND lead_magnet_id = $2",
+        step_id, lm_id,
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Шаг не найден или принадлежит другому лид-магниту")
     if not fields:
         return {"success": True}
     params.extend([step_id, lm_id])

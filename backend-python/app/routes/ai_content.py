@@ -1188,6 +1188,24 @@ async def _convert_to_content_post(channel_id: int, p: dict, status: str) -> int
     if isinstance(sched, datetime) and sched.tzinfo is not None:
         sched = sched.astimezone(timezone.utc).replace(tzinfo=None)
 
+    # Картинка может быть в file_path (загруженная юзером) ИЛИ в
+    # generated_image_url (сгенерированная ИИ). При publish-all раньше
+    # брался только file_path → ИИ-картинки терялись. Берём что есть.
+    image_path = p.get("file_path") or p.get("generated_image_url") or None
+    image_type = p.get("file_type") or ("photo" if image_path else None)
+    image_attach = p.get("attach_type") or ("photo" if image_path else None)
+    image_data = p.get("file_data")
+    # Если file_data пуст, но image_path есть на диске — читаем bytes для надёжности
+    if image_path and not image_data:
+        try:
+            import os as _os
+            local = image_path if _os.path.isabs(image_path) else _os.path.join("/app", image_path.lstrip("/"))
+            if _os.path.exists(local):
+                with open(local, "rb") as _f:
+                    image_data = _f.read()
+        except Exception as _e:
+            print(f"[ai-content] convert: read image bytes failed {image_path}: {_e}")
+
     new_post_id = await execute_returning_id(
         """INSERT INTO content_posts
            (channel_id, title, message_text, scheduled_at, inline_buttons, status,
@@ -1199,10 +1217,10 @@ async def _convert_to_content_post(channel_id: int, p: dict, status: str) -> int
         sched,
         inline_buttons,
         status,
-        p.get("file_path"),
-        p.get("file_type"),
-        p.get("file_data"),
-        p.get("attach_type"),
+        image_path,
+        image_type,
+        image_data,
+        image_attach,
     )
     return new_post_id
 

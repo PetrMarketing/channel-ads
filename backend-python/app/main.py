@@ -2440,6 +2440,11 @@ function renderHome() {{
     _banners.forEach(function(_, i) {{ h += '<div class="bdot" data-i="' + i + '" style="width:' + (i===0?16:6) + 'px;height:6px;border-radius:3px;background:' + (i===0?'#fff':'rgba(255,255,255,0.5)') + ';cursor:pointer;transition:all .2s"></div>'; }});
     h += '</div></div>';
   }}
+  // Приветственный текст (если задан в настройках магазина)
+  if (S.appearance.welcome_text && String(S.appearance.welcome_text).trim()) {{
+    var _wt = String(S.appearance.welcome_text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br>');
+    h += '<div class="section"><p style="color:#4b5563;font-size:0.92rem;line-height:1.5;margin:0">' + _wt + '</p></div>';
+  }}
   if (hits.length) {{
     h += `<div class="section"><h2>Хиты</h2><div class="hscroll">`;
     hits.forEach(p => {{ h += `<div class="pcard" onclick="go('product',${{p.id}})"><img src="${{img(p.image_url)}}"><div class="info"><div class="pname">${{p.name}}</div><div class="pprice">${{fmt(p.price)}}</div></div></div>`; }});
@@ -2489,7 +2494,7 @@ function renderProduct() {{
   if (p.old_price) h += `<span class="old">${{fmt(p.old_price)}}</span>`;
   h += `</div>`;
   if (p.description) h += `<div class="desc">${{p.description}}</div>`;
-  if (p.variants?.length > 1) {{
+  if (p.variants?.length > 0) {{
     h += `<div class="variants">`;
     p.variants.forEach(v => {{
       h += `<button class="vbtn ${{S.variant?.id===v.id?'active':''}}" onclick="S.variant=S.product.variants.find(x=>x.id===${{v.id}});render()">${{v.name}}</button>`;
@@ -2509,12 +2514,13 @@ function renderCart() {{
   }}
   h += `<div class="section">`;
   S.cartItems.forEach(i => {{
+    var _price = parseFloat(i.variant_price || i.price) || 0;
     h += `<div class="cart-item"><img src="${{img(i.image_url || i.product_image_url)}}"><div class="ci-info"><div class="ciname">${{i.product_name || i.name}}</div>`;
     if (i.variant_name) h += `<div class="civar">${{i.variant_name}}</div>`;
-    h += `<div class="ciprice">${{fmt(i.price)}} × ${{i.quantity}}</div>`;
+    h += `<div class="ciprice">${{fmt(_price)}} × ${{i.quantity}}</div>`;
     h += `<button class="ci-remove" onclick="removeItem(${{i.id}})">Удалить</button></div></div>`;
   }});
-  const sub = S.cartItems.reduce((s,i)=>s+(parseFloat(i.price)||0)*i.quantity, 0);
+  const sub = S.cartItems.reduce((s,i)=>s+(parseFloat(i.variant_price || i.price)||0)*i.quantity, 0);
   h += `<div class="promo-row"><input id="promo" placeholder="Промокод" value="${{S.promo}}" onchange="S.promo=this.value"><button onclick="applyPromo()">Применить</button></div>`;
   h += `<div class="totals"><div class="row"><span>Подытог</span><span>${{fmt(sub)}}</span></div>`;
   if (S.discount) h += `<div class="row"><span>Скидка</span><span>-${{fmt(S.discount)}}</span></div>`;
