@@ -44,15 +44,17 @@ export default function AiAssistantPage() {
   const [listening, setListening] = useState(false);
   const recRef = useRef(null);
 
+  const tc = currentChannel?.tracking_code;
   const loadTasks = useCallback(async () => {
+    if (!tc) { setTasks([]); return; }
     setLoading(true);
     try {
-      const d = await api.get('/ai-assistant/tasks?limit=50');
+      const d = await api.get(`/ai-assistant/tasks?limit=50&tracking_code=${encodeURIComponent(tc)}`);
       if (d?.success) setTasks(d.tasks || []);
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }, []);
-  useEffect(() => { loadTasks(); }, [loadTasks]);
+  }, [tc]);
+  useEffect(() => { loadTasks(); setTab('input'); }, [loadTasks]);
 
   // Polling: пока есть executing — обновляем каждые 2 сек
   useEffect(() => {
@@ -94,10 +96,10 @@ export default function AiAssistantPage() {
   };
 
   const submit = async () => {
-    if (!query.trim()) return;
+    if (!query.trim() || !tc) return;
     setSubmitting(true);
     try {
-      const d = await api.post('/ai-assistant/parse', { query: query.trim() });
+      const d = await api.post('/ai-assistant/parse', { query: query.trim(), tracking_code: tc });
       if (d?.success) {
         setQuery('');
         setTab('pending');

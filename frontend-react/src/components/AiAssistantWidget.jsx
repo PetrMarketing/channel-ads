@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { useToast } from './Toast';
+import { useChannels } from '../contexts/ChannelContext';
 
 const ACCENT = '#7b68ee';
 const ACCENT2 = '#4361ee';
@@ -18,6 +19,8 @@ const SpeechRec = typeof window !== 'undefined'
  *  3 экрана: ввод запроса → подтверждение плана → результат. */
 export default function AiAssistantWidget() {
   const { showToast } = useToast();
+  const { currentChannel } = useChannels();
+  const tc = currentChannel?.tracking_code;
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState('input'); // input | review | executing | done
   const [query, setQuery] = useState('');
@@ -83,7 +86,7 @@ export default function AiAssistantWidget() {
     if (!query.trim()) return;
     setSubmitting(true);
     try {
-      const d = await api.post('/ai-assistant/parse', { query: query.trim() });
+      const d = await api.post('/ai-assistant/parse', { query: query.trim(), tracking_code: tc });
       if (d?.success) {
         setTask(d);
         setStage('review');
@@ -128,6 +131,8 @@ export default function AiAssistantWidget() {
   if (typeof window !== 'undefined' && window.location.pathname.startsWith('/ai-assistant')) {
     return null;
   }
+  // Без выбранного канала виджет тоже не показываем
+  if (!tc) return null;
 
   if (!open) {
     return (

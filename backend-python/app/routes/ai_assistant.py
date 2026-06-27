@@ -23,10 +23,19 @@ router = APIRouter()
 async def parse_query(request: Request, user: Dict[str, Any] = Depends(get_current_user)):
     body = await request.json()
     query = (body.get("query") or "").strip()
+    tc = (body.get("tracking_code") or "").strip()
     if not query:
         raise HTTPException(status_code=400, detail="Пустой запрос")
     if len(query) > 2000:
         raise HTTPException(status_code=400, detail="Запрос слишком длинный (макс 2000 символов)")
+    if not tc:
+        raise HTTPException(status_code=400, detail="Сначала выберите канал в шапке")
+    channel = await fetch_one(
+        "SELECT id, title FROM channels WHERE tracking_code = $1 AND user_id = $2 AND deleted_at IS NULL",
+        tc, user["id"],
+    )
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
 
     # Списываем 1 токен за распознавание
     u = await fetch_one("SELECT ai_tokens FROM users WHERE id = $1", user["id"])
@@ -54,9 +63,9 @@ async def parse_query(request: Request, user: Dict[str, Any] = Depends(get_curre
         total_est += cost
 
     task_id = await execute_returning_id(
-        """INSERT INTO ai_assistant_tasks (user_id, raw_query, plan_json, confirm_summary, status, tokens_used)
-           VALUES ($1, $2, $3, $4, 'parsed', $5) RETURNING id""",
-        user["id"], query,
+        """INSERT INTO ai_assistant_tasks (user_id, channel_id, raw_query, plan_json, confirm_summary, status, tokens_used)
+           VALUES ($1, $2, $3, $4, $5, 'parsed', $6) RETURNING id""",
+        user["id"], channel["id"], query,
         json.dumps({"steps": steps_with_cost}, ensure_ascii=False),
         plan["confirm_summary"], svc.PARSE_COST,
     )
@@ -86,6 +95,16 @@ async def confirm_task(task_id: int, user: Dict[str, Any] = Depends(get_current_
     if isinstance(plan, str):
         plan = json.loads(plan)
     steps = plan.get("steps") or []
+
+    # Подставляем tracking_code канала задачи в каждый step, чтобы
+    # execute_step не использовал fallback на «первый канал юзера»
+    if task.get("channel_id"):
+        ch_row = await fetch_one("SELECT tracking_code FROM channels WHERE id = $1", task["channel_id"])
+        if ch_row:
+            for s in steps:
+                a = s.setdefault("args", {})
+                if not a.get("channel_tracking_code"):
+                    a["channel_tracking_code"] = ch_row["tracking_code"]
 
     # Считаем суммарную стоимость steps
     total_cost = sum(int(s.get("est_tokens") or 0) for s in steps)
@@ -151,14 +170,26 @@ def _section_label(path_part: str) -> str:
 
 
 @router.get("/tasks")
-async def list_tasks(user: Dict[str, Any] = Depends(get_current_user), limit: int = 20):
+async def list_tasks(
+    user: Dict[str, Any] = Depends(get_current_user),
+    limit: int = 20,
+    tracking_code: str = "",
+):
+    if not tracking_code:
+        return {"success": True, "tasks": []}
+    ch = await fetch_one(
+        "SELECT id FROM channels WHERE tracking_code = $1 AND user_id = $2",
+        tracking_code, user["id"],
+    )
+    if not ch:
+        return {"success": True, "tasks": []}
     rows = await fetch_all(
         """SELECT id, raw_query, confirm_summary, status, tokens_used,
                   plan_json, steps_results,
                   created_at, confirmed_at, finished_at
-           FROM ai_assistant_tasks WHERE user_id = $1
-           ORDER BY created_at DESC LIMIT $2""",
-        user["id"], min(limit, 100),
+           FROM ai_assistant_tasks WHERE user_id = $1 AND channel_id = $2
+           ORDER BY created_at DESC LIMIT $3""",
+        user["id"], ch["id"], min(limit, 100),
     )
     return {"success": True, "tasks": rows}
 
