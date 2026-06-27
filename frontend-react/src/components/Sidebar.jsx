@@ -137,7 +137,7 @@ const icons = {
 
 const menuItems = [
   { path: '/', label: 'Обзор', icon: icons.dashboard, standalone: true, tour: 'dashboard' },
-  { path: '/ai-assistant', label: 'ИИ Помощник', icon: icons.ai || icons.dashboard, standalone: true, badge: 'NEW', requireChannel: true },
+  { path: '/ai-assistant', featureKey: 'ai_assistant', label: 'ИИ Помощник', icon: icons.ai || icons.dashboard, standalone: true, badge: 'NEW', requireChannel: true },
   {
     category: 'marketing', label: 'Маркетинг', icon: icons.marketing,
     items: [

@@ -281,7 +281,7 @@ export default function App() {
       {/* Dashboard (protected) */}
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<DashboardPage />} />
-        <Route path="ai-assistant" element={<AiAssistantPage />} />
+        <Route path="ai-assistant" element={<FeatureGate featureKey="ai_assistant" title="ИИ Помощник" icon="🤖"><AiAssistantPage /></FeatureGate>} />
         <Route path="ai-design" element={<FeatureGate featureKey="ai_design" title="ИИ Оформление" icon="🎨"><AiDesignPage /></FeatureGate>} />
         <Route path="ai-landing" element={<AiLandingPage />} />
         <Route path="links" element={<FeatureGate featureKey="links" title="Ссылки" icon="🔗"><LinksPage /></FeatureGate>} />

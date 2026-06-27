@@ -3,7 +3,6 @@ import { useState, useCallback, useEffect } from 'react';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import SupportChat from './SupportChat';
-import AiAssistantWidget from './AiAssistantWidget';
 import AchievementNotifier from './AchievementNotifier';
 import AnnouncementModal from './AnnouncementModal';
 import { ChannelProvider } from '../contexts/ChannelContext';
@@ -87,7 +86,6 @@ export default function Layout() {
           </div>
         </div>
         <SupportChat />
-        <AiAssistantWidget />
         <AchievementNotifier />
         <AnnouncementModal />
         </OnboardingProvider>
