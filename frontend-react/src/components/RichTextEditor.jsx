@@ -194,11 +194,27 @@ export default function RichTextEditor({ value, onChange, placeholder, rows = 5,
     e.preventDefault();
     const html = e.clipboardData.getData('text/html');
     const text = e.clipboardData.getData('text/plain');
-    if (html) {
+
+    // Детект Word / Outlook / Google Docs / других офисных приложений —
+    // у них HTML содержит MSO/Office-разметку которая часто рендерится
+    // как сырой CSS (font-size:11.0pt; font-family:"Calibri";...).
+    // Для таких источников НАСИЛЬНО берём plain text, игнорируя HTML.
+    const isOffice = html && (
+      /<meta[^>]+ProgId[^>]+(Word|Excel|Powerpoint)/i.test(html) ||
+      /xmlns:o=["']urn:schemas-microsoft-com:office/i.test(html) ||
+      /xmlns:w=["']urn:schemas-microsoft-com:office:word/i.test(html) ||
+      /mso-(?:fareast|ascii|hansi|bidi|ansi)-/i.test(html) ||
+      /class=["']?Mso[A-Z]/i.test(html) ||
+      /docs-internal-guid-/i.test(html)  // Google Docs
+    );
+
+    if (html && !isOffice) {
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
       // Remove <style> blocks (CSS from copied pages/emails)
       tmp.querySelectorAll('style, meta, link, title, script').forEach(el => el.remove());
+      // Также удаляем MSO-conditional блоки (HTML comments) и xml-блоки
+      tmp.querySelectorAll('xml, o\\:p, w\\:WordDocument').forEach(el => el.remove());
       // Convert <img> emoji (from messengers) back to their alt text
       tmp.querySelectorAll('img').forEach(img => {
         const alt = img.getAttribute('alt');
@@ -210,22 +226,31 @@ export default function RichTextEditor({ value, onChange, placeholder, rows = 5,
       });
       // Convert block-level closing tags to <br> before stripping
       let clean = tmp.innerHTML;
+      // Удаляем HTML-комментарии (могут содержать MSO-разметку)
+      clean = clean.replace(/<!--[\s\S]*?-->/g, '');
       // <br> -> preserve
       clean = clean.replace(/<br\s*\/?>/gi, '\n');
       // Block closing tags -> newline
       clean = clean.replace(/<\/(?:div|p|li|h[1-6]|blockquote|tr)>/gi, '\n');
       // Remove opening block tags (with any attributes/styles)
-      clean = clean.replace(/<(?:div|p|li|ul|ol|h[1-6]|blockquote|tr|td|th|table|thead|tbody|section|article|header|footer|nav|figure|figcaption|span)(?:\s[^>]*)?\s*>/gi, '');
+      clean = clean.replace(/<(?:div|p|li|ul|ol|h[1-6]|blockquote|tr|td|th|table|thead|tbody|section|article|header|footer|nav|figure|figcaption|span|font|o:p|w:[a-zA-Z]+)(?:\s[^>]*)?\s*>/gi, '');
       // Strip remaining non-allowed tags but keep content
       clean = clean.replace(/<(?!\/?(b|i|u|s|strong|em|a|br|code|pre)(\s|>|\/))([^>]*)>/gi, '');
       // Convert newlines back to <br>
       clean = clean.replace(/\n/g, '<br>');
       // Collapse 3+ <br> to 2
       clean = clean.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
+      // Чистим NBSP и zero-width characters от офисных вставок
+      clean = clean.replace(/ /g, ' ').replace(/[​-‍﻿]/g, '');
       document.execCommand('insertHTML', false, clean);
     } else if (text) {
-      // Plain text: preserve line breaks as <br>
-      const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // Office / Google Docs / просто plain text — вставляем чистый текст
+      // с сохранением переносов, без любого HTML/CSS
+      const cleaned = text
+        .replace(/ /g, ' ')
+        .replace(/[​-‍﻿]/g, '')
+        .replace(/\r\n?/g, '\n');
+      const escaped = cleaned.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const withBreaks = escaped.replace(/\n/g, '<br>');
       document.execCommand('insertHTML', false, withBreaks);
     }
