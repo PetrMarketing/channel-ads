@@ -40,16 +40,27 @@ async def auth_telegram(request: Request):
     return {"success": True, "token": result["token"], "user": result["user"]}
 
 
-@router.post("/max")
-async def auth_max(request: Request):
-    """Authenticate via MAX user ID."""
-    body = await request.json()
-    max_user_id = body.get("max_user_id")
-    name = body.get("name", "")
-    if not max_user_id:
-        raise HTTPException(status_code=400, detail="max_user_id required")
-    result = await find_or_create_max_user(max_user_id, name)
-    return {"success": True, "token": result["token"], "user": result["user"]}
+@router.post("/max", include_in_schema=False)
+async def auth_max():
+    """ОТКЛЮЧЕНО.
+
+    Раньше принимал любой max_user_id и выдавал JWT — это позволяло
+    получить токен любого пользователя зная только его max_user_id
+    (критическая уязвимость, обход аутентификации).
+
+    Логика входа через MAX:
+    - Юзер кликает «Личный кабинет» в боте ПКРеклама
+    - Бот в обработчике /start генерирует JWT через create_jwt(user_id)
+      и кладёт его в ссылку /login?token=<JWT>
+    - Фронт читает токен из URL и сохраняет в localStorage
+    Это безопасный flow — юзер действительно владеет MAX-аккаунтом,
+    т.к. webhook от MAX приходит из их инфраструктуры по chat_id.
+
+    Если в будущем нужен прямой WebApp-auth (через MAX Mini App
+    initData) — реализовать HMAC-верификацию подписи через MAX_BOT_TOKEN
+    аналогично verify_telegram_webapp в этом же файле.
+    """
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 @router.post("/merge")

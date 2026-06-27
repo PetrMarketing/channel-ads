@@ -10,7 +10,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 
 from ..config import settings
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
@@ -2506,13 +2506,19 @@ async def max_webhook(request: Request):
     return {"success": True}
 
 
-@router.get("/debug-logs")
+@router.get("/debug-logs", include_in_schema=False)
 async def debug_webhook_logs():
-    """Show recent webhook logs for debugging."""
-    logs = await fetch_all(
-        "SELECT id, event_type, raw_body, created_at FROM webhook_logs ORDER BY id DESC LIMIT 20"
-    )
-    return {"success": True, "logs": logs}
+    """Endpoint удалён из публичного API.
+
+    Раньше отдавал последние 20 webhook-событий MAX с PII (max_user_id,
+    имена подписчиков) без авторизации. Это была критическая утечка.
+
+    Для отладки используйте логи контейнера:
+      docker-compose logs --tail=200 app | grep MAX
+    или запрос напрямую к БД с админ-доступом:
+      SELECT * FROM webhook_logs ORDER BY id DESC LIMIT 20;
+    """
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 # ---- Long polling fallback ----
