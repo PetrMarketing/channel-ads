@@ -814,11 +814,14 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
             )
             if not has_channel:
                 guide_url = f"{settings.APP_URL.rstrip('/')}/blog/kak-podklyuchit-bota-administratorom-v-max-kanale"
+                # MAX не рендерит <a href> в тексте — даём чистую ссылку
+                # отдельной строкой + кнопку «Открыть инструкцию».
                 guide_text = (
                     "👀 Видим, вы ещё не подключили свой канал к сервису MAX Маркетинг.\n\n"
                     "Подключение займёт 1 минуту — мы подготовили подробную инструкцию "
                     "с шагами для телефона и компьютера.\n\n"
-                    f"📖 <a href=\"{guide_url}\">Как подключить бота администратором в MAX-канале</a>"
+                    "📖 Как подключить бота администратором в MAX-канале:\n"
+                    f"{guide_url}"
                 )
                 await _send_to_chat(
                     max_api, chat_id, guide_text,
