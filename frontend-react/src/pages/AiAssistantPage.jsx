@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 import { useChannels } from '../contexts/ChannelContext';
+import Paywall from '../components/Paywall';
 
 const ACCENT = '#7b68ee';
 const ACCENT2 = '#4361ee';
@@ -118,20 +119,8 @@ export default function AiAssistantPage() {
     } catch (e) { showToast(e.message || 'Ошибка', 'error'); }
   };
 
-  if (!currentChannel) {
-    return (
-      <div style={{ padding: '60px 24px', maxWidth: 540, margin: '0 auto', textAlign: 'center', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🤖</div>
-        <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: DARK, margin: '0 0 10px' }}>ИИ Помощник</h2>
-        <p style={{ color: MUTED, fontSize: 14, lineHeight: 1.6 }}>
-          Сначала выберите канал в шапке — Помощник работает в контексте конкретного канала
-          (куда создавать посты, лид-магниты и ссылки).
-        </p>
-      </div>
-    );
-  }
-
   return (
+    <Paywall>
     <div style={{ padding: '24px', maxWidth: 920, margin: '0 auto', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
       <style>{`@keyframes micPulse { 0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.4)} 50%{box-shadow:0 0 0 8px rgba(220,38,38,0)} }
                 @keyframes spin { to { transform: rotate(360deg) } }`}</style>
@@ -235,6 +224,7 @@ export default function AiAssistantPage() {
         </div>
       )}
     </div>
+    </Paywall>
   );
 }
 
