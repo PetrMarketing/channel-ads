@@ -233,7 +233,49 @@ async def handle_lead_magnet(max_api, chat_id: str, max_user_id: str, username: 
             pass
 
     if attachments:
-        await _send_to_chat(max_api, chat_id, text, attachments=attachments, buttons=back_buttons)
+        # Кэшированный max_file_token может стать невалидным (MAX инвалидирует
+        # через N дней). Пытаемся отправить, при ошибке — сбрасываем токен
+        # и заново загружаем файл.
+        send_result = await _send_to_chat(max_api, chat_id, text, attachments=attachments, buttons=back_buttons)
+        need_retry = False
+        if isinstance(send_result, dict) and not send_result.get("success", True):
+            err = str(send_result.get("error") or "").lower()
+            if "attach" in err or "token" in err or "invalid" in err or "not found" in err:
+                need_retry = True
+        if need_retry and cached_token:
+            print(f"[MAX Bot] LM #{lm['id']}: cached token invalid → retry with fresh upload")
+            await execute("UPDATE lead_magnets SET max_file_token = NULL WHERE id = $1", lm["id"])
+            # Заново заходим в блок upload без cached-ветки
+            attachments2 = None
+            if file_path or file_data:
+                from ..services.file_storage import ensure_file
+                upload_path = ensure_file(file_path, file_data)
+                if not upload_path and file_data:
+                    import tempfile, os as _os
+                    ext = _os.path.splitext(file_path)[1] if file_path else ""
+                    if not ext:
+                        ext = ".jpg" if lm_attach_type == "photo" else ".mp4" if lm_attach_type == "video" else ".bin"
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                        raw = file_data if isinstance(file_data, (bytes, bytearray, memoryview)) else bytes(file_data)
+                        tmp.write(raw)
+                        upload_path = tmp.name
+                if upload_path:
+                    try:
+                        u = await max_api.upload_file(upload_path, file_type or "document")
+                        if u.get("success"):
+                            from ..services.messenger import _extract_max_file_token
+                            new_token = _extract_max_file_token(u.get("data", {}))
+                            if new_token:
+                                type_map = {"photo": "image", "video": "video"}
+                                att_type = type_map.get(lm_attach_type, "file")
+                                attachments2 = [{"type": att_type, "payload": {"token": new_token}}]
+                                await execute("UPDATE lead_magnets SET max_file_token = $1 WHERE id = $2", new_token, lm["id"])
+                    except Exception as e:
+                        print(f"[MAX Bot] LM #{lm['id']} retry upload failed: {e}")
+            if attachments2:
+                await _send_to_chat(max_api, chat_id, text, attachments=attachments2, buttons=back_buttons)
+            else:
+                await _send_to_chat(max_api, chat_id, text or "⚠️ Не удалось прикрепить файл — попробуйте позже.", buttons=back_buttons)
     elif text:
         await _send_to_chat(max_api, chat_id, text, buttons=back_buttons)
     else:

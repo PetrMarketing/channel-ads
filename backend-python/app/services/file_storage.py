@@ -127,18 +127,41 @@ def overlay_legal_text(file_path: str, erid: str = "", legal_info: str = "") -> 
 def ensure_file(file_path: str, file_data) -> str | None:
     """Ensure file exists on disk. Restore from DB bytes if missing.
 
-    Returns the file_path if file is available, None if unrecoverable.
+    Понимает 3 формата пути:
+      1. Абсолютный: /app/uploads/xxx.png
+      2. URL-стиль: /uploads/xxx.png → пробует /app/uploads/xxx.png
+      3. Только имя: xxx.png → пробует /app/uploads/xxx.png
+    Возвращает работающий абсолютный путь если файл найден,
+    None если ни путь не работает и нет file_data для восстановления.
     """
     if not file_path:
         return None
+    # 1. Прямая проверка
     if os.path.exists(file_path):
         return file_path
+    # 2. Пробуем с префиксом /app (для URL-путей /uploads/xxx)
+    candidates = []
+    if file_path.startswith("/uploads/"):
+        candidates.append("/app" + file_path)  # /app/uploads/xxx
+    elif not file_path.startswith("/"):
+        # 3. Относительный путь → пробуем в UPLOAD_DIR
+        candidates.append(os.path.join(os.environ.get("UPLOAD_DIR", "/app/uploads"), file_path))
+        candidates.append(os.path.join("/app/uploads", file_path))
+    else:
+        # Абсолютный но не существует — пробуем то же имя в /app/uploads
+        candidates.append(os.path.join("/app/uploads", os.path.basename(file_path)))
+    for cand in candidates:
+        if os.path.exists(cand):
+            return cand
+    # 4. Восстановление из БД bytes
     if not file_data:
         return None
-    dir_name = os.path.dirname(file_path)
+    # Пишем в первый разумный путь (абсолютный либо candidate)
+    write_path = file_path if file_path.startswith("/") and not file_path.startswith("/uploads/") else (candidates[0] if candidates else file_path)
+    dir_name = os.path.dirname(write_path)
     if dir_name:
         os.makedirs(dir_name, exist_ok=True)
     raw = file_data if isinstance(file_data, (bytes, bytearray, memoryview)) else bytes(file_data)
-    with open(file_path, "wb") as f:
+    with open(write_path, "wb") as f:
         f.write(raw)
-    return file_path
+    return write_path
