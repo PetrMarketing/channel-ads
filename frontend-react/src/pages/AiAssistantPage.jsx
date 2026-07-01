@@ -65,8 +65,17 @@ export default function AiAssistantPage() {
     return () => clearInterval(t);
   }, [tasks, loadTasks]);
 
-  const pending = tasks.filter(t => t.status === 'parsed' || t.status === 'executing');
+  const pending = tasks.filter(t => t.status === 'parsed' || t.status === 'executing' || t.status === 'awaiting_answers');
   const done = tasks.filter(t => t.status === 'done' || t.status === 'failed' || t.status === 'cancelled');
+
+  const submitAnswers = async (taskId, answers) => {
+    try {
+      await api.post(`/ai-assistant/${taskId}/answer`, { answers });
+      loadTasks();
+    } catch (e) {
+      showToast(e.message || 'Ошибка', 'error');
+    }
+  };
 
   const startListening = () => {
     if (!SpeechRec) { showToast('Голосовой ввод не поддерживается этим браузером', 'error'); return; }
@@ -212,7 +221,9 @@ export default function AiAssistantPage() {
         <div>
           {loading ? <Spinner /> : pending.length === 0 ? (
             <Empty text="Нет задач в ожидании. Создай новую на вкладке «Новая задача»." />
-          ) : pending.map(t => <PendingCard key={t.id} task={t} onConfirm={() => confirm(t.id)} />)}
+          ) : pending.map(t => t.status === 'awaiting_answers'
+            ? <ClarifyCard key={t.id} task={t} onSubmit={(a) => submitAnswers(t.id, a)} />
+            : <PendingCard key={t.id} task={t} onConfirm={() => confirm(t.id)} />)}
         </div>
       )}
 
@@ -240,6 +251,53 @@ function Empty({ text }) {
   return (
     <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 14, padding: 40, textAlign: 'center', color: MUTED }}>
       {text}
+    </div>
+  );
+}
+
+function ClarifyCard({ task, onSubmit }) {
+  const plan = typeof task.plan_json === 'string' ? JSON.parse(task.plan_json) : task.plan_json;
+  const questions = plan?.questions || [];
+  const [answers, setAnswers] = useState({});
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setAnswers(prev => ({ ...prev, [k]: v }));
+  const handle = async () => {
+    const filled = Object.fromEntries(Object.entries(answers).filter(([, v]) => (v || '').toString().trim()));
+    if (!Object.keys(filled).length) return;
+    setBusy(true);
+    try { await onSubmit(filled); } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ background: '#fff', border: `1px solid ${WARNING}55`, borderRadius: 14, padding: 20, marginBottom: 12 }}>
+      <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>{fmtDt(task.created_at)}</div>
+      <div style={{ fontSize: 15, color: DARK, marginBottom: 10 }}>{task.raw_query}</div>
+      <div style={{ background: 'rgba(245,158,11,0.08)', padding: 12, borderRadius: 10, marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, color: WARNING, marginBottom: 8 }}>❓ Нужны уточнения</div>
+        <div style={{ fontSize: 13, color: '#374151', marginBottom: 10 }}>{task.confirm_summary}</div>
+        {questions.map((q, i) => (
+          <div key={i} style={{ marginBottom: 8 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: DARK, marginBottom: 4 }}>
+              {q.question}
+            </label>
+            <input
+              type="text"
+              value={answers[q.key] || ''}
+              onChange={e => set(q.key, e.target.value)}
+              placeholder={q.placeholder || ''}
+              style={{
+                width: '100%', padding: '10px 12px', border: `1px solid ${BORDER}`,
+                borderRadius: 8, fontSize: 14, boxSizing: 'border-box',
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      <button onClick={handle} disabled={busy}
+        style={{ padding: '10px 18px', border: 'none', borderRadius: 10,
+                 background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
+                 color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, opacity: busy ? 0.5 : 1 }}>
+        {busy ? 'Обрабатываю…' : 'Отправить ответы →'}
+      </button>
     </div>
   );
 }

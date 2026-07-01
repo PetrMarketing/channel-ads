@@ -41,7 +41,8 @@ TOOL_CATALOG: List[Dict[str, Any]] = [
             "name": "create_post",
             "description": (
                 "Создать пост в разделе Контент с возможным расписанием и/или генерацией текста/картинки. "
-                "Используй когда пользователь хочет ОДИН пост по теме или с готовым текстом."
+                "Используй когда пользователь хочет ОДИН пост по теме или с готовым текстом. "
+                "Кнопки поста (ссылка/комментарии/опрос/лид-магнит) собираются в массив buttons."
             ),
             "parameters": {
                 "type": "object",
@@ -53,7 +54,22 @@ TOOL_CATALOG: List[Dict[str, Any]] = [
                     "scheduled_at": {"type": "string", "description": "ISO8601 МСК (например 2026-06-21T10:00:00)"},
                     "with_image": {"type": "boolean", "description": "Сгенерировать ИИ-картинку"},
                     "image_topic": {"type": "string", "description": "Тема для генерации картинки (если with_image=true)"},
-                    "with_comments": {"type": "boolean", "description": "Прикрепить кнопку «Комментарии» — true если юзер сказал «с комментариями»/«с комментами»/«чтобы можно было комментировать»"},
+                    "with_comments": {"type": "boolean", "description": "Добавить кнопку «Комментарии» — true если юзер сказал «с комментариями»/«с обсуждением»"},
+                    "buttons": {
+                        "type": "array",
+                        "description": "Дополнительные кнопки к посту. Каждая — объект с type и параметрами.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {"type": "string", "enum": ["url", "poll", "lead_magnet"]},
+                                "text": {"type": "string", "description": "Текст на кнопке"},
+                                "url": {"type": "string", "description": "URL — для type='url'"},
+                                "poll_id": {"type": "integer", "description": "ID опроса — для type='poll'"},
+                                "lead_magnet_id": {"type": "integer", "description": "ID лид-магнита — для type='lead_magnet'"},
+                            },
+                            "required": ["type", "text"],
+                        },
+                    },
                 },
                 "required": ["title"],
             },
@@ -113,6 +129,40 @@ TOOL_CATALOG: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "ask_user",
+            "description": (
+                "Задать пользователю уточняющие вопросы когда для выполнения задачи не хватает "
+                "критичной информации. Используй ВМЕСТО остальных инструментов если нельзя корректно "
+                "выполнить задачу без ответов. Примеры когда нужны уточнения: "
+                "- Юзер попросил кнопку со ссылкой но не указал URL. "
+                "- Юзер попросил прикрепить опрос но не указал какой. "
+                "- Юзер попросил прикрепить лид-магнит но не уточнил. "
+                "- Нужна дата поста но юзер не указал. "
+                "НЕ используй если можно разумно предположить (например время по умолчанию 10:00 МСК)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "questions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {"type": "string", "description": "Короткий машинный ключ (url, poll_id, scheduled_at, etc.)"},
+                                "question": {"type": "string", "description": "Вопрос человеку на русском"},
+                                "placeholder": {"type": "string", "description": "Пример ответа для placeholder-подсказки"},
+                            },
+                            "required": ["key", "question"],
+                        },
+                    },
+                },
+                "required": ["questions"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "start_broadcast",
             "description": "Создать и отправить рассылку подписчикам канала.",
             "parameters": {
@@ -159,18 +209,30 @@ def estimate_step_cost(tool_name: str, args: dict) -> int:
 SYSTEM_PROMPT = """Ты — помощник в сервисе MAX Маркетинг для управления каналами в мессенджере MAX.
 Пользователь даёт тебе задачу на естественном языке. Твоя работа:
 1. Разобрать её на конкретные действия — какие инструменты вызвать и с какими параметрами
-2. Если задача неполная (нет даты, темы, текста) — вызови инструмент с пустыми/предположительными значениями, а в конечном ответе укажи что нужно уточнить
-3. ВСЕГДА сначала вызывай нужные tools, потом коротко резюмируй для подтверждения юзером
+2. ЕСЛИ КРИТИЧНЫХ ДАННЫХ НЕТ (см. ниже) — вызови ТОЛЬКО ask_user с массивом вопросов, НЕ выполняй частичный план
+3. Если данные есть — вызывай нужные tools + коротко резюмируй для подтверждения
 
-КРИТИЧЕСКИ ВАЖНО про параметры:
-- with_image=true ставь ТОЛЬКО если юзер ЯВНО попросил картинку/изображение/фото/иллюстрацию.
-  Если просто «сделай пост» — НЕ ставь with_image, не приписывай юзеру лишних трат.
-- with_comments=true ставь если юзер упомянул «с комментариями»/«с комментами»/
-  «чтобы можно было комментировать»/«с обсуждением». Иначе — пропусти.
-- message_text — заполняй ТОЛЬКО если юзер дал готовый текст в кавычках.
-  Если просит на тему чего-то — оставь message_text пустым, а topic заполни.
-- scheduled_at указывай в ISO формате МСК времени (например 2026-06-22T10:00:00).
-  Если время не указано — поставь 10:00, если дата не указана — на сегодня вечером.
+КОГДА обязательно нужен ask_user (задай вопросы):
+- Юзер попросил кнопку со ссылкой но не дал URL. Вопрос: «Куда ведёт кнопка? Дай URL»
+- Юзер попросил прикрепить опрос но не сказал какой. Вопрос: «ID опроса или название»
+- Юзер попросил прикрепить лид-магнит но не сказал какой. Вопрос: «Название лид-магнита»
+- Пост создать но нет ни готового текста ни темы для генерации
+- Рассылка но не указан текст
+Формат вопросов: [{"key":"url","question":"Куда ведёт кнопка?","placeholder":"https://..."}]
+После ответа юзер отправит уточнение и мы снова тебя позовём.
+
+КОГДА можно предположить и не спрашивать:
+- Время поста → 10:00 МСК по умолчанию
+- Дата — сегодня вечером если не указана
+- Название канала — если у юзера один канал (не спрашивай tc)
+
+КРИТИЧЕСКИ ВАЖНО про параметры create_post:
+- with_image=true ТОЛЬКО если юзер ЯВНО сказал «картинка/изображение/фото/иллюстрация»
+- with_comments=true если юзер сказал «с комментариями»/«с обсуждением»
+- message_text — ТОЛЬКО если юзер дал готовый текст (обычно в кавычках)
+- topic — если юзер просит написать на тему
+- buttons — массив кнопок. Каждая: {type: url|poll|lead_magnet, text, url|poll_id|lead_magnet_id}
+- scheduled_at — ISO МСК (2026-06-22T10:00:00)
 
 Сегодня: {today_msk}. МСК = UTC+3.
 """
@@ -288,6 +350,15 @@ async def execute_step(user_id: int, step: dict) -> dict:
     tool = step.get("tool")
     args = step.get("args") or {}
 
+    if tool == "ask_user":
+        # Никакой БД-работы — только маркер что нужны ответы
+        return {
+            "ok": True,
+            "needs_answers": True,
+            "questions": args.get("questions") or [],
+            "message": "Нужны уточнения — заполните форму ниже.",
+        }
+
     if tool == "create_post":
         ch = await _resolve_channel(user_id, args.get("channel_tracking_code"))
         if not ch:
@@ -382,13 +453,24 @@ async def execute_step(user_id: int, step: dict) -> dict:
                     print(f"[ai-assistant] image gen error: {e}")
 
         import json as _json
-        inline_buttons_json = None
+        buttons_list = []
         if with_comments:
-            # _resolve_buttons в pins.py раскрывает {type: comments} в
-            # deep-link на бот → миниапп комментариев
-            inline_buttons_json = _json.dumps([
-                {"type": "comments", "text": "Комментарии"}
-            ])
+            buttons_list.append({"type": "comments", "text": "Комментарии"})
+        # Дополнительные кнопки от LLM — url/poll/lead_magnet
+        for b in (args.get("buttons") or []):
+            if not isinstance(b, dict):
+                continue
+            btype = (b.get("type") or "").strip()
+            text = (b.get("text") or "").strip()
+            if not btype or not text:
+                continue
+            if btype == "url" and b.get("url"):
+                buttons_list.append({"type": "url", "text": text, "url": b["url"]})
+            elif btype == "poll" and b.get("poll_id"):
+                buttons_list.append({"type": "poll", "text": text, "poll_id": int(b["poll_id"])})
+            elif btype == "lead_magnet" and b.get("lead_magnet_id"):
+                buttons_list.append({"type": "lead_magnet", "text": text, "lead_magnet_id": int(b["lead_magnet_id"])})
+        inline_buttons_json = _json.dumps(buttons_list, ensure_ascii=False) if buttons_list else None
 
         from ..database import execute_returning_id
         post_id = await execute_returning_id(

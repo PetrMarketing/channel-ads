@@ -54,6 +54,25 @@ async def parse_query(request: Request, user: Dict[str, Any] = Depends(get_curre
         await execute("UPDATE users SET ai_tokens = ai_tokens + $1 WHERE id = $2", svc.PARSE_COST, user["id"])
         raise HTTPException(status_code=502, detail=f"Ошибка LLM: {str(e)[:200]}")
 
+    # Если LLM запросил уточнения (ask_user) — сохраняем как awaiting_answers
+    ask_steps = [s for s in plan["steps"] if s.get("tool") == "ask_user"]
+    if ask_steps:
+        questions = ask_steps[0].get("args", {}).get("questions") or []
+        task_id = await execute_returning_id(
+            """INSERT INTO ai_assistant_tasks (user_id, channel_id, raw_query, plan_json, confirm_summary, status, tokens_used)
+               VALUES ($1, $2, $3, $4, $5, 'awaiting_answers', $6) RETURNING id""",
+            user["id"], channel["id"], query,
+            json.dumps({"steps": [], "questions": questions}, ensure_ascii=False),
+            plan["confirm_summary"] or "Нужны уточнения — заполните форму", svc.PARSE_COST,
+        )
+        return {
+            "success": True,
+            "task_id": task_id,
+            "status": "awaiting_answers",
+            "questions": questions,
+            "summary": plan["confirm_summary"],
+        }
+
     # Считаем смету шагов
     total_est = 0
     steps_with_cost = []
@@ -77,6 +96,71 @@ async def parse_query(request: Request, user: Dict[str, Any] = Depends(get_curre
         "steps": steps_with_cost,
         "total_estimated_tokens": total_est,
         "tokens_remaining": (u["ai_tokens"] or 0) - svc.PARSE_COST,
+    }
+
+
+@router.post("/{task_id}/answer")
+async def submit_answers(task_id: int, request: Request, user: Dict[str, Any] = Depends(get_current_user)):
+    """Юзер отвечает на уточняющие вопросы. Мы склеиваем ответы с оригинальным
+    запросом и заново гоним через LLM. Токен за parse не списываем повторно —
+    это часть той же изначальной задачи."""
+    task = await fetch_one(
+        "SELECT * FROM ai_assistant_tasks WHERE id = $1 AND user_id = $2",
+        task_id, user["id"],
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    if task["status"] != "awaiting_answers":
+        raise HTTPException(status_code=400, detail=f"Задача в статусе {task['status']} — уточнения уже не нужны")
+
+    body = await request.json()
+    answers = body.get("answers") or {}
+    if not isinstance(answers, dict) or not answers:
+        raise HTTPException(status_code=400, detail="Нет ответов")
+
+    # Собираем дополненный запрос: исходная фраза + перечисление уточнений
+    extras = "; ".join(f"{k}={v}" for k, v in answers.items() if v)
+    new_query = f"{task['raw_query']}\n\nУточнения: {extras}"
+
+    try:
+        plan = await svc.parse_query_with_llm(new_query, {"user_id": user["id"]})
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:200])
+
+    # Если модель снова просит уточнения — фиксируем повторно
+    ask_steps = [s for s in plan["steps"] if s.get("tool") == "ask_user"]
+    if ask_steps:
+        questions = ask_steps[0].get("args", {}).get("questions") or []
+        await execute(
+            "UPDATE ai_assistant_tasks SET raw_query = $1, plan_json = $2, confirm_summary = $3 WHERE id = $4",
+            new_query,
+            json.dumps({"steps": [], "questions": questions}, ensure_ascii=False),
+            plan["confirm_summary"] or "Нужны ещё уточнения",
+            task_id,
+        )
+        return {"success": True, "status": "awaiting_answers", "questions": questions}
+
+    total_est = 0
+    steps_with_cost = []
+    for step in plan["steps"]:
+        cost = svc.estimate_step_cost(step["tool"], step["args"])
+        steps_with_cost.append({**step, "est_tokens": cost})
+        total_est += cost
+
+    await execute(
+        """UPDATE ai_assistant_tasks
+           SET raw_query = $1, plan_json = $2, confirm_summary = $3, status = 'parsed'
+           WHERE id = $4""",
+        new_query,
+        json.dumps({"steps": steps_with_cost}, ensure_ascii=False),
+        plan["confirm_summary"], task_id,
+    )
+    return {
+        "success": True,
+        "status": "parsed",
+        "steps": steps_with_cost,
+        "total_estimated_tokens": total_est,
+        "summary": plan["confirm_summary"],
     }
 
 
