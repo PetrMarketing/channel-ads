@@ -7,12 +7,17 @@ from ..database import fetch_all, fetch_one
 
 async def refresh_post_buttons(post_type: str, post_id: int) -> None:
     """Заново рендерит inline-кнопки для одного поста в канале.
-    Не трогает текст/файлы — только attachments с кнопками."""
+    Не трогает текст/файлы — только attachments с кнопками.
+
+    ВАЖНО: MAX PUT /messages ЗАМЕНЯЕТ все attachments поста. Если передать
+    только клавиатуру — картинка/видео пропадут. Поэтому при MAX-edit мы
+    подтягиваем max_file_token/file_type и передаём его вместе с кнопками."""
     try:
         if post_type == "content":
             post = await fetch_one(
                 """SELECT cp.id, cp.message_text, cp.inline_buttons,
                           cp.telegram_message_id, cp.channel_id,
+                          cp.max_file_token, cp.file_type,
                           c.platform, c.channel_id as ch_channel_id,
                           c.max_chat_id, c.tracking_code
                    FROM content_posts cp
@@ -25,6 +30,7 @@ async def refresh_post_buttons(post_type: str, post_id: int) -> None:
             post = await fetch_one(
                 """SELECT pp.id, pp.message_text, pp.inline_buttons,
                           pp.telegram_message_id, pp.channel_id,
+                          pp.max_file_token, pp.file_type,
                           c.platform, c.channel_id as ch_channel_id,
                           c.max_chat_id, c.tracking_code
                    FROM pin_posts pp
@@ -51,14 +57,20 @@ async def refresh_post_buttons(post_type: str, post_id: int) -> None:
             post_id=post["id"], post_type=post_type,
         )
         if post["platform"] == "max":
-            await _edit_max(post["telegram_message_id"], post["message_text"], resolved)
+            await _edit_max(
+                post["telegram_message_id"], post["message_text"], resolved,
+                max_file_token=post.get("max_file_token"),
+                file_type=post.get("file_type"),
+            )
         else:
             await _edit_tg(channel, post["telegram_message_id"], resolved)
     except Exception as e:
         print(f"[post_button_refresh] {post_type}/{post_id}: {e}")
 
 
-async def _edit_max(message_id, text, inline_buttons_json):
+async def _edit_max(message_id, text, inline_buttons_json,
+                    max_file_token: Optional[str] = None,
+                    file_type: Optional[str] = None):
     from .max_api import get_max_api
     from .messenger import build_max_inline_buttons, html_to_max_markdown
     max_api = get_max_api()
@@ -66,7 +78,14 @@ async def _edit_max(message_id, text, inline_buttons_json):
         return
     max_buttons = build_max_inline_buttons(inline_buttons_json)
     max_text = html_to_max_markdown(text or "")
-    r = await max_api.edit_message(str(message_id), max_text, buttons=max_buttons)
+    # Собираем attachments с файлом (если был) чтобы не потерять картинку
+    # при PUT /messages — MAX перезаписывает все attachments.
+    attachments = None
+    if max_file_token:
+        _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
+        att_type = _type_map.get(file_type or "file", "file")
+        attachments = [{"type": att_type, "payload": {"token": max_file_token}}]
+    r = await max_api.edit_message(str(message_id), max_text, attachments=attachments, buttons=max_buttons)
     print(f"[post_button_refresh] edit MAX msg {message_id}: {r.get('success', False)}")
 
 
