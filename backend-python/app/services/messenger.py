@@ -566,10 +566,13 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
         max_attach_type = _max_type_map.get(send_type, "file")
         # МНОЖЕСТВЕННЫЕ вложения (до 10 фото-альбом).
         # Приоритет: кэшированные токены → пути к файлам → одиночный file_path.
+        fresh_max_token = None  # если только что загрузили — вернём наверх для UPDATE
+        fresh_max_tokens_list = None  # аналогично для альбома
         if attachment_tokens and len(attachment_tokens) > 1:
             attachments = [{"type": max_attach_type, "payload": {"token": t}} for t in attachment_tokens[:10] if t]
         elif attachment_paths and len(attachment_paths) > 1:
             attachments = []
+            fresh_max_tokens_list = []
             for p in attachment_paths[:10]:
                 if not p or not os.path.exists(p):
                     continue
@@ -578,8 +581,10 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
                     tok = _extract_max_file_token(up.get("data", {}))
                     if tok:
                         attachments.append({"type": max_attach_type, "payload": {"token": tok}})
+                        fresh_max_tokens_list.append(tok)
             if not attachments:
                 attachments = None
+                fresh_max_tokens_list = None
         # Use cached max_file_token if available
         elif max_file_token:
             attachments = [{"type": max_attach_type, "payload": {"token": max_file_token}}]
@@ -589,6 +594,7 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
                 file_token = _extract_max_file_token(upload_result.get("data", {}))
                 if file_token:
                     attachments = [{"type": max_attach_type, "payload": {"token": file_token}}]
+                    fresh_max_token = file_token
                 else:
                     print(f"[Messenger] WARNING: MAX channel upload succeeded but token extraction failed. data={upload_result.get('data')}")
             else:
@@ -613,7 +619,14 @@ async def send_to_channel(channel: Dict[str, Any], text: str, **kwargs):
         mid = (data.get("body", {}).get("mid")
                or data.get("message", {}).get("body", {}).get("mid")
                or data.get("mid"))
-        return {"message_id": mid}
+        # Возвращаем fresh_max_token — вызывающий код обязан сохранить его
+        # в БД (content_posts.max_file_token / pin_posts.max_file_token),
+        # чтобы post_button_refresh мог собрать attachments при edit-е кнопок.
+        return {
+            "message_id": mid,
+            "max_file_token": fresh_max_token,
+            "max_file_tokens": fresh_max_tokens_list,
+        }
     else:
         chat_id = channel.get("channel_id")
         reply_markup = build_reply_markup(inline_buttons)

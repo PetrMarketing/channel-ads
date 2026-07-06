@@ -593,18 +593,29 @@ async def publish_pin(tc: str, pin_id: int, user: Dict[str, Any] = Depends(get_c
             raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")
 
         msg_id = None
+        fresh_max_token = None
         if isinstance(result, dict):
             msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
             if not msg_id:
                 msg_data = result.get("message", {})
                 msg_id = msg_data.get("body", {}).get("mid")
+            fresh_max_token = result.get("max_file_token")
 
     msg_id_str = str(msg_id) if msg_id is not None else None
 
-    await execute(
-        "UPDATE pin_posts SET status = 'published', published_at = NOW(), telegram_message_id = $1 WHERE id = $2",
-        msg_id_str, pin_id,
-    )
+    # Сохраняем свежий max_file_token — без него refresh_post_buttons не сможет
+    # собрать attachments при обновлении кнопок и картинка исчезнет.
+    if not edited and fresh_max_token and not pin.get("max_file_token"):
+        await execute(
+            """UPDATE pin_posts SET status = 'published', published_at = NOW(),
+               telegram_message_id = $1, max_file_token = $2 WHERE id = $3""",
+            msg_id_str, fresh_max_token, pin_id,
+        )
+    else:
+        await execute(
+            "UPDATE pin_posts SET status = 'published', published_at = NOW(), telegram_message_id = $1 WHERE id = $2",
+            msg_id_str, pin_id,
+        )
 
     return {"success": True, "messageId": msg_id_str, "edited": edited}
 
