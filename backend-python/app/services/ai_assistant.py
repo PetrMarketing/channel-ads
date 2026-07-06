@@ -251,8 +251,11 @@ async def parse_query_with_llm(query: str, user_context: dict) -> dict:
         raise RuntimeError("OPENROUTER_API_KEY не задан")
 
     today_msk = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%d %B %Y, %H:%M")
+    # НЕ используем str.format — в промпте есть JSON-примеры с фигурными
+    # скобками ({"key":"url"...}), они ловятся format-ом и падают на KeyError.
+    # Простая замена по маркеру безопаснее.
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT.format(today_msk=today_msk)},
+        {"role": "system", "content": SYSTEM_PROMPT.replace("{today_msk}", today_msk)},
         {"role": "user", "content": query},
     ]
 
