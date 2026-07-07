@@ -88,7 +88,7 @@ async def admin_me(admin: Dict = Depends(get_current_admin)):
 # ===========================
 
 @router.get("/dashboard/stats")
-async def dashboard_stats(days: int = Query(30, ge=1, le=365), admin: Dict = Depends(get_current_admin)):
+async def dashboard_stats(days: int = Query(30, ge=1, le=36500), admin: Dict = Depends(get_current_admin)):
     """Сводка за период (новые регистрации/каналы/доход и т.д.) + абсолютные
     цифры (общее всего в системе, не зависит от периода)."""
     from datetime import datetime, timedelta
@@ -173,7 +173,7 @@ async def dashboard_stats(days: int = Query(30, ge=1, le=365), admin: Dict = Dep
 
 
 @router.get("/dashboard/charts")
-async def dashboard_charts(days: int = Query(30, ge=1, le=365), admin: Dict = Depends(get_current_admin)):
+async def dashboard_charts(days: int = Query(30, ge=1, le=36500), admin: Dict = Depends(get_current_admin)):
     """Дневные графики по периоду: регистрации, доход (подписки/токены),
     ИИ-сессии, онлайн."""
     from datetime import datetime, timedelta

@@ -18,22 +18,23 @@ export default function AdminDashboardPage() {
     </div>
   );
 
+  const periodLabel = period >= 3650 ? 'за всё время' : `за ${period}д`;
   const metrics = [
     // Онлайн в сервисе (15 мин активности) — независимо от периода
     { label: 'Онлайн сейчас', value: stats.online ?? 0, color: '#10b981', icon: 'M22 11.08V12a10 10 0 11-5.93-9.14M22 4L12 14.01l-3-3', sublabel: 'активны последние 15 мин', staticVal: true },
-    { label: `Новые юзеры за ${period}д`, value: stats.users, color: '#4361ee', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z', sublabel: `всего ${(stats.users_total || 0).toLocaleString('ru-RU')}` },
-    { label: `Каналы за ${period}д`, value: stats.channels, color: '#2a9d8f', icon: 'M22 12h-4l-3 9L9 3l-3 9H2', sublabel: `всего ${(stats.channels_total || 0).toLocaleString('ru-RU')}` },
-    { label: `Подписчики за ${period}д`, value: stats.subscribers, color: '#e9c46a', icon: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m7-10a4 4 0 100-8 4 4 0 000 8z', sublabel: `всего ${(stats.subscribers_total || 0).toLocaleString('ru-RU')}` },
+    { label: `Новые юзеры ${periodLabel}`, value: stats.users, color: '#4361ee', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z', sublabel: `всего ${(stats.users_total || 0).toLocaleString('ru-RU')}` },
+    { label: `Каналы ${periodLabel}`, value: stats.channels, color: '#2a9d8f', icon: 'M22 12h-4l-3 9L9 3l-3 9H2', sublabel: `всего ${(stats.channels_total || 0).toLocaleString('ru-RU')}` },
+    { label: `Подписчики ${periodLabel}`, value: stats.subscribers, color: '#e9c46a', icon: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m7-10a4 4 0 100-8 4 4 0 000 8z', sublabel: `всего ${(stats.subscribers_total || 0).toLocaleString('ru-RU')}` },
     { label: 'Активные тарифы', value: stats.activeBillings, color: '#f4a261', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', staticVal: true },
-    { label: `Доход за ${period}д`, value: stats.revenue_total || 0, color: '#e63946', icon: 'M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6', isMoney: true, sublabel: 'подписки + токены' },
-    { label: `Подписки за ${period}д`, value: stats.revenue_subs || 0, color: '#7b68ee', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', isMoney: true },
-    { label: `Токены за ${period}д`, value: stats.revenue_tokens || 0, color: '#06b6d4', icon: 'M13 10V3L4 14h7v7l9-11h-7z', isMoney: true },
-    { label: `ИИ Оформление за ${period}д`, value: stats.aiDesign, color: '#8b5cf6', icon: 'M12 19l7-7 3 3-7 7-3-3zM18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5zM2 2l7.586 7.586' },
-    { label: `ИИ Контент за ${period}д`, value: stats.aiContent, color: '#ec4899', icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8' },
-    { label: `Закрепы за ${period}д`, value: stats.pins, color: '#264653', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z' },
-    { label: `Рассылки за ${period}д`, value: stats.broadcasts, color: '#7b68ee', icon: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z' },
-    { label: `Розыгрыши за ${period}д`, value: stats.giveaways, color: '#ef4444', icon: 'M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4' },
-    { label: `Лид-магниты за ${period}д`, value: stats.leadMagnets, color: '#06b6d4', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+    { label: `Доход ${periodLabel}`, value: stats.revenue_total || 0, color: '#e63946', icon: 'M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6', isMoney: true, sublabel: 'подписки + токены' },
+    { label: `Подписки ${periodLabel}`, value: stats.revenue_subs || 0, color: '#7b68ee', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', isMoney: true },
+    { label: `Токены ${periodLabel}`, value: stats.revenue_tokens || 0, color: '#06b6d4', icon: 'M13 10V3L4 14h7v7l9-11h-7z', isMoney: true },
+    { label: `ИИ Оформление ${periodLabel}`, value: stats.aiDesign, color: '#8b5cf6', icon: 'M12 19l7-7 3 3-7 7-3-3zM18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5zM2 2l7.586 7.586' },
+    { label: `ИИ Контент ${periodLabel}`, value: stats.aiContent, color: '#ec4899', icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8' },
+    { label: `Закрепы ${periodLabel}`, value: stats.pins, color: '#264653', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z' },
+    { label: `Рассылки ${periodLabel}`, value: stats.broadcasts, color: '#7b68ee', icon: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z' },
+    { label: `Розыгрыши ${periodLabel}`, value: stats.giveaways, color: '#ef4444', icon: 'M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4' },
+    { label: `Лид-магниты ${periodLabel}`, value: stats.leadMagnets, color: '#06b6d4', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   ];
 
   const renderSparkArea = (data, valueKey, color, w = 72, h = 28) => {
@@ -120,14 +121,19 @@ export default function AdminDashboardPage() {
           <div style={{ fontSize: 12, color: '#bbb', marginTop: 3 }}>Общая статистика сервиса</div>
         </div>
         <div style={{ display: 'flex', gap: 4, background: '#fff', borderRadius: 10, padding: 3, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          {[7, 14, 30, 90].map(p => (
-            <button key={p} onClick={() => setPeriod(p)} style={{
+          {[
+            { v: 7, label: '7д' },
+            { v: 30, label: '30д' },
+            { v: 90, label: '90д' },
+            { v: 36500, label: 'Всё' },
+          ].map(({ v, label }) => (
+            <button key={v} onClick={() => setPeriod(v)} style={{
               padding: '6px 14px', borderRadius: 8, border: 'none',
-              background: period === p ? '#4361ee' : 'transparent',
-              color: period === p ? '#fff' : '#aaa',
-              fontSize: 12, fontWeight: period === p ? 600 : 400, cursor: 'pointer',
+              background: period === v ? '#4361ee' : 'transparent',
+              color: period === v ? '#fff' : '#aaa',
+              fontSize: 12, fontWeight: period === v ? 600 : 400, cursor: 'pointer',
               transition: 'all 0.2s',
-            }}>{p}д</button>
+            }}>{label}</button>
           ))}
         </div>
       </div>
