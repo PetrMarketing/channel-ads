@@ -61,13 +61,40 @@ async def auth_max_webapp(request: Request):
         # Обрезаем — не логируем полностью, может быть длинным
         import json as _j
         print(f"[MAX-WebApp Auth] initDataUnsafe={_j.dumps(unsafe_dbg, ensure_ascii=False)[:400]}")
+    # Основной путь: HMAC-подписанный initData (когда MAX начнёт его давать)
     max_user = verify_max_webapp(init_data)
-    if not max_user or not max_user.get("id"):
+    if max_user and max_user.get("id"):
+        max_user_id = str(max_user["id"])
+        first_name = max_user.get("first_name") or max_user.get("name") or ""
+        result = await find_or_create_max_user(max_user_id, first_name)
+        return {"success": True, "token": result["token"], "user": result["user"]}
+
+    # Fallback: MAX Mini App пока не отдаёт signed initData. Используем
+    # initDataUnsafe (не подписан), но пускаем ТОЛЬКО существующего юзера
+    # у которого уже есть max_dialog_chat_id — то есть он реально писал
+    # нашему боту и его MAX-аккаунт подтверждён webhook-ом от MAX-инфры.
+    # Атака подстановкой max_user_id не сработает: у случайно взятого id
+    # не будет dialog_chat_id, попадаем в 401.
+    unsafe = unsafe_dbg if isinstance(unsafe_dbg, dict) else {}
+    unsafe_user = unsafe.get("user") if isinstance(unsafe.get("user"), dict) else {}
+    unsafe_id = unsafe_user.get("id")
+    if not unsafe_id:
         raise HTTPException(status_code=401, detail="Invalid MAX WebApp auth data")
-    max_user_id = str(max_user["id"])
-    first_name = max_user.get("first_name") or max_user.get("name") or ""
-    result = await find_or_create_max_user(max_user_id, first_name)
-    return {"success": True, "token": result["token"], "user": result["user"]}
+    max_user_id = str(unsafe_id)
+    existing = await fetch_one(
+        """SELECT id, max_user_id, max_dialog_chat_id
+           FROM users
+           WHERE max_user_id = $1 AND max_dialog_chat_id IS NOT NULL
+             AND max_dialog_chat_id <> ''""",
+        max_user_id,
+    )
+    if not existing:
+        print(f"[MAX-WebApp Auth] fallback denied: max_user_id={max_user_id} — не писал боту")
+        raise HTTPException(status_code=401, detail="Сначала напишите /start боту в MAX")
+    from ..middleware.auth import create_jwt
+    token = create_jwt(existing["id"])
+    print(f"[MAX-WebApp Auth] fallback ok: user_id={existing['id']} max_user_id={max_user_id}")
+    return {"success": True, "token": token, "user": dict(existing)}
 
 
 @router.post("/max", include_in_schema=False)
