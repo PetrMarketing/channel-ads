@@ -932,6 +932,32 @@ async function doRedirect() {
       return true;
     }
 
+    // Handle cabinet_open — user came via startapp deep-link
+    // MAX открыл нас в WebApp контексте — тут точно есть initDataUnsafe
+    if (startParam === 'cabinet_open') {
+      let iData = '';
+      let iUnsafe = null;
+      try { iData = (window.WebApp && window.WebApp.initData) || ''; } catch(e) {}
+      try { iUnsafe = (window.WebApp && window.WebApp.initDataUnsafe) || null; } catch(e) {}
+      try {
+        const r = await fetch('/api/auth/max-webapp', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({initData: iData, initDataUnsafe: iUnsafe}),
+        });
+        const d = await r.json();
+        if (d && d.success && d.token) {
+          try {
+            localStorage.setItem('token', d.token);
+            if (d.user) localStorage.setItem('user', JSON.stringify(d.user));
+          } catch(e) {}
+          window.location.replace('/');
+          return true;
+        }
+      } catch(e) {}
+      window.location.replace('/login');
+      return true;
+    }
     // Handle comments_ prefix
     if (startParam.startsWith('comments_')) {
       window.location.href = '/comments-app/' + startParam;
@@ -1050,10 +1076,11 @@ const fallbackTimer = setTimeout(() => {
         bot_link_id = await _get_max_bot_link_id()
     except Exception:
         bot_link_id = ""
-    # На web.max.ru схема max:// не работает (Desktop Chrome не знает
-    # такой handler → Failed to launch). Используем https://web.max.ru/…
-    # который открывает чат с ботом прямо внутри web-версии.
-    deeplink = f"https://web.max.ru/id{bot_link_id}_bot?start=open_cabinet" if bot_link_id else "/login"
+    # ВАЖНО: используем ?startapp= а не ?start= — тот же паттерн что в
+    # комментариях, где WebApp контекст создаётся. При таком URL MAX
+    # открывает Mini App бота с payload cabinet_open, и /miniapp
+    # получает window.WebApp + initDataUnsafe с user_id.
+    deeplink = f"https://max.ru/id{bot_link_id}_bot?startapp=cabinet_open" if bot_link_id else "/login"
     html = (html.replace('__META_REFRESH__', meta_refresh)
                 .replace('__SERVER_CODE__', code)
                 .replace('__MAX_BOT_DEEPLINK__', deeplink))

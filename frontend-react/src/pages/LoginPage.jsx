@@ -29,14 +29,11 @@ export default function LoginPage() {
       // Иначе показываем стандартную страницу с кнопкой «Войти через MAX».
       try {
         const ref = document.referrer || '';
-        const isWebMax = ref.includes('web.max.ru');
-        const isNativeMax = (navigator.userAgent || '').toLowerCase().includes('max');
-        if (isWebMax) {
-          window.location.replace(`https://web.max.ru/${maxBotUsername}?start=open_cabinet`);
-          return;
-        }
-        if (isNativeMax) {
-          window.location.replace(`https://max.ru/${maxBotUsername}?start=open_cabinet`);
+        const isMax = ref.includes('max.ru') || (navigator.userAgent || '').toLowerCase().includes('max');
+        if (isMax) {
+          // startapp= вместо start= — MAX откроет как Mini App,
+          // /miniapp получит window.WebApp + initDataUnsafe → авто-логин
+          window.location.replace(`https://max.ru/${maxBotUsername}?startapp=cabinet_open`);
           return;
         }
       } catch {}
