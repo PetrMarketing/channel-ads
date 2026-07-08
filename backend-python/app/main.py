@@ -871,6 +871,25 @@ async function doRedirect() {
       try { hasWebApp = !!window.WebApp; } catch(e) {}
       try { initData = (window.WebApp && window.WebApp.initData) || ''; } catch(e) {}
       try { initDataUnsafe = (window.WebApp && window.WebApp.initDataUnsafe) || null; } catch(e) {}
+      // Ищем альтернативные названия SDK (у MAX может быть window.max
+      // или window.MAX вместо window.WebApp).
+      var maxGlobals = {};
+      try {
+        var keys = Object.getOwnPropertyNames(window);
+        for (var i = 0; i < keys.length; i++) {
+          var k = keys[i];
+          if (/^(max|maxapp|maxwebapp|webapp|tg|telegram)/i.test(k)) {
+            try {
+              var v = window[k];
+              if (v && typeof v === 'object') {
+                maxGlobals[k] = Object.keys(v).slice(0, 10);
+              } else {
+                maxGlobals[k] = typeof v;
+              }
+            } catch(e2) {}
+          }
+        }
+      } catch(e) {}
       var authResp = null; var authStatus = 'no-request';
       try {
         const r = await fetch('/api/auth/max-webapp', {
@@ -889,9 +908,27 @@ async function doRedirect() {
           return true;
         }
       } catch(e) { authStatus = 'fetch-error: ' + e.message; }
-      // Авто-логин не прошёл — редирект в чат с ботом с deep-link
-      // /start open_cabinet. Бот вернёт кнопку с одноразовым JWT.
-      window.location.replace('__MAX_BOT_DEEPLINK__');
+      // Показываем диагностику — ищем какое имя SDK использует MAX
+      const dbg = {
+        hasWebApp: hasWebApp,
+        initData_length: (initData || '').length,
+        initData_first80: (initData || '').slice(0, 80),
+        initDataUnsafe: initDataUnsafe,
+        auth_status: authStatus,
+        auth_response: authResp,
+        maxGlobals: maxGlobals,
+        userAgent: navigator.userAgent.slice(0, 200),
+        referrer: document.referrer.slice(0, 100),
+      };
+      document.querySelector('.c').innerHTML =
+        '<div style="text-align:left;padding:16px;background:#fff;border-radius:12px;max-width:100%;overflow:auto">' +
+        '<div style="font-size:15px;font-weight:600;margin-bottom:8px;color:#111">Диагностика MAX SDK</div>' +
+        '<pre style="font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-all;background:#f7f7f7;padding:10px;border-radius:8px;margin:0 0 12px 0;color:#222">' +
+          JSON.stringify(dbg, null, 2).replace(/</g,'&lt;') +
+        '</pre>' +
+        '<a href="__MAX_BOT_DEEPLINK__" style="display:inline-block;padding:12px 20px;background:#7B68EE;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;margin-right:8px">Открыть чат бота</a>' +
+        '<a href="/login" style="display:inline-block;padding:12px 20px;background:#ccc;color:#333;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600">На /login</a>' +
+        '</div>';
       return true;
     }
 
