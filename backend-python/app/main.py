@@ -866,25 +866,28 @@ async function doRedirect() {
       // отдаём на /login где юзер получит стандартный вход через бота.
       document.querySelector('p').textContent = 'Открываем кабинет...';
       var initData = '';
+      var initDataUnsafe = null;
       try { initData = (window.WebApp && window.WebApp.initData) || ''; } catch(e) {}
-      if (initData) {
-        try {
-          const r = await fetch('/api/auth/max-webapp', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({initData: initData}),
-          });
-          const d = await r.json();
-          if (d && d.success && d.token) {
-            try {
-              localStorage.setItem('token', d.token);
-              if (d.user) localStorage.setItem('user', JSON.stringify(d.user));
-            } catch(e) {}
-            window.location.replace('/');
-            return true;
-          }
-        } catch(e) {}
-      }
+      try { initDataUnsafe = (window.WebApp && window.WebApp.initDataUnsafe) || null; } catch(e) {}
+      // Отправляем даже если initData пустой — бэк залогирует
+      // initDataUnsafe и мы поймём в каком формате MAX WebApp
+      // отдаёт данные. Если данные валидны — вернётся JWT.
+      try {
+        const r = await fetch('/api/auth/max-webapp', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({initData: initData, initDataUnsafe: initDataUnsafe}),
+        });
+        const d = await r.json();
+        if (d && d.success && d.token) {
+          try {
+            localStorage.setItem('token', d.token);
+            if (d.user) localStorage.setItem('user', JSON.stringify(d.user));
+          } catch(e) {}
+          window.location.replace('/');
+          return true;
+        }
+      } catch(e) {}
       // Fallback: без валидной подписи ведём на /login
       window.location.replace('/login');
       return true;

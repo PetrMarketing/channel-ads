@@ -52,6 +52,15 @@ async def auth_max_webapp(request: Request):
     не построить."""
     body = await request.json()
     init_data = body.get("initData", "") or body.get("init_data", "")
+    unsafe_dbg = body.get("initDataUnsafe")
+    # Диагностика на проде — увидим формат данных от MAX WebApp:
+    # длина строки, префикс, есть ли hash, и что в initDataUnsafe.
+    print(f"[MAX-WebApp Auth] initData len={len(init_data)}, "
+          f"first80={init_data[:80]!r}, has_hash={'hash=' in init_data}")
+    if unsafe_dbg is not None:
+        # Обрезаем — не логируем полностью, может быть длинным
+        import json as _j
+        print(f"[MAX-WebApp Auth] initDataUnsafe={_j.dumps(unsafe_dbg, ensure_ascii=False)[:400]}")
     max_user = verify_max_webapp(init_data)
     if not max_user or not max_user.get("id"):
         raise HTTPException(status_code=401, detail="Invalid MAX WebApp auth data")
