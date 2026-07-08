@@ -1050,7 +1050,10 @@ const fallbackTimer = setTimeout(() => {
         bot_link_id = await _get_max_bot_link_id()
     except Exception:
         bot_link_id = ""
-    deeplink = f"https://max.ru/id{bot_link_id}_bot?start=open_cabinet" if bot_link_id else "/login"
+    # На web.max.ru схема max:// не работает (Desktop Chrome не знает
+    # такой handler → Failed to launch). Используем https://web.max.ru/…
+    # который открывает чат с ботом прямо внутри web-версии.
+    deeplink = f"https://web.max.ru/id{bot_link_id}_bot?start=open_cabinet" if bot_link_id else "/login"
     html = (html.replace('__META_REFRESH__', meta_refresh)
                 .replace('__SERVER_CODE__', code)
                 .replace('__MAX_BOT_DEEPLINK__', deeplink))

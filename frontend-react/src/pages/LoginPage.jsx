@@ -28,11 +28,15 @@ export default function LoginPage() {
       // в чат с ботом /start open_cabinet — бот пришлёт кнопку с JWT.
       // Иначе показываем стандартную страницу с кнопкой «Войти через MAX».
       try {
-        const ua = (navigator.userAgent || '').toLowerCase();
-        const inMax = ua.includes('max') || document.referrer.includes('max.ru');
-        if (inMax) {
-          const bot = maxBotUsername;
-          window.location.replace(`https://max.ru/${bot}?start=open_cabinet`);
+        const ref = document.referrer || '';
+        const isWebMax = ref.includes('web.max.ru');
+        const isNativeMax = (navigator.userAgent || '').toLowerCase().includes('max');
+        if (isWebMax) {
+          window.location.replace(`https://web.max.ru/${maxBotUsername}?start=open_cabinet`);
+          return;
+        }
+        if (isNativeMax) {
+          window.location.replace(`https://max.ru/${maxBotUsername}?start=open_cabinet`);
           return;
         }
       } catch {}
