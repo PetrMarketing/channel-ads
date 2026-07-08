@@ -867,29 +867,46 @@ async function doRedirect() {
       document.querySelector('p').textContent = 'Открываем кабинет...';
       var initData = '';
       var initDataUnsafe = null;
+      var hasWebApp = false;
+      try { hasWebApp = !!window.WebApp; } catch(e) {}
       try { initData = (window.WebApp && window.WebApp.initData) || ''; } catch(e) {}
       try { initDataUnsafe = (window.WebApp && window.WebApp.initDataUnsafe) || null; } catch(e) {}
-      // Отправляем даже если initData пустой — бэк залогирует
-      // initDataUnsafe и мы поймём в каком формате MAX WebApp
-      // отдаёт данные. Если данные валидны — вернётся JWT.
+      var authResp = null; var authStatus = 'no-request';
       try {
         const r = await fetch('/api/auth/max-webapp', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({initData: initData, initDataUnsafe: initDataUnsafe}),
         });
-        const d = await r.json();
-        if (d && d.success && d.token) {
+        authStatus = r.status;
+        try { authResp = await r.json(); } catch(e) {}
+        if (authResp && authResp.success && authResp.token) {
           try {
-            localStorage.setItem('token', d.token);
-            if (d.user) localStorage.setItem('user', JSON.stringify(d.user));
+            localStorage.setItem('token', authResp.token);
+            if (authResp.user) localStorage.setItem('user', JSON.stringify(authResp.user));
           } catch(e) {}
           window.location.replace('/');
           return true;
         }
-      } catch(e) {}
-      // Fallback: без валидной подписи ведём на /login
-      window.location.replace('/login');
+      } catch(e) { authStatus = 'fetch-error: ' + e.message; }
+      // Показываем диагностику вместо редиректа — юзер скинет скриншот
+      const dbg = {
+        hasWebApp: hasWebApp,
+        initData_length: (initData || '').length,
+        initData_first80: (initData || '').slice(0, 80),
+        initDataUnsafe: initDataUnsafe,
+        auth_status: authStatus,
+        auth_response: authResp,
+      };
+      document.querySelector('.c').innerHTML =
+        '<div style="text-align:left;padding:16px;background:#fff;border-radius:12px;max-width:100%;overflow:auto">' +
+        '<div style="font-size:15px;font-weight:600;margin-bottom:8px;color:#111">Диагностика авто-логина</div>' +
+        '<div style="font-size:12px;color:#666;margin-bottom:10px">Скинь скриншот этого экрана разработчику</div>' +
+        '<pre style="font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-all;background:#f7f7f7;padding:10px;border-radius:8px;margin:0 0 12px 0;color:#222">' +
+          JSON.stringify(dbg, null, 2).replace(/</g,'&lt;') +
+        '</pre>' +
+        '<a href="/login" style="display:inline-block;padding:12px 20px;background:#7B68EE;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600">Перейти на /login</a>' +
+        '</div>';
       return true;
     }
 
