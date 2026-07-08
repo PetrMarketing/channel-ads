@@ -50,6 +50,46 @@ async def optional_user(
         return None
 
 
+def verify_max_webapp(init_data: str) -> Optional[Dict[str, Any]]:
+    """Верифицировать MAX WebApp initData через HMAC-SHA256.
+
+    MAX Mini App повторяет Telegram-паттерн: клиент присылает
+    `initData` — querystring вида `user=...&auth_date=...&hash=...`.
+    hash считается как HMAC-SHA256(HMAC-SHA256(bot_token, "WebAppData"),
+    data_check_string), где data_check_string — отсортированные по ключу
+    пары `key=value` через \\n (без hash).
+
+    Возвращает dict с полями user или None если подпись не совпадает,
+    bot_token не задан, или user отсутствует. НИКОГДА не должен
+    возвращать user_data без проверки подписи — иначе повторим
+    CRITICAL-1 (обход аутентификации по подставленному user_id)."""
+    bot_token = settings.MAX_BOT_TOKEN
+    if not bot_token or not init_data:
+        return None
+    parsed = parse_qs(init_data)
+    received_hash = parsed.get("hash", [None])[0]
+    if not received_hash:
+        return None
+    items = []
+    for key, vals in parsed.items():
+        if key == "hash":
+            continue
+        items.append(f"{key}={vals[0]}")
+    items.sort()
+    data_check_string = "\n".join(items)
+    secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+    calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calculated_hash, received_hash):
+        return None
+    user_str = parsed.get("user", [None])[0]
+    if not user_str:
+        return None
+    try:
+        return json.loads(unquote(user_str))
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
 def verify_telegram_webapp(init_data: str) -> Optional[Dict[str, Any]]:
     """Verify Telegram WebApp initData using HMAC-SHA256."""
     bot_token = settings.TELEGRAM_BOT_TOKEN

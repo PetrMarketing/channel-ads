@@ -860,12 +860,33 @@ async function doRedirect() {
     }
 
     if (!startParam) {
-      // Пустой start_param = юзер тапнул «Приложение» в меню бота без
-      // диплинка. Открываем ЛК сервиса вместо вечной загрузки.
-      // Все специфичные префиксы (comments_/poll_/stream_/book_/paid_/go_)
-      // обрабатываются ниже и в кабинет не попадут.
+      // Пустой start_param = юзер тапнул «Приложение» в меню бота.
+      // Пробуем авто-логин через MAX WebApp initData (HMAC-подписан).
+      // Если подпись валидна — сохраняем JWT и открываем ЛК. Если нет —
+      // отдаём на /login где юзер получит стандартный вход через бота.
       document.querySelector('p').textContent = 'Открываем кабинет...';
-      window.location.replace('/');
+      var initData = '';
+      try { initData = (window.WebApp && window.WebApp.initData) || ''; } catch(e) {}
+      if (initData) {
+        try {
+          const r = await fetch('/api/auth/max-webapp', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({initData: initData}),
+          });
+          const d = await r.json();
+          if (d && d.success && d.token) {
+            try {
+              localStorage.setItem('token', d.token);
+              if (d.user) localStorage.setItem('user', JSON.stringify(d.user));
+            } catch(e) {}
+            window.location.replace('/');
+            return true;
+          }
+        } catch(e) {}
+      }
+      // Fallback: без валидной подписи ведём на /login
+      window.location.replace('/login');
       return true;
     }
 

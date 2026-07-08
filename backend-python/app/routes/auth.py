@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Dict, Any
 
 from ..middleware.auth import (
-    get_current_user, verify_telegram_webapp,
+    get_current_user, verify_telegram_webapp, verify_max_webapp,
     find_or_create_tg_user, find_or_create_max_user, create_jwt,
 )
 from ..database import fetch_one, execute
@@ -37,6 +37,27 @@ async def auth_telegram(request: Request):
     if not tg_user:
         raise HTTPException(status_code=401, detail="Invalid Telegram auth data")
     result = await find_or_create_tg_user(tg_user)
+    return {"success": True, "token": result["token"], "user": result["user"]}
+
+
+@router.post("/max-webapp")
+async def auth_max_webapp(request: Request):
+    """Безопасный auth для MAX Mini App через HMAC-подписанный initData.
+
+    Клиент (mini-app в MAX) шлёт window.WebApp.initData — строку с
+    полями user, auth_date, hash. Мы верифицируем HMAC подписью
+    MAX_BOT_TOKEN и, если подпись валидна, находим/создаём юзера по
+    max_user_id и выдаём JWT. Отличие от /auth/max (отключён): здесь
+    невозможно подделать max_user_id — без бот-токена корректный hash
+    не построить."""
+    body = await request.json()
+    init_data = body.get("initData", "") or body.get("init_data", "")
+    max_user = verify_max_webapp(init_data)
+    if not max_user or not max_user.get("id"):
+        raise HTTPException(status_code=401, detail="Invalid MAX WebApp auth data")
+    max_user_id = str(max_user["id"])
+    first_name = max_user.get("first_name") or max_user.get("name") or ""
+    result = await find_or_create_max_user(max_user_id, first_name)
     return {"success": True, "token": result["token"], "user": result["user"]}
 
 
