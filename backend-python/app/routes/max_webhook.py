@@ -1782,6 +1782,101 @@ async def _handle_conversation(max_api, chat_id: str, max_user_id: str, text: st
     return False
 
 
+_cached_bot_user_id: Optional[str] = None
+
+
+async def _get_bot_user_id(max_api) -> str:
+    """Возвращает user_id бота (для сравнения с sender у incoming events)."""
+    global _cached_bot_user_id
+    if _cached_bot_user_id:
+        return _cached_bot_user_id
+    if not max_api:
+        return ""
+    try:
+        me = await max_api.get_me()
+        if me.get("success"):
+            _cached_bot_user_id = str(me.get("data", {}).get("user_id") or "")
+    except Exception:
+        pass
+    return _cached_bot_user_id or ""
+
+
+async def _attach_comments_to_channel_post(max_api, channel: dict, message: dict, chat_id: str):
+    """Реагирует на новый пост в MAX-канале, опубликованный не через нашу
+    систему (юзер сам публикует в MAX). Если у канала включён
+    comment_settings.auto_attach — создаёт content_posts запись и редактирует
+    сообщение, добавляя кнопку «Комментарии» рядом с оригинальным контентом.
+
+    Идемпотентно: если для этого telegram_message_id уже есть пост в БД —
+    ничего не делаем (наш собственный echo или повторный webhook)."""
+    import json as _json
+    body_msg = message.get("body", {}) or {}
+    msg_id = str(body_msg.get("mid") or "")
+    if not msg_id:
+        return
+    # Проверяем что не мы сами публиковали — иначе дублируем UI кнопки
+    existing = await fetch_one(
+        "SELECT id FROM content_posts WHERE channel_id = $1 AND telegram_message_id = $2",
+        channel["id"], msg_id,
+    )
+    if existing:
+        return
+    # Проверяем настройку
+    cs = channel.get("comment_settings") or {}
+    if isinstance(cs, str):
+        try:
+            cs = _json.loads(cs)
+        except Exception:
+            cs = {}
+    if not isinstance(cs, dict) or not cs.get("auto_attach"):
+        return
+    text = (body_msg.get("text") or "").strip()
+    attachments_in = body_msg.get("attachments") or []
+    # Из attachments вытаскиваем file_token — чтобы edit_message его вернул,
+    # иначе MAX PUT затрёт медиа.
+    max_file_token = None
+    file_type = None
+    _type_reverse = {"image": "photo", "video": "video", "audio": "audio"}
+    for att in attachments_in:
+        if not isinstance(att, dict):
+            continue
+        att_type = att.get("type")
+        payload = att.get("payload") or {}
+        tok = payload.get("token") or payload.get("photo_token") or payload.get("file_id")
+        if att_type in ("image", "video", "audio", "file") and tok:
+            max_file_token = tok
+            file_type = _type_reverse.get(att_type, "document")
+            break
+
+    # Создаём content_posts запись — без неё deep-link комментариев не найдёт пост
+    inline_buttons_json = _json.dumps([{"type": "comments", "text": "Комментарии"}], ensure_ascii=False)
+    post_id = await execute_returning_id(
+        """INSERT INTO content_posts (channel_id, title, message_text, status,
+                                       telegram_message_id, inline_buttons,
+                                       file_type, max_file_token, ai_generated, published_at)
+           VALUES ($1, $2, $3, 'published', $4, $5::jsonb, $6, $7, 0, NOW())
+           RETURNING id""",
+        channel["id"], (text[:80] or "Пост в канале"), text, msg_id,
+        inline_buttons_json, file_type, max_file_token,
+    )
+    # Резолвим кнопку в MAX-формат (deep-link на бота)
+    from .pins import _resolve_buttons
+    from ..services.messenger import build_max_inline_buttons
+    resolved = await _resolve_buttons(inline_buttons_json, channel, post_id=post_id, post_type="content")
+    max_buttons = build_max_inline_buttons(resolved)
+    # Пересобираем attachments — файлы оригинала + клавиатура
+    edit_attachments = None
+    if max_file_token:
+        edit_attachments = [{"type": _type_reverse.get(file_type, "file") if file_type != "photo" else "image",
+                             "payload": {"token": max_file_token}}]
+    try:
+        r = await max_api.edit_message(str(msg_id), text or "", attachments=edit_attachments, buttons=max_buttons)
+        if not r.get("success"):
+            print(f"[MAX Bot] auto_attach edit failed msg={msg_id}: {r.get('error')}")
+    except Exception as e:
+        print(f"[MAX Bot] auto_attach edit exception msg={msg_id}: {e}")
+
+
 # ---- Process a single MAX update ----
 
 async def process_max_update(body: dict):
@@ -1880,7 +1975,30 @@ async def process_max_update(body: dict):
                     is_group = True
 
             if is_group:
-                # Bot should NEVER respond in group chats — only in DMs
+                # Автоприкрепление кнопки «Комментарии» — если этот чат
+                # является нашим MAX-каналом и юзер сам публикует пост
+                # (не наша система), редактируем сообщение с кнопкой.
+                # Пропускаем свои же посты (sender == bot).
+                bot_uid = await _get_bot_user_id(max_api)
+                if bot_uid and max_user_id == bot_uid:
+                    print(f"[MAX Bot] Ignoring self-echo in group chat {chat_id}")
+                    return
+                ch_row = await fetch_one(
+                    """SELECT id, tracking_code, platform, channel_id,
+                              max_chat_id, comment_settings
+                       FROM channels
+                       WHERE max_chat_id = $1 AND deleted_at IS NULL LIMIT 1""",
+                    chat_id,
+                )
+                if ch_row:
+                    try:
+                        await _attach_comments_to_channel_post(
+                            max_api, dict(ch_row), message, chat_id,
+                        )
+                    except Exception as e:
+                        print(f"[MAX Bot] auto_attach handler error: {e}")
+                    return
+                # Не наш канал — тихо игнорируем как раньше
                 print(f"[MAX Bot] Ignoring message in group chat {chat_id}")
                 return
 
