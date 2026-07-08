@@ -1944,8 +1944,35 @@ async def process_max_update(body: dict):
         if update_type == "message_created":
             message = body.get("message", {})
             text = (message.get("body", {}).get("text") or "").strip()
-            sender = message.get("sender")
-            if not sender or not sender.get("user_id"):
+            sender = message.get("sender") or {}
+            # Канальные посты могут приходить без sender (анонимно от имени
+            # канала). Не выходим сразу — сначала пробуем ветку auto_attach.
+            if not sender.get("user_id"):
+                anon_chat_id = _get_chat_id(body)
+                print(f"[MAX Bot] message_created: no sender, chat_id={anon_chat_id}, text={text[:50]}")
+                if anon_chat_id:
+                    ch_row = await fetch_one(
+                        """SELECT id, title, tracking_code, platform, channel_id,
+                                  max_chat_id, comment_settings
+                           FROM channels
+                           WHERE max_chat_id = $1 AND deleted_at IS NULL LIMIT 1""",
+                        anon_chat_id,
+                    )
+                    if ch_row:
+                        ch_dict = dict(ch_row)
+                        import json as _json_a
+                        cs = ch_dict.get("comment_settings") or {}
+                        if isinstance(cs, str):
+                            try: cs = _json_a.loads(cs)
+                            except Exception: cs = {}
+                        if isinstance(cs, dict) and cs.get("auto_attach"):
+                            print(f"[auto_attach] anon channel={ch_dict.get('id')} → attaching")
+                            try:
+                                await _attach_comments_to_channel_post(max_api, ch_dict, message, anon_chat_id)
+                            except Exception as e:
+                                import traceback as _tb
+                                print(f"[auto_attach] anon handler error: {e}")
+                                _tb.print_exc()
                 return
 
             max_user_id = str(sender["user_id"])
@@ -1978,28 +2005,38 @@ async def process_max_update(body: dict):
                 # Автоприкрепление кнопки «Комментарии» — если этот чат
                 # является нашим MAX-каналом и юзер сам публикует пост
                 # (не наша система), редактируем сообщение с кнопкой.
-                # Пропускаем свои же посты (sender == bot).
                 bot_uid = await _get_bot_user_id(max_api)
                 if bot_uid and max_user_id == bot_uid:
-                    print(f"[MAX Bot] Ignoring self-echo in group chat {chat_id}")
+                    print(f"[auto_attach] skip self-echo chat={chat_id} sender={max_user_id}")
                     return
                 ch_row = await fetch_one(
-                    """SELECT id, tracking_code, platform, channel_id,
+                    """SELECT id, title, tracking_code, platform, channel_id,
                               max_chat_id, comment_settings
                        FROM channels
                        WHERE max_chat_id = $1 AND deleted_at IS NULL LIMIT 1""",
                     chat_id,
                 )
-                if ch_row:
-                    try:
-                        await _attach_comments_to_channel_post(
-                            max_api, dict(ch_row), message, chat_id,
-                        )
-                    except Exception as e:
-                        print(f"[MAX Bot] auto_attach handler error: {e}")
+                if not ch_row:
+                    print(f"[auto_attach] chat={chat_id} — не найден в channels, skip")
                     return
-                # Не наш канал — тихо игнорируем как раньше
-                print(f"[MAX Bot] Ignoring message in group chat {chat_id}")
+                ch_dict = dict(ch_row)
+                import json as _json_dbg
+                cs = ch_dict.get("comment_settings") or {}
+                if isinstance(cs, str):
+                    try:
+                        cs = _json_dbg.loads(cs)
+                    except Exception:
+                        cs = {}
+                if not (isinstance(cs, dict) and cs.get("auto_attach")):
+                    print(f"[auto_attach] channel={ch_dict.get('id')} '{ch_dict.get('title')}' auto_attach=off, skip")
+                    return
+                print(f"[auto_attach] channel={ch_dict.get('id')} '{ch_dict.get('title')}' → attaching comments button")
+                try:
+                    await _attach_comments_to_channel_post(max_api, ch_dict, message, chat_id)
+                except Exception as e:
+                    import traceback as _tb
+                    print(f"[auto_attach] handler error: {e}")
+                    _tb.print_exc()
                 return
 
             # Save dialog chat_id to DB (only for personal chats)
