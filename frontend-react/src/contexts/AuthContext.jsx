@@ -42,6 +42,44 @@ export function AuthProvider({ children }) {
     return () => clearInterval(interval);
   }, [token, refreshUser]);
 
+  // Авто-логин в MAX WebApp контексте: если открыто через кнопку
+  // «Приложение» в MAX-боте, window.WebApp содержит initData/initDataUnsafe.
+  // Пробуем /api/auth/max-webapp — если юзер уже писал боту, вернёт JWT.
+  // Без токена + без WebApp контекста делаем один запрос впустую и уходим.
+  useEffect(() => {
+    if (token) return;
+    let cancelled = false;
+    // Ждём до 2 секунд пока подгрузится WebApp bridge
+    const tryAutoLogin = async () => {
+      let waited = 0;
+      while (waited < 2000 && !window.WebApp) {
+        await new Promise(r => setTimeout(r, 200));
+        waited += 200;
+        if (cancelled) return;
+      }
+      let initData = '';
+      let initDataUnsafe = null;
+      try { initData = (window.WebApp && window.WebApp.initData) || ''; } catch {}
+      try { initDataUnsafe = (window.WebApp && window.WebApp.initDataUnsafe) || null; } catch {}
+      // Если ни того, ни другого — WebApp не подгрузился, пробовать бессмысленно
+      if (!initData && !(initDataUnsafe && initDataUnsafe.user && initDataUnsafe.user.id)) return;
+      try {
+        const r = await fetch('/api/auth/max-webapp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData, initDataUnsafe }),
+        });
+        const d = await r.json();
+        if (!cancelled && d && d.success && d.token) {
+          login(d.token, d.user);
+        }
+      } catch {}
+    };
+    tryAutoLogin();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <AuthContext.Provider value={{ token, user, login, logout, refreshUser }}>
       {children}
