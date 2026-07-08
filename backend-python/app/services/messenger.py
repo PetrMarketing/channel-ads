@@ -465,17 +465,25 @@ async def send_to_user(
     file_path: str = None, file_type: str = None,
     telegram_file_id: str = None, inline_buttons=None,
     attach_type: str = None, max_file_token: str = None,
+    file_data=None,
 ):
-    """Send a DM to a user on the correct platform."""
+    """Send a DM to a user on the correct platform.
+
+    Возвращает dict с результатом send_message + опциональным ключом
+    `fresh_max_file_token` — свежий MAX file_token, только что полученный
+    от upload_file. Вызывающий (funnel_processor, broadcasts) обязан
+    сохранить его в БД чтобы следующая отправка не перезагружала файл
+    (rate-limit MAX API + скорость).
+    """
     text = sanitize_html_for_telegram(text)
     send_type = _resolve_send_type(file_type, attach_type)
 
-    # Restore file from DB if missing on disk (Render ephemeral FS)
+    # Восстанавливаем файл с диска если исчез. Раньше передавали
+    # file_data=None → безнадёжно. Теперь принимаем file_data и
+    # даём ensure_file шанс восстановить.
     if file_path and not os.path.exists(file_path):
         from .file_storage import ensure_file as _ensure
-        from ..database import fetch_one as _fetch_file
-        # Try to restore from funnel_steps or lead_magnets file_data
-        file_path = _ensure(file_path, None)
+        file_path = _ensure(file_path, file_data)
         if not file_path:
             file_path = None
 
@@ -486,6 +494,7 @@ async def send_to_user(
             raise RuntimeError("MAX bot not configured")
         max_text = html_to_max_markdown(text)
         attachments = None
+        fresh_max_token = None
         _max_type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
         max_attach_type = _max_type_map.get(send_type, "file")
         # Use cached max_file_token if available
@@ -497,18 +506,38 @@ async def send_to_user(
                 file_token = _extract_max_file_token(upload_result.get("data", {}))
                 if file_token:
                     attachments = [{"type": max_attach_type, "payload": {"token": file_token}}]
+                    fresh_max_token = file_token
                 else:
                     print(f"[Messenger] WARNING: MAX upload succeeded but token extraction failed. data={upload_result.get('data')}")
             else:
                 print(f"[Messenger] WARNING: MAX upload failed: {upload_result.get('error')}")
+        elif file_data:
+            # Файл в БД но не на диске и file_path не сработал —
+            # пишем во временный файл и качаем.
+            import tempfile as _tmp
+            ext = ".jpg" if send_type == "photo" else (".mp4" if send_type == "video" else ".bin")
+            with _tmp.NamedTemporaryFile(delete=False, suffix=ext) as tf:
+                raw = file_data if isinstance(file_data, (bytes, bytearray, memoryview)) else bytes(file_data)
+                tf.write(raw)
+                tmp_path = tf.name
+            upload_result = await max_api.upload_file(tmp_path, file_type or "file")
+            if upload_result.get("success"):
+                file_token = _extract_max_file_token(upload_result.get("data", {}))
+                if file_token:
+                    attachments = [{"type": max_attach_type, "payload": {"token": file_token}}]
+                    fresh_max_token = file_token
         max_buttons = build_max_inline_buttons(inline_buttons)
         # Try using stored dialog chat_id first (more reliable than user_id)
         from ..database import fetch_one as _fetch
         user_row = await _fetch("SELECT max_dialog_chat_id FROM users WHERE max_user_id = $1", str(user_id))
         dialog_chat_id = user_row.get("max_dialog_chat_id") if user_row else None
         if dialog_chat_id:
-            return await max_api.send_message(dialog_chat_id, max_text, attachments, max_buttons)
-        return await max_api.send_direct_message(str(user_id), max_text, attachments, max_buttons)
+            r = await max_api.send_message(dialog_chat_id, max_text, attachments, max_buttons)
+        else:
+            r = await max_api.send_direct_message(str(user_id), max_text, attachments, max_buttons)
+        if isinstance(r, dict) and fresh_max_token:
+            r["fresh_max_file_token"] = fresh_max_token
+        return r
     else:
         reply_markup = build_reply_markup(inline_buttons)
         kwargs = {}

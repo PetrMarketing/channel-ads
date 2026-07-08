@@ -178,7 +178,14 @@ async def process_pending_funnel_messages():
                     await execute("UPDATE funnel_progress SET status = 'failed' WHERE id = $1", msg["id"])
                     return
                 msg_file_path = ensure_file(msg.get("file_path"), msg.get("file_data"))
-                await send_to_user(
+                # Диагностический лог: если file_path/file_data был но
+                # msg_file_path получился None — картинка гарантированно
+                # не приложится, видно причину в prod-логах.
+                if (msg.get("file_path") or msg.get("file_data")) and not msg_file_path:
+                    print(f"[FunnelProcessor] step={msg.get('funnel_step_id')} progress={msg['id']} "
+                          f"file_path='{msg.get('file_path')}' data_len={len(msg.get('file_data') or b'')} "
+                          f"→ ensure_file returned None, attachment will be missing")
+                r = await send_to_user(
                     user_id=user_id, platform=platform,
                     text=msg.get("message_text", ""),
                     file_path=msg_file_path, file_type=msg.get("file_type"),
@@ -186,7 +193,16 @@ async def process_pending_funnel_messages():
                     inline_buttons=msg.get("inline_buttons"),
                     attach_type=msg.get("attach_type"),
                     max_file_token=msg.get("max_file_token"),
+                    file_data=msg.get("file_data"),
                 )
+                # Кэшируем свежий MAX file_token — следующая отправка воронки
+                # обойдётся без upload_file (быстрее + не долбим MAX API).
+                fresh_max = r.get("fresh_max_file_token") if isinstance(r, dict) else None
+                if fresh_max and not msg.get("max_file_token"):
+                    await execute(
+                        "UPDATE funnel_steps SET max_file_token = $1 WHERE id = $2",
+                        fresh_max, msg["funnel_step_id"],
+                    )
                 await execute("UPDATE funnel_progress SET status = 'sent', sent_at = NOW() WHERE id = $1", msg["id"])
             except Exception as e:
                 print(f"[FunnelProcessor] Error sending funnel msg {msg['id']}: {e}")
