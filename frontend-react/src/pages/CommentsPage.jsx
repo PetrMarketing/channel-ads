@@ -647,7 +647,7 @@ export default function CommentsPage() {
               padding: '14px 16px', borderRadius: 12,
               border: `1px solid ${settings.notify_comments ? `${ACCENT}55` : BORDER}`,
               background: settings.notify_comments ? `${ACCENT}06` : '#fff',
-              marginBottom: 18,
+              marginBottom: 12,
               cursor: 'pointer',
             }}
             onClick={async () => {
@@ -672,6 +672,45 @@ export default function CommentsPage() {
                 </div>
                 <div style={{ fontSize: '0.76rem', color: MUTED, marginTop: 3, lineHeight: 1.45 }}>
                   Новые комментарии будут приходить в MAX бота
+                </div>
+              </div>
+            </div>
+
+            <div className={`cm-toggle-card${settings.auto_attach ? ' checked' : ''}`} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 12,
+              padding: '14px 16px', borderRadius: 12,
+              border: `1px solid ${settings.auto_attach ? `${ACCENT}55` : BORDER}`,
+              background: settings.auto_attach ? `${ACCENT}06` : '#fff',
+              marginBottom: 18,
+              cursor: 'pointer',
+            }}
+            onClick={async () => {
+              const val = !settings.auto_attach;
+              setSettings(p => ({ ...p, auto_attach: val }));
+              try {
+                await api.put(`/comments/${tc}/settings`, { ...settings, auto_attach: val });
+                showToast(val ? 'Кнопка «Комментарии» будет добавляться ко всем новым постам' : 'Авто-прикрепление отключено');
+              } catch { /* ignore */ }
+            }}>
+              <span style={{
+                flexShrink: 0,
+                width: 22, height: 22, borderRadius: 7,
+                border: `1.5px solid ${settings.auto_attach ? ACCENT : BORDER}`,
+                background: settings.auto_attach ? `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)` : '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginTop: 1,
+                boxShadow: settings.auto_attach ? `0 2px 6px ${ACCENT}40` : 'none',
+              }}>
+                {settings.auto_attach && <CheckIcon size={13} color="#fff" strokeWidth={3.5} />}
+              </span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.92rem', fontWeight: 600, color: DARK, letterSpacing: '-0.005em' }}>
+                  Включить комментарии ко всем новым постам
+                </div>
+                <div style={{ fontSize: '0.76rem', color: MUTED, marginTop: 3, lineHeight: 1.45 }}>
+                  Кнопка «Комментарии» будет автоматически прикрепляться к каждому новому посту.
+                  Существующие посты не изменятся. Даже с выключенным ползунком можно
+                  вручную добавить кнопку через редактор.
                 </div>
               </div>
             </div>

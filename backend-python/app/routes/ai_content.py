@@ -1184,6 +1184,15 @@ async def _convert_to_content_post(channel_id: int, p: dict, status: str) -> int
     if inline_buttons is not None and not isinstance(inline_buttons, str):
         inline_buttons = json_mod.dumps(inline_buttons)
 
+    # Авто-прикрепление кнопки «Комментарии» если включён глобальный тумблер
+    # у канала. Тянем свежие comment_settings — они могут поменяться после
+    # генерации сессии, но до publish-all.
+    from .content import _apply_auto_comments
+    ch_row = await fetch_one(
+        "SELECT comment_settings FROM channels WHERE id = $1", channel_id,
+    )
+    inline_buttons = _apply_auto_comments(inline_buttons, dict(ch_row) if ch_row else None)
+
     sched = p.get("scheduled_at")
     if isinstance(sched, datetime) and sched.tzinfo is not None:
         sched = sched.astimezone(timezone.utc).replace(tzinfo=None)
@@ -1287,15 +1296,47 @@ async def publish_all(tc: str, session_id: int, user: Dict[str, Any] = Depends(g
         "SELECT * FROM ai_content_session_posts WHERE session_id=$1 AND published_post_id IS NULL ORDER BY sort_order, id",
         session_id,
     )
+
+    # ЗАЩИТА ОТ «ВСЁ ВЫШЛО РАЗОМ»: если min(scheduled_at) в прошлом (юзер
+    # создавал сессию N дней назад и только сейчас нажал «Запланировать
+    # все») — шедулер моментально протолкнёт ВСЕ посты подряд. Сдвигаем
+    # все даты вперёд, сохраняя интервалы между постами. Первый пост
+    # уходит на NOW+10 минут (даём юзеру время передумать).
+    from datetime import timedelta as _td
+    now_utc = datetime.now(timezone.utc)
+    scheduled_list = [dict(r).get("scheduled_at") for r in rows if dict(r).get("scheduled_at")]
+    shift = None
+    if scheduled_list:
+        min_sched = min(scheduled_list)
+        # Приводим оба к aware — asyncpg может отдать naive для UTC
+        if min_sched.tzinfo is None:
+            min_sched = min_sched.replace(tzinfo=timezone.utc)
+        if min_sched < now_utc:
+            shift = (now_utc + _td(minutes=10)) - min_sched
+            print(f"[ai-content] publish_all session={session_id}: past dates → shift +{shift}")
+
     count = 0
     for p in rows:
         d = dict(p)
+        if shift and d.get("scheduled_at"):
+            sched = d["scheduled_at"]
+            if sched.tzinfo is None:
+                sched = sched.replace(tzinfo=timezone.utc)
+            d["scheduled_at"] = sched + shift
         status = "scheduled" if d.get("scheduled_at") else "draft"
         new_id = await _convert_to_content_post(channel["id"], d, status)
-        await execute(
-            "UPDATE ai_content_session_posts SET published_post_id=$1, updated_at=NOW() WHERE id=$2",
-            new_id, p["id"],
-        )
+        # Синхронизируем сдвинутую дату обратно в сессию — чтобы UI показывал
+        # реальную будущую дату, а не старую прошлую.
+        if shift and d.get("scheduled_at"):
+            await execute(
+                "UPDATE ai_content_session_posts SET scheduled_at=$1, published_post_id=$2, updated_at=NOW() WHERE id=$3",
+                d["scheduled_at"], new_id, p["id"],
+            )
+        else:
+            await execute(
+                "UPDATE ai_content_session_posts SET published_post_id=$1, updated_at=NOW() WHERE id=$2",
+                new_id, p["id"],
+            )
         count += 1
 
     await execute(

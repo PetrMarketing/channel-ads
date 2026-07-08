@@ -27,6 +27,34 @@ def _extract_poll_id(inline_buttons):
     return None
 
 
+def _apply_auto_comments(inline_buttons_json, channel):
+    """Если у канала включено comment_settings.auto_attach — добавляет
+    кнопку {type:'comments'} в inline_buttons, если её ещё нет.
+    Принимает строку JSON или None, возвращает то же (строку JSON).
+    Юзер может вручную снять эту кнопку — при следующем UPDATE поста без
+    неё мы уважаем выбор, потому что реагируем только на СОЗДАНИЕ."""
+    if not channel:
+        return inline_buttons_json
+    cs = channel.get("comment_settings") or {}
+    if isinstance(cs, str):
+        try:
+            cs = json.loads(cs)
+        except Exception:
+            cs = {}
+    if not isinstance(cs, dict) or not cs.get("auto_attach"):
+        return inline_buttons_json
+    try:
+        buttons = json.loads(inline_buttons_json) if inline_buttons_json else []
+    except Exception:
+        buttons = []
+    if not isinstance(buttons, list):
+        buttons = []
+    if any(isinstance(b, dict) and b.get("type") == "comments" for b in buttons):
+        return inline_buttons_json  # уже есть — не дублируем
+    buttons.append({"type": "comments", "text": "Комментарии"})
+    return json.dumps(buttons, ensure_ascii=False)
+
+
 def _parse_scheduled_at(val):
     """Convert scheduled_at string to datetime for asyncpg TIMESTAMP."""
     if not val or val == "":
@@ -145,6 +173,9 @@ async def create_post(tc: str, request: Request, user: Dict[str, Any] = Depends(
         erid = form.get("erid") or None
     else:
         erid = body.get("erid") or None
+
+    # Авто-прикрепление кнопки «Комментарии» если включён глобальный тумблер
+    inline_buttons = _apply_auto_comments(inline_buttons, channel)
 
     post_id = await execute_returning_id(
         """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, inline_buttons, status, file_path, file_type, file_data, attach_type, erid, attachment_paths, poll_id)
