@@ -22,7 +22,20 @@ export default function LoginPage() {
     const botToken = searchParams.get('token');
 
     if (!botToken) {
-      if (token) navigate('/', { replace: true });
+      if (token) { navigate('/', { replace: true }); return; }
+      // Юзер попал на /login без JWT-token. Если рядом есть контекст
+      // MAX-бота (открыто внутри MAX / referrer от MAX), сразу редирект
+      // в чат с ботом /start open_cabinet — бот пришлёт кнопку с JWT.
+      // Иначе показываем стандартную страницу с кнопкой «Войти через MAX».
+      try {
+        const ua = (navigator.userAgent || '').toLowerCase();
+        const inMax = ua.includes('max') || document.referrer.includes('max.ru');
+        if (inMax) {
+          const bot = maxBotUsername;
+          window.location.replace(`https://max.ru/${bot}?start=open_cabinet`);
+          return;
+        }
+      } catch {}
       return;
     }
 

@@ -889,24 +889,9 @@ async function doRedirect() {
           return true;
         }
       } catch(e) { authStatus = 'fetch-error: ' + e.message; }
-      // Показываем диагностику вместо редиректа — юзер скинет скриншот
-      const dbg = {
-        hasWebApp: hasWebApp,
-        initData_length: (initData || '').length,
-        initData_first80: (initData || '').slice(0, 80),
-        initDataUnsafe: initDataUnsafe,
-        auth_status: authStatus,
-        auth_response: authResp,
-      };
-      document.querySelector('.c').innerHTML =
-        '<div style="text-align:left;padding:16px;background:#fff;border-radius:12px;max-width:100%;overflow:auto">' +
-        '<div style="font-size:15px;font-weight:600;margin-bottom:8px;color:#111">Диагностика авто-логина</div>' +
-        '<div style="font-size:12px;color:#666;margin-bottom:10px">Скинь скриншот этого экрана разработчику</div>' +
-        '<pre style="font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-all;background:#f7f7f7;padding:10px;border-radius:8px;margin:0 0 12px 0;color:#222">' +
-          JSON.stringify(dbg, null, 2).replace(/</g,'&lt;') +
-        '</pre>' +
-        '<a href="/login" style="display:inline-block;padding:12px 20px;background:#7B68EE;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600">Перейти на /login</a>' +
-        '</div>';
+      // Авто-логин не прошёл — редирект в чат с ботом с deep-link
+      // /start open_cabinet. Бот вернёт кнопку с одноразовым JWT.
+      window.location.replace('__MAX_BOT_DEEPLINK__');
       return true;
     }
 
@@ -1020,7 +1005,18 @@ const fallbackTimer = setTimeout(() => {
 })();
 </script>
 </body></html>"""
-    html = html.replace('__META_REFRESH__', meta_refresh).replace('__SERVER_CODE__', code)
+    # Deep-link на бот с payload open_cabinet — используется когда WebApp
+    # контекста нет и мы не можем идентифицировать юзера. Бот вернёт кнопку
+    # с одноразовым JWT.
+    try:
+        from .routes.pins import _get_max_bot_link_id
+        bot_link_id = await _get_max_bot_link_id()
+    except Exception:
+        bot_link_id = ""
+    deeplink = f"https://max.ru/id{bot_link_id}_bot?start=open_cabinet" if bot_link_id else "/login"
+    html = (html.replace('__META_REFRESH__', meta_refresh)
+                .replace('__SERVER_CODE__', code)
+                .replace('__MAX_BOT_DEEPLINK__', deeplink))
     return HTMLResponse(html)
 
 

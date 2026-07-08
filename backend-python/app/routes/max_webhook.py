@@ -788,6 +788,30 @@ async def _cmd_start(max_api, chat_id: str, max_user_id: str, first_name: str, p
 
     # Реферальная регистрация через deep link: start=auth_ref_CODE
     referrer_line = ""
+    if payload == "open_cabinet":
+        # Юзер тапнул «Приложение» в боте на URL без WebApp контекста.
+        # Мы редиректнули его в чат с ботом через deep-link. Здесь
+        # генерируем одноразовый JWT и шлём кнопку «Войти в кабинет».
+        from ..middleware.auth import create_jwt
+        u = await fetch_one(
+            "SELECT id, first_name FROM users WHERE max_user_id = $1", max_user_id,
+        )
+        if not u:
+            # Юзер не зареган — создаём и продолжаем
+            from ..middleware.auth import find_or_create_max_user
+            created = await find_or_create_max_user(max_user_id, first_name)
+            uid = created["user"]["id"]
+        else:
+            uid = u["id"]
+        jwt_token = create_jwt(uid)
+        login_url = f"{settings.APP_URL.rstrip('/')}/login?token={jwt_token}"
+        await _send_to_chat(
+            max_api, chat_id,
+            f"👋 Привет, {first_name or 'друг'}!\n\nНажмите кнопку ниже — откроется ваш личный кабинет.",
+            buttons=[{"type": "link", "text": "Открыть кабинет →", "url": login_url}],
+        )
+        return
+
     if payload.startswith("auth_ref_"):
         ref_code = payload[9:]
         if ref_code:
