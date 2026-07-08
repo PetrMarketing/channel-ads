@@ -475,6 +475,15 @@ async def execute_step(user_id: int, step: dict) -> dict:
                 buttons_list.append({"type": "lead_magnet", "text": text, "lead_magnet_id": int(b["lead_magnet_id"])})
         inline_buttons_json = _json.dumps(buttons_list, ensure_ascii=False) if buttons_list else None
 
+        # Авто-прикрепление кнопки «Комментарии» если у канала включён тумблер
+        from ..database import fetch_one as _fo
+        from ..routes.content import _apply_auto_comments
+        ch_settings = await _fo("SELECT comment_settings FROM channels WHERE id = $1", ch["id"])
+        inline_buttons_json = _apply_auto_comments(
+            inline_buttons_json,
+            dict(ch_settings) if ch_settings else None,
+        )
+
         from ..database import execute_returning_id
         post_id = await execute_returning_id(
             """INSERT INTO content_posts (channel_id, title, message_text, scheduled_at, status,

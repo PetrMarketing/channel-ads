@@ -52,7 +52,9 @@ def _apply_auto_comments(inline_buttons_json, channel):
     if any(isinstance(b, dict) and b.get("type") == "comments" for b in buttons):
         return inline_buttons_json  # уже есть — не дублируем
     buttons.append({"type": "comments", "text": "Комментарии"})
-    return json.dumps(buttons, ensure_ascii=False)
+    result = json.dumps(buttons, ensure_ascii=False)
+    print(f"[auto_comments] channel={channel.get('id')} → attached comments button (was empty={not inline_buttons_json})")
+    return result
 
 
 def _parse_scheduled_at(val):
