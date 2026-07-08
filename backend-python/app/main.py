@@ -860,8 +860,13 @@ async function doRedirect() {
     }
 
     if (!startParam) {
-      document.querySelector('p').textContent = 'Загрузка...';
-      return false;
+      // Пустой start_param = юзер тапнул «Приложение» в меню бота без
+      // диплинка. Открываем ЛК сервиса вместо вечной загрузки.
+      // Все специфичные префиксы (comments_/poll_/stream_/book_/paid_/go_)
+      // обрабатываются ниже и в кабинет не попадут.
+      document.querySelector('p').textContent = 'Открываем кабинет...';
+      window.location.replace('/');
+      return true;
     }
 
     // Handle comments_ prefix
@@ -950,7 +955,9 @@ const fallbackTimer = setTimeout(() => {
     // Use /go/ redirect (works without JS/bridge)
     window.location.href = '/go/' + c;
   } else {
-    document.querySelector('p').textContent = 'Не удалось загрузить. Попробуйте ещё раз.';
+    // Пустой start_param даже через 5 сек → это меню-кнопка «Приложение»,
+    // ведём в ЛК а не показываем ошибку.
+    window.location.replace('/');
   }
 }, 5000);
 
