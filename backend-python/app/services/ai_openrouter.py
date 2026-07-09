@@ -9,16 +9,18 @@ IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
 TEXT_MODEL = "openai/gpt-5.4-nano"
 
 
-FALLBACK_TEXT_MODEL = "openai/gpt-4o-mini"
+FALLBACK_TEXT_MODELS = ["openai/gpt-4o-mini", "openai/gpt-4o"]
 
 
 async def openrouter_chat(prompt: str, model: str = None) -> str:
     """Генерация текста через OpenRouter chat completions.
 
-    При пустом ответе или refusal у основной модели автоматически
-    ретраим на FALLBACK_TEXT_MODEL. Полезно когда Claude отказывается
-    от нейтрального с виду промпта (safety guidelines у Anthropic
-    иногда срабатывают на бизнес-темы вроде «алкоголь», «ставки» и т.п.).
+    Пробуем по очереди: основная модель → gpt-4o-mini → gpt-4o.
+    Полезно когда Claude/основная модель refuse'ит нейтральные промпты
+    (safety guidelines Anthropic срабатывают на бизнес-темы вроде
+    «алкоголь», «ставки»). Если все три вернули пусто — HTTPException
+    с человеческим сообщением, без потери токенов у юзера
+    (endpoint делает refund).
     """
     model = model or TEXT_MODEL
     api_key = settings.OPENROUTER_API_KEY
@@ -37,16 +39,39 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
             async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
                 return await resp.json()
 
-    result = await _call(model)
-    text = _extract_text(result, model)
-    if text:
-        return text
-    # Первая модель отказалась / пусто — пробуем fallback
-    if model != FALLBACK_TEXT_MODEL:
-        print(f"[OpenRouter] {model} empty → retrying with {FALLBACK_TEXT_MODEL}")
-        result2 = await _call(FALLBACK_TEXT_MODEL)
-        return _extract_text(result2, FALLBACK_TEXT_MODEL)
-    return ""
+    # Строим последовательность моделей: основная + fallback'и (без дублей)
+    tried = []
+    chain = [model] + [m for m in FALLBACK_TEXT_MODELS if m != model]
+    last_diag = ""
+    for m in chain:
+        result = await _call(m)
+        text = _extract_text(result, m)
+        if text:
+            return text
+        # Диагностика — что именно ответила модель
+        finish = ""
+        try:
+            ch = (result.get("choices") or [{}])[0]
+            finish = ch.get("finish_reason") or ch.get("native_finish_reason") or ""
+        except Exception:
+            pass
+        err = result.get("error") if isinstance(result, dict) else None
+        err_msg = ""
+        if isinstance(err, dict):
+            err_msg = str(err.get("message") or "")[:120]
+        tried.append(f"{m}: finish={finish or '—'} err={err_msg or '—'}")
+        last_diag = tried[-1]
+        print(f"[OpenRouter] chain step failed → {last_diag}")
+    # Все модели вернули пусто — кидаем осмысленное сообщение чтобы юзер
+    # не смотрел на «пустой ответ» без контекста.
+    raise HTTPException(
+        status_code=502,
+        detail=(
+            "ИИ не смог сгенерировать текст. Попробуйте изменить описание "
+            "канала (сделать проще и нейтральнее). Если не поможет — "
+            f"напишите в поддержку. [{'; '.join(tried)}]"
+        ),
+    )
 
 
 def _extract_text(result: dict, model: str = "") -> str:
@@ -110,15 +135,17 @@ async def openrouter_chat_messages(messages: list, model: str = None) -> str:
             async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
                 return await resp.json()
 
-    result = await _call(model)
-    text = _extract_text(result, model)
-    if text:
-        return text
-    if model != FALLBACK_TEXT_MODEL:
-        print(f"[OpenRouter] {model} empty → retrying with {FALLBACK_TEXT_MODEL}")
-        result2 = await _call(FALLBACK_TEXT_MODEL)
-        return _extract_text(result2, FALLBACK_TEXT_MODEL)
-    return ""
+    chain = [model] + [m for m in FALLBACK_TEXT_MODELS if m != model]
+    for m in chain:
+        result = await _call(m)
+        text = _extract_text(result, m)
+        if text:
+            return text
+        print(f"[OpenRouter/messages] {m} empty → trying next")
+    raise HTTPException(
+        status_code=502,
+        detail="ИИ не смог сформулировать ответ. Попробуйте ещё раз или упростите вопрос.",
+    )
 
 
 def _shrink_b64_photo(b64: str, max_side: int = 1024, quality: int = 78) -> str:
