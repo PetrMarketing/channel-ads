@@ -174,7 +174,47 @@ async def openrouter_image_gen(prompt: str, photo_base64=None) -> str:
             raise HTTPException(status_code=502, detail="На сервере временно нет кредитов для ИИ. Мы уже занимаемся, попробуйте через 10-15 минут.")
         if code == 429 or "rate" in msg.lower():
             raise HTTPException(status_code=503, detail="Слишком много запросов к ИИ — попробуйте через минуту.")
-        raise HTTPException(status_code=502, detail=f"Ошибка ИИ: {msg[:200]}")
+        ml = msg.lower()
+        is_safety = ("security policy" in ml or "safety" in ml or "safety_filter" in ml
+                     or "blocked" in ml or "prohibited" in ml or "harm" in ml
+                     or "access denied" in ml)
+        if is_safety:
+            # Gemini safety-filter обычно триггерится лицами / чувствительным
+            # контентом в фото-референсе. Если фото есть — делаем ОДИН retry
+            # без фото, часто помогает. Иначе — понятное сообщение юзеру.
+            if photos:
+                print("[AI Image] safety filter blocked — retrying WITHOUT photo reference")
+                retry_content = [{"type": "text", "text": prompt}]
+                retry_payload = dict(payload)
+                retry_payload["messages"] = [{"role": "user", "content": retry_content}]
+                try:
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.post(OPENROUTER_URL, json=retry_payload, headers=headers) as resp:
+                            result = await resp.json()
+                except aiohttp.ClientError as e:
+                    print(f"[AI Image] retry network error: {e}")
+                    raise HTTPException(status_code=503, detail="Сетевая ошибка при обращении к ИИ — попробуйте ещё раз")
+                if not result.get("error"):
+                    # Продолжаем ниже — извлекаем картинку из result
+                    pass
+                else:
+                    err2 = result["error"]
+                    msg2 = err2.get("message", "") if isinstance(err2, dict) else str(err2)
+                    print(f"[AI Image] retry also failed: {msg2[:200]}")
+                    raise HTTPException(
+                        status_code=422,
+                        detail=("ИИ отклонил фото (safety-фильтр). Попробуйте другое "
+                                "фото — без лиц людей и без надписей — или измените "
+                                "тематику канала."),
+                    )
+            else:
+                raise HTTPException(
+                    status_code=422,
+                    detail=("ИИ отклонил запрос (safety-фильтр). Смените описание "
+                            "канала на более нейтральное или попробуйте позже."),
+                )
+        else:
+            raise HTTPException(status_code=502, detail=f"Ошибка ИИ: {msg[:200]}")
 
     message = result.get("choices", [{}])[0].get("message", {})
 
