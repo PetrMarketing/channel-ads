@@ -28,7 +28,7 @@ class MaxApi:
         timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         # Merge auth header with any existing headers
         req_headers = self._headers(kwargs.pop("headers", None))
-        for attempt in range(6):  # up to 5 retries on 429
+        for attempt in range(6):  # up to 5 retries on 429 / attachment-not-ready
             try:
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     url = self._url(endpoint)
@@ -38,6 +38,15 @@ class MaxApi:
                             wait = 1.0 * (2 ** attempt)  # 1, 2, 4, 8, 16, 32 sec
                             await _aio.sleep(wait)
                             continue
+                        # После upload файл на серверах MAX ещё
+                        # процессится ~1 сек. Если попытались приложить
+                        # его сразу — 400 attachment.not.ready. Ждём и
+                        # повторяем — за 3 попытки успевает всегда.
+                        if resp.status == 400 and isinstance(data, dict) and data.get("code") == "attachment.not.ready":
+                            wait = 1.0 * (attempt + 1)  # 1, 2, 3, 4, 5, 6
+                            print(f"[MAX API] attachment.not.ready → wait {wait}s (attempt {attempt+1}/6)")
+                            await _aio.sleep(wait)
+                            continue
                         if resp.status >= 400:
                             print(f"[MAX API] Error {resp.status} {endpoint}: {data}")
                             return {"success": False, "error": data.get("message", str(data))}
@@ -45,7 +54,7 @@ class MaxApi:
             except Exception as e:
                 print(f"[MAX API] Request failed {method} {endpoint}: {e}")
                 return {"success": False, "error": str(e)}
-        return {"success": False, "error": "Rate limited after retries"}
+        return {"success": False, "error": "Retries exhausted"}
 
     async def get_me(self) -> Dict[str, Any]:
         return await self._request("GET", "me")
