@@ -8,6 +8,7 @@ import Modal from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
 import ButtonBuilder from '../components/ButtonBuilder';
 import AttachmentPicker from '../components/AttachmentPicker';
+import UploadProgress from '../components/UploadProgress';
 import { usePageOnboarding } from '../components/OnboardingTour';
 
 const WEEKDAYS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
@@ -414,6 +415,7 @@ export default function FunnelsPage() {
   const [delayDatetime, setDelayDatetime] = useState(DEFAULT_DELAY.delayDatetime);
   const [stepFile, setStepFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [errors, setErrors] = useState({});
   const [showPreview, setShowPreview] = useState(false);
   const [openDropdownId, setOpenDropdownId] = useState(null);
@@ -539,10 +541,12 @@ export default function FunnelsPage() {
         if (form.attach_type) fd.append('attach_type', form.attach_type);
         fd.append('file', stepFile);
 
+        const progressCb = (p) => setUploadProgress(p);
+        setUploadProgress(0);
         if (editingStep) {
-          data = await api.upload(`/funnels/${tc}/${selectedLm.id}/steps/${editingStep.id}`, fd, 'PUT');
+          data = await api.upload(`/funnels/${tc}/${selectedLm.id}/steps/${editingStep.id}`, fd, 'PUT', progressCb);
         } else {
-          data = await api.upload(`/funnels/${tc}/${selectedLm.id}/steps`, fd);
+          data = await api.upload(`/funnels/${tc}/${selectedLm.id}/steps`, fd, 'POST', progressCb);
         }
       } else {
         const payload = {
@@ -571,6 +575,7 @@ export default function FunnelsPage() {
       showToast('Ошибка сохранения', 'error');
     } finally {
       setSaving(false);
+      setUploadProgress(0);
     }
   };
 
@@ -1114,6 +1119,10 @@ export default function FunnelsPage() {
               />
             </div>
 
+            {saving && uploadProgress > 0 && (
+              <UploadProgress progress={uploadProgress} />
+            )}
+
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
               <button className="fp-ghost" style={ghostBtn} onClick={() => setShowModal(false)}>Отмена</button>
               <button
@@ -1122,7 +1131,7 @@ export default function FunnelsPage() {
                 onClick={handleSave}
                 disabled={saving}
               >
-                {saving ? 'Сохранение...' : 'Сохранить'}
+                {saving ? (uploadProgress > 0 ? `Загрузка ${uploadProgress}%` : 'Сохранение...') : 'Сохранить'}
               </button>
             </div>
           </div>

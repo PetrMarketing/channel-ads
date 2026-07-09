@@ -9,6 +9,7 @@ import RichTextEditor from '../components/RichTextEditor';
 import ButtonBuilder from '../components/ButtonBuilder';
 import AttachmentPicker from '../components/AttachmentPicker';
 import MessagePreview from '../components/MessagePreview';
+import UploadProgress from '../components/UploadProgress';
 import { usePageOnboarding } from '../components/OnboardingTour';
 
 const ACCENT = '#4361ee';
@@ -384,25 +385,7 @@ function ToggleCard({ checked, onChange, title, description }) {
   );
 }
 
-function UploadProgress({ progress }) {
-  return (
-    <div style={{ width: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: MUTED, marginBottom: 6 }}>
-        <span>Загрузка файла…</span>
-        <span style={{ color: ACCENT, fontWeight: 700, letterSpacing: '-0.01em' }}>{progress}%</span>
-      </div>
-      <div style={{ width: '100%', height: 8, background: SOFT_BG, borderRadius: 999, overflow: 'hidden', border: `1px solid ${BORDER}` }}>
-        <div style={{
-          width: `${progress}%`, height: '100%',
-          background: `linear-gradient(90deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
-          borderRadius: 999,
-          transition: 'width 0.2s',
-          boxShadow: `0 0 12px ${ACCENT}55`,
-        }} />
-      </div>
-    </div>
-  );
-}
+// UploadProgress вынесен в shared components/UploadProgress.jsx
 
 export default function PinsPage() {
   const { currentChannel } = useChannels();

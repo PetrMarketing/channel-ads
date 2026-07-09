@@ -11,6 +11,7 @@ import AttachmentPicker from '../components/AttachmentPicker';
 import AiPostGenModal from '../components/AiPostGenModal';
 import MessagePreview from '../components/MessagePreview';
 import EridModal from '../components/EridModal';
+import UploadProgress from '../components/UploadProgress';
 import { usePageOnboarding } from '../components/OnboardingTour';
 import AiContentTab from './content/AiContentTab';
 import FilesLibraryTab from './content/FilesLibraryTab';
@@ -375,6 +376,7 @@ export default function ContentPage() {
   const [extraFiles, setExtraFiles] = useState([]);
   const [removeExistingFile, setRemoveExistingFile] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [leadMagnets, setLeadMagnets] = useState([]);
   const [polls, setPolls] = useState([]);
   const [streams, setStreams] = useState([]);
@@ -567,10 +569,12 @@ export default function ContentPage() {
         const allFiles = [postFile, ...extraFiles].filter(Boolean).slice(0, 10);
         for (const f of allFiles) fd.append('files', f);
 
+        const progressCb = (p) => setUploadProgress(p);
+        setUploadProgress(0);
         if (editingPost) {
-          data = await api.upload(`/content/${tc}/${editingPost.id}`, fd, 'PUT');
+          data = await api.upload(`/content/${tc}/${editingPost.id}`, fd, 'PUT', progressCb);
         } else {
-          data = await api.upload(`/content/${tc}`, fd);
+          data = await api.upload(`/content/${tc}`, fd, 'POST', progressCb);
         }
       } else {
         const payload = {
@@ -602,6 +606,7 @@ export default function ContentPage() {
       showToast('Ошибка сохранения', 'error');
     } finally {
       setSaving(false);
+      setUploadProgress(0);
     }
   };
 
@@ -1606,6 +1611,10 @@ export default function ContentPage() {
               entityId={editingPost?.id}
             />
 
+            {saving && uploadProgress > 0 && (
+              <UploadProgress progress={uploadProgress} />
+            )}
+
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
               <button className="cp-ghost" style={ghostBtn} onClick={() => setShowModal(false)}>Отмена</button>
               <button
@@ -1615,7 +1624,7 @@ export default function ContentPage() {
                 disabled={saving || isScheduledInPast()}
                 title={isScheduledInPast() ? 'Нельзя запланировать в прошедшем времени' : ''}
               >
-                {saving ? 'Сохранение...' : 'Запланировать'}
+                {saving ? (uploadProgress > 0 ? `Загрузка ${uploadProgress}%` : 'Сохранение...') : 'Запланировать'}
               </button>
             </div>
           </div>
