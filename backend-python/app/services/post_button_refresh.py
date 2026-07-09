@@ -17,7 +17,7 @@ async def refresh_post_buttons(post_type: str, post_id: int) -> None:
             post = await fetch_one(
                 """SELECT cp.id, cp.message_text, cp.inline_buttons,
                           cp.telegram_message_id, cp.channel_id,
-                          cp.max_file_token, cp.file_type,
+                          cp.max_file_token, cp.file_type, cp.attachment_tokens,
                           c.platform, c.channel_id as ch_channel_id,
                           c.max_chat_id, c.tracking_code
                    FROM content_posts cp
@@ -61,6 +61,7 @@ async def refresh_post_buttons(post_type: str, post_id: int) -> None:
                 post["telegram_message_id"], post["message_text"], resolved,
                 max_file_token=post.get("max_file_token"),
                 file_type=post.get("file_type"),
+                attachment_tokens=post.get("attachment_tokens") if post_type == "content" else None,
             )
         else:
             await _edit_tg(channel, post["telegram_message_id"], resolved)
@@ -70,7 +71,8 @@ async def refresh_post_buttons(post_type: str, post_id: int) -> None:
 
 async def _edit_max(message_id, text, inline_buttons_json,
                     max_file_token: Optional[str] = None,
-                    file_type: Optional[str] = None):
+                    file_type: Optional[str] = None,
+                    attachment_tokens=None):
     from .max_api import get_max_api
     from .messenger import build_max_inline_buttons, html_to_max_markdown
     max_api = get_max_api()
@@ -78,15 +80,19 @@ async def _edit_max(message_id, text, inline_buttons_json,
         return
     max_buttons = build_max_inline_buttons(inline_buttons_json)
     max_text = html_to_max_markdown(text or "")
-    # Собираем attachments с файлом (если был) чтобы не потерять картинку
-    # при PUT /messages — MAX перезаписывает все attachments.
+    # Собираем attachments с файлами чтобы не потерять их при PUT /messages —
+    # MAX перезаписывает ВСЕ attachments. Для медиа-группы (несколько токенов)
+    # передаём весь массив, иначе одиночный max_file_token.
     attachments = None
-    if max_file_token:
-        _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
-        att_type = _type_map.get(file_type or "file", "file")
+    _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
+    att_type = _type_map.get(file_type or "file", "file")
+    tokens = [t for t in (attachment_tokens or []) if t]
+    if len(tokens) > 1:
+        attachments = [{"type": att_type, "payload": {"token": t}} for t in tokens[:10]]
+    elif max_file_token:
         attachments = [{"type": att_type, "payload": {"token": max_file_token}}]
     r = await max_api.edit_message(str(message_id), max_text, attachments=attachments, buttons=max_buttons)
-    print(f"[post_button_refresh] edit MAX msg {message_id}: {r.get('success', False)}")
+    print(f"[post_button_refresh] edit MAX msg {message_id}: {r.get('success', False)} (attachments={len(attachments or [])})")
 
 
 async def _edit_tg(channel, message_id, inline_buttons_json):

@@ -477,27 +477,33 @@ async def publish_post(tc: str, post_id: int, user: Dict[str, Any] = Depends(get
             print(f"[Content] publish: msg_id parse error: {e}")
 
     msg_id_str = str(msg_id) if msg_id else None
-    # Свежий max_file_token — MAX загрузил файл при send, нам вернули токен.
-    # Обязательно сохраняем в БД: post_button_refresh использует его чтобы
-    # при edit-е кнопок не потерять картинку.
+    # Свежие MAX file_token'ы — MAX загрузил файлы при send, нам вернули токены.
+    # Для одиночного файла — max_file_token. Для медиа-группы — max_file_tokens
+    # (массив). Сохраняем оба чтобы post_button_refresh при edit-е кнопок не
+    # потерял ни картинку, ни всю альбомную сборку.
     fresh_token = None
+    fresh_tokens = None
     if isinstance(result, dict):
         fresh_token = result.get("max_file_token")
-    # UPDATE финального статуса в отдельном try — если что-то упадёт здесь,
-    # пост уже в канале, юзеру вернём success.
+        fresh_tokens = result.get("max_file_tokens")
     try:
+        set_parts = ["status = 'published'", "published_at = NOW()",
+                     "scheduled_at = NULL", "telegram_message_id = $1"]
+        params = [msg_id_str]
+        idx = 2
         if fresh_token and not post.get("max_file_token"):
-            await execute(
-                """UPDATE content_posts SET status = 'published', published_at = NOW(),
-                   scheduled_at = NULL, telegram_message_id = $1, max_file_token = $2
-                   WHERE id = $3""",
-                msg_id_str, fresh_token, post_id,
-            )
-        else:
-            await execute(
-                "UPDATE content_posts SET status = 'published', published_at = NOW(), scheduled_at = NULL, telegram_message_id = $1 WHERE id = $2",
-                msg_id_str, post_id,
-            )
+            set_parts.append(f"max_file_token = ${idx}")
+            params.append(fresh_token)
+            idx += 1
+        if fresh_tokens and len(fresh_tokens) > 1 and not post.get("attachment_tokens"):
+            set_parts.append(f"attachment_tokens = ${idx}")
+            params.append(fresh_tokens)
+            idx += 1
+        params.append(post_id)
+        await execute(
+            f"UPDATE content_posts SET {', '.join(set_parts)} WHERE id = ${idx}",
+            *params,
+        )
     except Exception as e:
         print(f"[Content] publish: final UPDATE error (post is sent, will keep status='publishing'): {e}")
     # Достижение «Опубликовать постов» — только за свежую публикацию (не за edit).

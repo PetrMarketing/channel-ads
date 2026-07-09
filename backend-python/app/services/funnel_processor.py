@@ -440,31 +440,38 @@ async def process_scheduled_posts():
                 # Парсинг msg_id защищён — даже если упадёт, статус уже published
                 msg_id = None
                 fresh_token = None
+                fresh_tokens = None
                 try:
                     if isinstance(result, dict):
                         msg_id = result.get("message_id") or result.get("result", {}).get("message_id")
                         if not msg_id:
                             msg_id = result.get("message", {}).get("body", {}).get("mid")
                         fresh_token = result.get("max_file_token")
+                        fresh_tokens = result.get("max_file_tokens")
                 except Exception as e:
                     print(f"[FunnelProcessor] Post {post['id']}: msg_id parse error: {e}")
                 # UPDATE обёрнут в try — пост уже в канале, нельзя допустить
                 # проброс во внешний except, который вернёт scheduled → дубли.
-                # Сохраняем max_file_token чтобы edit кнопок не потерял картинку.
+                # Сохраняем max_file_token/max_file_tokens чтобы edit кнопок
+                # не потерял ни картинку, ни всю альбомную сборку.
                 try:
+                    set_parts = ["status = 'published'", "published_at = NOW()",
+                                 "scheduled_at = NULL", "telegram_message_id = $1"]
+                    params = [str(msg_id) if msg_id else None]
+                    idx = 2
                     if fresh_token and not post.get("max_file_token"):
-                        await execute(
-                            """UPDATE content_posts SET status = 'published',
-                               published_at = NOW(), scheduled_at = NULL,
-                               telegram_message_id = $1, max_file_token = $2
-                               WHERE id = $3""",
-                            str(msg_id) if msg_id else None, fresh_token, post["id"],
-                        )
-                    else:
-                        await execute(
-                            "UPDATE content_posts SET status = 'published', published_at = NOW(), scheduled_at = NULL, telegram_message_id = $1 WHERE id = $2",
-                            str(msg_id) if msg_id else None, post["id"],
-                        )
+                        set_parts.append(f"max_file_token = ${idx}")
+                        params.append(fresh_token)
+                        idx += 1
+                    if fresh_tokens and len(fresh_tokens) > 1 and not post.get("attachment_tokens"):
+                        set_parts.append(f"attachment_tokens = ${idx}")
+                        params.append(fresh_tokens)
+                        idx += 1
+                    params.append(post["id"])
+                    await execute(
+                        f"UPDATE content_posts SET {', '.join(set_parts)} WHERE id = ${idx}",
+                        *params,
+                    )
                 except Exception as e:
                     print(f"[FunnelProcessor] Post {post['id']}: UPDATE to published failed: {e}, trying without msg_id")
                     await execute(
