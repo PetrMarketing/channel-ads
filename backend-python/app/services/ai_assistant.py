@@ -292,18 +292,35 @@ async def parse_query_with_llm(query: str, user_context: dict) -> dict:
                 raise RuntimeError("Слишком много запросов к ИИ — попробуйте через минуту.")
             raise RuntimeError("ИИ временно недоступен — попробуйте через несколько минут.")
 
-    msg = data["choices"][0]["message"]
-    tool_calls = msg.get("tool_calls") or []
+    # Устойчиво к неожиданной структуре ответа: пустой choices, message как
+    # строка, tool_calls как строка/None — вернём человеческую ошибку вместо
+    # AttributeError.
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not choices or not isinstance(choices, list):
+        raise RuntimeError("ИИ вернул пустой ответ — попробуйте переформулировать задачу.")
+    first = choices[0] if isinstance(choices[0], dict) else {}
+    msg = first.get("message") if isinstance(first.get("message"), dict) else {}
+    if not msg:
+        # Иногда модель отдаёт content напрямую в choice
+        content_alt = first.get("text") or first.get("content") or ""
+        return {"steps": [], "confirm_summary": (str(content_alt) or "Не понял задачу — переформулируй пожалуйста."), "missing": []}
+    raw_tc = msg.get("tool_calls")
+    tool_calls = raw_tc if isinstance(raw_tc, list) else []
     steps = []
     for tc in tool_calls:
-        fn = tc.get("function", {})
+        if not isinstance(tc, dict):
+            continue
+        fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
         try:
             args = json.loads(fn.get("arguments") or "{}")
         except Exception:
             args = {}
         steps.append({"tool": fn.get("name"), "args": args})
 
-    summary = (msg.get("content") or "").strip()
+    content = msg.get("content")
+    if isinstance(content, list):
+        content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
+    summary = (str(content) if content else "").strip()
     if not summary:
         if steps:
             summary = "Готов выполнить: " + ", ".join(s["tool"] for s in steps)
