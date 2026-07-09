@@ -1,9 +1,19 @@
 """Сервис для работы с OpenRouter API — генерация текста и изображений."""
+import os
 import json
 import aiohttp
 from fastapi import HTTPException
 
 from ..config import settings
+
+# Опциональный HTTP/HTTPS/SOCKS5 прокси для OpenRouter — задаётся в .env
+# как OPENROUTER_PROXY. Нужен когда Cloudflare банит IP сервера
+# и все запросы к openrouter.ai возвращают 403 «security policy».
+# Примеры значения:
+#   http://user:pass@proxy.example.com:8080
+#   socks5://proxy.example.com:1080
+# Если пусто — работаем без прокси, как обычно.
+OPENROUTER_PROXY = os.environ.get("OPENROUTER_PROXY", "").strip() or None
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Production модель (без "-preview" — та ушла в 403 на нашем ключе).
@@ -43,7 +53,7 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
             "max_tokens": 4096,
         }
         async with aiohttp.ClientSession() as session:
-            async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
+            async with session.post(OPENROUTER_URL, json=payload, headers=headers, proxy=OPENROUTER_PROXY) as resp:
                 status = resp.status
                 raw = await resp.text()
                 try:
@@ -106,7 +116,7 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
                             "max_tokens": 4096,
                         }
                         async with aiohttp.ClientSession() as s:
-                            async with s.post(OPENROUTER_URL, json=p2, headers=headers) as resp:
+                            async with s.post(OPENROUTER_URL, json=p2, headers=headers, proxy=OPENROUTER_PROXY) as resp:
                                 rw = await resp.text()
                                 try:
                                     return resp.status, json.loads(rw), rw
@@ -188,7 +198,7 @@ async def openrouter_chat_messages(messages: list, model: str = None) -> str:
     async def _call(m):
         payload = {"model": m, "messages": messages, "temperature": 0.4, "max_tokens": 4096}
         async with aiohttp.ClientSession() as session:
-            async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
+            async with session.post(OPENROUTER_URL, json=payload, headers=headers, proxy=OPENROUTER_PROXY) as resp:
                 return await resp.json()
 
     chain = [model] + [m for m in FALLBACK_TEXT_MODELS if m != model]
@@ -276,7 +286,7 @@ async def openrouter_image_gen(prompt: str, photo_base64=None) -> str:
         p = dict(payload)
         p["model"] = mdl
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(OPENROUTER_URL, json=p, headers=headers) as resp:
+            async with session.post(OPENROUTER_URL, json=p, headers=headers, proxy=OPENROUTER_PROXY) as resp:
                 return resp.status, await resp.json()
 
     try:
@@ -332,7 +342,7 @@ async def openrouter_image_gen(prompt: str, photo_base64=None) -> str:
                 retry_payload["messages"] = [{"role": "user", "content": retry_content}]
                 try:
                     async with aiohttp.ClientSession(timeout=timeout) as session:
-                        async with session.post(OPENROUTER_URL, json=retry_payload, headers=headers) as resp:
+                        async with session.post(OPENROUTER_URL, json=retry_payload, headers=headers, proxy=OPENROUTER_PROXY) as resp:
                             result = await resp.json()
                 except aiohttp.ClientError as e:
                     print(f"[AI Image] retry {stage_name} network error: {e}")
