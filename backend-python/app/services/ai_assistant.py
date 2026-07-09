@@ -18,6 +18,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import os
 import aiohttp
 
 from ..config import settings
@@ -25,6 +26,9 @@ from ..database import fetch_one, fetch_all, execute
 
 
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+# Прокси для обхода Cloudflare-блокировки — берём тот же что в
+# services/ai_openrouter.py (OPENROUTER_PROXY env).
+_OPENROUTER_PROXY = os.environ.get("OPENROUTER_PROXY", "").strip() or None
 _MODEL = "anthropic/claude-sonnet-4"
 _FALLBACK_MODEL = "openai/gpt-4o-mini"
 _TIMEOUT = aiohttp.ClientTimeout(total=45)
@@ -274,18 +278,32 @@ async def parse_query_with_llm(query: str, user_context: dict) -> dict:
     async def _call(model):
         async with aiohttp.ClientSession(timeout=_TIMEOUT) as session:
             payload["model"] = model
-            async with session.post(_OPENROUTER_URL, json=payload, headers=headers) as resp:
+            async with session.post(_OPENROUTER_URL, json=payload, headers=headers, proxy=_OPENROUTER_PROXY) as resp:
                 return resp.status, await resp.json()
 
     status, data = await _call(_MODEL)
-    if status != 200 or "choices" not in data:
+    def _is_bad(_status, _data):
+        return _status != 200 or not isinstance(_data, dict) or "choices" not in _data
+
+    if _is_bad(status, data):
         # fallback
         status, data = await _call(_FALLBACK_MODEL)
-        if status != 200 or "choices" not in data:
-            err = (data.get("error") or {}) if isinstance(data, dict) else {}
-            code = err.get("code") or status
-            msg = err.get("message") or str(data)[:200]
-            ml = str(msg).lower()
+        if _is_bad(status, data):
+            # error может быть dict, str или отсутствовать — извлекаем
+            # безопасно, иначе AttributeError на err.get() портит юзеру UX
+            raw_err = data.get("error") if isinstance(data, dict) else None
+            code = None
+            msg = ""
+            if isinstance(raw_err, dict):
+                code = raw_err.get("code")
+                msg = str(raw_err.get("message") or "")
+            elif isinstance(raw_err, str):
+                msg = raw_err
+            if not msg:
+                msg = str(data)[:200] if data is not None else ""
+            if not code:
+                code = status
+            ml = msg.lower()
             if code == 402 or "credit" in ml or "afford" in ml or "User not found" in str(msg) or code == 401:
                 raise RuntimeError(
                     "На сервере временно нет кредитов для ИИ. "
@@ -647,7 +665,7 @@ async def _quick_generate_post(topic: str) -> Optional[str]:
     }
     try:
         async with aiohttp.ClientSession(timeout=_TIMEOUT) as session:
-            async with session.post(_OPENROUTER_URL, json=payload, headers=headers) as resp:
+            async with session.post(_OPENROUTER_URL, json=payload, headers=headers, proxy=_OPENROUTER_PROXY) as resp:
                 data = await resp.json()
                 if "choices" in data:
                     return data["choices"][0]["message"]["content"].strip()
