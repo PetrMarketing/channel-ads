@@ -865,14 +865,20 @@ async function doRedirect() {
       // Если подпись валидна — сохраняем JWT и открываем ЛК. Если нет —
       // отдаём на /login где юзер получит стандартный вход через бота.
       document.querySelector('p').textContent = 'Открываем кабинет...';
+      // ВАЖНО: MAX SDK читает данные из URL hash (#WebAppData=…).
+      // Если MAX не добавил hash при открытии — Mini App не запущен.
+      // Ждём до 8 сек пока скрипт st.max.ru/js/max-web-app.js загрузится
+      // и window.WebApp появится.
       var initData = '';
       var initDataUnsafe = null;
       var hasWebApp = false;
-      try { hasWebApp = !!window.WebApp; } catch(e) {}
+      for (var attempt = 0; attempt < 40; attempt++) {
+        try { hasWebApp = !!window.WebApp; } catch(e) {}
+        if (hasWebApp) break;
+        await new Promise(r => setTimeout(r, 200));
+      }
       try { initData = (window.WebApp && window.WebApp.initData) || ''; } catch(e) {}
       try { initDataUnsafe = (window.WebApp && window.WebApp.initDataUnsafe) || null; } catch(e) {}
-      // Ищем альтернативные названия SDK (у MAX может быть window.max
-      // или window.MAX вместо window.WebApp).
       var maxGlobals = {};
       try {
         var keys = Object.getOwnPropertyNames(window);
@@ -890,6 +896,17 @@ async function doRedirect() {
           }
         }
       } catch(e) {}
+      // Диагностика hash — сюда MAX должен положить #WebAppData=…
+      var locHash = '';
+      var perfNavHash = '';
+      try { locHash = location.hash || ''; } catch(e) {}
+      try {
+        var nav = performance.getEntriesByType('navigation')[0];
+        if (nav) perfNavHash = new URL(nav.name).hash || '';
+      } catch(e) {}
+      // sessionStorage тоже проверим — SDK кэширует туда
+      var storedWebAppData = '';
+      try { storedWebAppData = sessionStorage.getItem('WebAppData') || ''; } catch(e) {}
       var authResp = null; var authStatus = 'no-request';
       try {
         const r = await fetch('/api/auth/max-webapp', {
@@ -908,7 +925,7 @@ async function doRedirect() {
           return true;
         }
       } catch(e) { authStatus = 'fetch-error: ' + e.message; }
-      // Показываем диагностику — ищем какое имя SDK использует MAX
+      // Показываем диагностику
       const dbg = {
         hasWebApp: hasWebApp,
         initData_length: (initData || '').length,
@@ -917,6 +934,9 @@ async function doRedirect() {
         auth_status: authStatus,
         auth_response: authResp,
         maxGlobals: maxGlobals,
+        location_hash: locHash.slice(0, 200),
+        navigation_hash: perfNavHash.slice(0, 200),
+        stored_WebAppData: storedWebAppData.slice(0, 80),
         userAgent: navigator.userAgent.slice(0, 200),
         referrer: document.referrer.slice(0, 100),
       };
@@ -935,15 +955,29 @@ async function doRedirect() {
     // Handle cabinet_open — user came via startapp deep-link
     // MAX открыл нас в WebApp контексте — тут точно есть initDataUnsafe
     if (startParam === 'cabinet_open') {
-      let iData = '';
-      let iUnsafe = null;
-      try { iData = (window.WebApp && window.WebApp.initData) || ''; } catch(e) {}
-      try { iUnsafe = (window.WebApp && window.WebApp.initDataUnsafe) || null; } catch(e) {}
+      // Ждём до 6 сек — MAX SDK может грузиться асинхронно
+      let iData = '', iUnsafe = null;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        try { iData = (window.WebApp && window.WebApp.initData) || ''; } catch(e) {}
+        try { iUnsafe = (window.WebApp && window.WebApp.initDataUnsafe) || null; } catch(e) {}
+        if (iData || (iUnsafe && iUnsafe.user)) break;
+        await new Promise(r => setTimeout(r, 200));
+      }
+      // Собираем ВСЁ доступное про window — вдруг MAX SDK под другим именем
+      const winKeys = [];
+      try {
+        const all = Object.getOwnPropertyNames(window);
+        for (const k of all) {
+          if (/webapp|max|maxapp|tg|telegram|initdata/i.test(k)) {
+            winKeys.push(k + '=' + typeof window[k]);
+          }
+        }
+      } catch(e) {}
       try {
         const r = await fetch('/api/auth/max-webapp', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({initData: iData, initDataUnsafe: iUnsafe}),
+          body: JSON.stringify({initData: iData, initDataUnsafe: iUnsafe, winKeys: winKeys}),
         });
         const d = await r.json();
         if (d && d.success && d.token) {
@@ -954,6 +988,21 @@ async function doRedirect() {
           window.location.replace('/');
           return true;
         }
+        // Не получилось — показываем детали, юзер скинет скриншот
+        const dbg = {
+          startParam: startParam,
+          hasWebApp: !!window.WebApp,
+          initData_len: (iData || '').length,
+          initDataUnsafe: iUnsafe,
+          winKeys: winKeys,
+          userAgent: navigator.userAgent.slice(0, 200),
+          referrer: document.referrer.slice(0, 100),
+          auth_status: r.status,
+        };
+        document.querySelector('.c').innerHTML =
+          '<pre style="font-size:11px;text-align:left;background:#fff;padding:12px;border-radius:8px;white-space:pre-wrap;word-break:break-all;color:#222;max-width:100%;overflow:auto">' +
+          JSON.stringify(dbg, null, 2).replace(/</g,'&lt;') + '</pre>';
+        return true;
       } catch(e) {}
       window.location.replace('/login');
       return true;
