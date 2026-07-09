@@ -48,11 +48,14 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
     # Строим последовательность моделей: основная + fallback'и (без дублей)
     tried = []
     chain = [model] + [m for m in FALLBACK_TEXT_MODELS if m != model]
+    saw_403 = False
     for m in chain:
         status, result, raw = await _call(m)
         text = _extract_text(result, m)
         if text:
             return text
+        if status == 403:
+            saw_403 = True
         # Диагностика — что именно ответила модель
         finish = ""
         try:
@@ -71,14 +74,52 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
             err_msg = f"raw[:120]={raw[:120]!r}"
         tried.append(f"{m}[{status}]: finish={finish or '—'} err={err_msg or '—'}")
         print(f"[OpenRouter] chain step failed → {tried[-1]}")
-    # Все модели вернули пусто — кидаем осмысленное сообщение чтобы юзер
-    # не смотрел на «пустой ответ» без контекста.
+
+    # Все модели упали. Если хоть одна отдала 403 (OpenRouter security
+    # policy — обычно триггер на URL / чужие бренды / стоп-слова в
+    # промпте), делаем ещё один retry с САНИТИЗИРОВАННЫМ промптом:
+    # убираем http:// ссылки, кавычки-скобки, странные символы. Часто
+    # именно contact_link (URL) — источник проблемы.
+    if saw_403:
+        import re as _re
+        sanitized = _re.sub(r"https?://\S+", "", prompt)   # убираем URL-ы
+        sanitized = _re.sub(r"@\S+", "", sanitized)         # убираем @handles
+        sanitized = _re.sub(r"[«»\"'`]", "", sanitized)     # убираем кавычки
+        sanitized = _re.sub(r"\s+", " ", sanitized).strip()
+        if sanitized and sanitized != prompt:
+            print("[OpenRouter] 403 detected — retrying with sanitized prompt")
+            for m in chain:
+                try:
+                    st2, r2, raw2 = await _call(m)
+                    # Подменяем prompt в замыкании через новый _call2
+                    async def _call2(mm):
+                        p2 = {
+                            "model": mm,
+                            "messages": [{"role": "user", "content": sanitized}],
+                            "temperature": 0.7,
+                            "max_tokens": 4096,
+                        }
+                        async with aiohttp.ClientSession() as s:
+                            async with s.post(OPENROUTER_URL, json=p2, headers=headers) as resp:
+                                rw = await resp.text()
+                                try:
+                                    return resp.status, json.loads(rw), rw
+                                except Exception:
+                                    return resp.status, {}, rw
+                    st3, r3, raw3 = await _call2(m)
+                    t3 = _extract_text(r3, m)
+                    if t3:
+                        print(f"[OpenRouter] sanitized retry {m} succeeded")
+                        return t3
+                except Exception as e:
+                    print(f"[OpenRouter] sanitized retry {m} error: {e}")
+
     raise HTTPException(
         status_code=502,
         detail=(
-            "ИИ не смог сгенерировать текст. Попробуйте изменить описание "
-            "канала (сделать проще и нейтральнее). Если не поможет — "
-            f"напишите в поддержку. [{'; '.join(tried)}]"
+            "ИИ не смог сгенерировать текст. Попробуйте убрать из "
+            "описания канала ссылки, @упоминания и стоп-слова. "
+            f"Если не поможет — напишите в поддержку. [{'; '.join(tried)}]"
         ),
     )
 
