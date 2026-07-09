@@ -268,15 +268,22 @@ export default function Header({ onToggleSidebar, onBurgerClick }) {
               onMouseEnter={e => { e.currentTarget.style.borderColor = `${ACCENT}50`; e.currentTarget.style.background = `${ACCENT}05`; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.background = '#fff'; }}
             >
+              {/* Аватарка — видна только на мобильном (как иконка профиля) */}
+              <span className="header-profile-avatar" style={{
+                width: 26, height: 26, borderRadius: '50%',
+                background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})`,
+                display: 'none', alignItems: 'center', justifyContent: 'center',
+                fontSize: '0.75rem', fontWeight: 700, color: '#fff', flexShrink: 0,
+              }}>{(user.first_name || user.username || 'U')[0].toUpperCase()}</span>
               <span className="header-profile-label" style={{ fontWeight: 600, fontSize: '0.82rem', color: DARK }}>Профиль</span>
               <span className="header-profile-pkid" style={{ fontSize: '0.72rem', color: MUTED, fontFamily: 'ui-monospace, monospace' }}>
                 PKid: {user.id}
               </span>
-              <span style={{
+              <span className="header-profile-tokens" style={{
                 fontSize: '0.7rem', color: ACCENT2, fontWeight: 700,
                 background: `${ACCENT2}10`, padding: '2px 8px', borderRadius: 20,
               }}>{tokenCount}</span>
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth="2.5" strokeLinecap="round">
+              <svg className="header-profile-arrow" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth="2.5" strokeLinecap="round">
                 <path d="M6 9l6 6 6-6"/>
               </svg>
             </button>

@@ -4472,19 +4472,23 @@ button[role="tab"][aria-selected="true"] {
     justify-content: flex-end !important;
   }
 
-  /* Compact onboarding btn — keep accessible, hide text+progress */
-  .header-onboarding-btn {
-    padding: 8px 10px !important;
-    min-width: 36px !important;
-  }
-  .header-onboarding-label,
-  .header-onboarding-progress { display: none !important; }
-
-  /* Hide bulky desktop-only header bits */
-  .header-profile-pkid { display: none !important; }
+  /* На мобильном оставляем в шапке только: канал + PKid (аватарка).
+     Всё лишнее прячем — юзер сможет открыть меню бургером. */
+  .header-logo { display: none !important; }
+  .header-onboarding-btn { display: none !important; }
+  .header-add-channel-btn { display: none !important; }
   .header-profile-label { display: none !important; }
-  .header-add-channel-label { display: none !important; }
-  .header-add-channel-btn { padding: 8px 10px !important; }
+  .header-profile-tokens { display: none !important; }
+  .header-profile-arrow { display: none !important; }
+  /* PKid показываем (десктоп-правило переопределяем) */
+  .header-profile-pkid { display: inline !important; }
+  /* Круглая аватарка появляется только на мобильном */
+  .header-profile-avatar { display: inline-flex !important; }
+  /* Кнопка профиля становится компактной */
+  .profile-dropdown-wrap > button {
+    padding: 4px 8px !important;
+    gap: 6px !important;
+  }
 
   /* Channel selector — compact, truncate long names */
   .global-channel-selector {
