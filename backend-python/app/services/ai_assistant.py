@@ -189,7 +189,10 @@ IMAGE_GEN_COST = 10  # генерация одной картинки
 LEAD_MAGNET_COST = 5
 
 
-def estimate_step_cost(tool_name: str, args: dict) -> int:
+def estimate_step_cost(tool_name: str, args) -> int:
+    # args может прийти не-dict если LLM отдала кривой arguments — защита
+    if not isinstance(args, dict):
+        args = {}
     if tool_name == "create_post":
         cost = 1  # готовый текст (минимум)
         if not args.get("message_text"):
@@ -314,6 +317,11 @@ async def parse_query_with_llm(query: str, user_context: dict) -> dict:
         try:
             args = json.loads(fn.get("arguments") or "{}")
         except Exception:
+            args = {}
+        # args ДОЛЖЕН быть dict — LLM иногда отдаёт строку/массив в arguments,
+        # тогда step["args"].get(...) в endpoint'e и estimate_step_cost упадут
+        # AttributeError'ом. Приводим к dict.
+        if not isinstance(args, dict):
             args = {}
         steps.append({"tool": fn.get("name"), "args": args})
 

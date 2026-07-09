@@ -55,9 +55,11 @@ async def parse_query(request: Request, user: Dict[str, Any] = Depends(get_curre
         raise HTTPException(status_code=502, detail=f"Ошибка LLM: {str(e)[:200]}")
 
     # Если LLM запросил уточнения (ask_user) — сохраняем как awaiting_answers
-    ask_steps = [s for s in plan["steps"] if s.get("tool") == "ask_user"]
+    plan_steps = [s for s in (plan.get("steps") or []) if isinstance(s, dict)]
+    ask_steps = [s for s in plan_steps if s.get("tool") == "ask_user"]
     if ask_steps:
-        questions = ask_steps[0].get("args", {}).get("questions") or []
+        raw_args = ask_steps[0].get("args") if isinstance(ask_steps[0].get("args"), dict) else {}
+        questions = raw_args.get("questions") or []
         task_id = await execute_returning_id(
             """INSERT INTO ai_assistant_tasks (user_id, channel_id, raw_query, plan_json, confirm_summary, status, tokens_used)
                VALUES ($1, $2, $3, $4, $5, 'awaiting_answers', $6) RETURNING id""",
@@ -76,8 +78,8 @@ async def parse_query(request: Request, user: Dict[str, Any] = Depends(get_curre
     # Считаем смету шагов
     total_est = 0
     steps_with_cost = []
-    for step in plan["steps"]:
-        cost = svc.estimate_step_cost(step["tool"], step["args"])
+    for step in plan_steps:
+        cost = svc.estimate_step_cost(step.get("tool"), step.get("args"))
         steps_with_cost.append({**step, "est_tokens": cost})
         total_est += cost
 
@@ -128,9 +130,11 @@ async def submit_answers(task_id: int, request: Request, user: Dict[str, Any] = 
         raise HTTPException(status_code=502, detail=str(e)[:200])
 
     # Если модель снова просит уточнения — фиксируем повторно
-    ask_steps = [s for s in plan["steps"] if s.get("tool") == "ask_user"]
+    plan_steps = [s for s in (plan.get("steps") or []) if isinstance(s, dict)]
+    ask_steps = [s for s in plan_steps if s.get("tool") == "ask_user"]
     if ask_steps:
-        questions = ask_steps[0].get("args", {}).get("questions") or []
+        raw_args = ask_steps[0].get("args") if isinstance(ask_steps[0].get("args"), dict) else {}
+        questions = raw_args.get("questions") or []
         await execute(
             "UPDATE ai_assistant_tasks SET raw_query = $1, plan_json = $2, confirm_summary = $3 WHERE id = $4",
             new_query,
@@ -142,8 +146,8 @@ async def submit_answers(task_id: int, request: Request, user: Dict[str, Any] = 
 
     total_est = 0
     steps_with_cost = []
-    for step in plan["steps"]:
-        cost = svc.estimate_step_cost(step["tool"], step["args"])
+    for step in plan_steps:
+        cost = svc.estimate_step_cost(step.get("tool"), step.get("args"))
         steps_with_cost.append({**step, "est_tokens": cost})
         total_est += cost
 
