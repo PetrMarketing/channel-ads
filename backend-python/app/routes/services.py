@@ -428,23 +428,49 @@ async def create_booking(tc: str, request: Request, user=Depends(get_current_use
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
     body = await request.json()
-    bid = await execute_returning_id(
-        """INSERT INTO service_bookings (channel_id, branch_id, specialist_id, service_id,
-           client_name, client_phone, client_email, client_max_user_id,
-           booking_date, start_time, end_time, status, amount, notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id""",
-        channel["id"],
-        int(body["branch_id"]) if body.get("branch_id") else None,
-        int(body["specialist_id"]) if body.get("specialist_id") else None,
-        int(body["service_id"]) if body.get("service_id") else None,
-        body.get("client_name"), body.get("client_phone"), body.get("client_email"),
-        body.get("client_max_user_id"),
-        datetime.strptime(body["booking_date"], "%Y-%m-%d").date() if body.get("booking_date") else None,
-        time_type.fromisoformat(body["start_time"]) if body.get("start_time") else None,
-        time_type.fromisoformat(body["end_time"]) if body.get("end_time") else None,
-        body.get("status", "pending"),
-        float(body.get("amount", 0)), body.get("notes"),
-    )
+    specialist_id = int(body["specialist_id"]) if body.get("specialist_id") else None
+    branch_id = int(body["branch_id"]) if body.get("branch_id") else None
+    service_id = int(body["service_id"]) if body.get("service_id") else None
+    book_date = datetime.strptime(body["booking_date"], "%Y-%m-%d").date() if body.get("booking_date") else None
+    book_start = time_type.fromisoformat(body["start_time"]) if body.get("start_time") else None
+    book_end = time_type.fromisoformat(body["end_time"]) if body.get("end_time") else None
+
+    # Overlap-check как в публичном /book — админ тоже не должен
+    # накладывать записи. Транзакция с FOR UPDATE защищает от гонки.
+    from ..database import get_pool as _get_pool
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            if specialist_id and book_date and book_start and book_end:
+                await conn.execute(
+                    """SELECT id FROM service_bookings
+                       WHERE specialist_id = $1 AND booking_date = $2
+                         AND status NOT IN ('cancelled')
+                       FOR UPDATE""",
+                    specialist_id, book_date,
+                )
+                conflict = await conn.fetchrow(
+                    """SELECT id FROM service_bookings
+                       WHERE specialist_id = $1 AND booking_date = $2
+                         AND status NOT IN ('cancelled')
+                         AND start_time < $3 AND end_time > $4""",
+                    specialist_id, book_date, book_end, book_start,
+                )
+                if conflict:
+                    raise HTTPException(status_code=400, detail="Это время уже занято")
+            row = await conn.fetchrow(
+                """INSERT INTO service_bookings (channel_id, branch_id, specialist_id, service_id,
+                   client_name, client_phone, client_email, client_max_user_id,
+                   booking_date, start_time, end_time, status, amount, notes)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id""",
+                channel["id"], branch_id, specialist_id, service_id,
+                body.get("client_name"), body.get("client_phone"), body.get("client_email"),
+                body.get("client_max_user_id"),
+                book_date, book_start, book_end,
+                body.get("status", "pending"),
+                float(body.get("amount", 0)), body.get("notes"),
+            )
+            bid = row["id"] if row else None
     return {"success": True, "id": bid}
 
 
@@ -966,42 +992,73 @@ async def public_book(tc: str, request: Request):
     book_start = time_type.fromisoformat(body["start_time"])
     book_end = time_type.fromisoformat(body["end_time"])
 
-    # Validate no overlap
-    existing = await fetch_one(
-        """SELECT id FROM service_bookings WHERE specialist_id = $1 AND booking_date = $2
-           AND status NOT IN ('cancelled') AND start_time < $3 AND end_time > $4""",
-        specialist_id, book_date, book_end, book_start,
+    # Проверяем принадлежность специалиста и услуги ЭТОМУ каналу — иначе
+    # кросс-тенант: юзер угадав чужой specialist_id мог бы забронить
+    # запись у другого канала.
+    specialist = await fetch_one(
+        "SELECT branch_id, channel_id FROM service_specialists WHERE id = $1",
+        specialist_id,
     )
-    if existing:
-        raise HTTPException(status_code=400, detail="Это время уже занято")
-
-    service = await fetch_one("SELECT * FROM services WHERE id = $1", service_id)
-    specialist = await fetch_one("SELECT branch_id FROM service_specialists WHERE id = $1", specialist_id)
-
-    # Get custom price for this specialist+service, fall back to service price
-    custom = await fetch_one(
-        "SELECT custom_price FROM specialist_services WHERE specialist_id = $1 AND service_id = $2",
-        specialist_id, service_id,
+    if not specialist or specialist["channel_id"] != channel["id"]:
+        raise HTTPException(status_code=404, detail="Специалист не найден")
+    service = await fetch_one(
+        "SELECT * FROM services WHERE id = $1 AND channel_id = $2",
+        service_id, channel["id"],
     )
-    price = float(custom["custom_price"]) if custom and custom.get("custom_price") is not None else (float(service["price"]) if service else 0)
+    if not service:
+        raise HTTPException(status_code=404, detail="Услуга не найдена")
 
-    client_name = body.get("client_name") or ""
-    client_phone = body.get("client_phone") or ""
-    client_max_user_id = str(body["client_max_user_id"]) if body.get("client_max_user_id") else None
+    # Транзакционный чек-и-инсерт: SELECT FOR UPDATE лочит все брони этого
+    # специалиста на этот день. Двойной запрос с одним слотом одновременно
+    # → второй ждёт коммита первого и увидит его в overlap-проверке.
+    from ..database import get_pool as _get_pool
+    pool = await _get_pool()
 
-    bid = await execute_returning_id(
-        """INSERT INTO service_bookings (channel_id, branch_id, specialist_id, service_id,
-           client_name, client_phone, client_email, client_max_user_id,
-           booking_date, start_time, end_time, amount)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id""",
-        channel["id"],
-        specialist["branch_id"] if specialist else None,
-        specialist_id, service_id,
-        client_name, client_phone, body.get("client_email"),
-        client_max_user_id,
-        book_date, book_start, book_end,
-        price,
-    )
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Блокируем все брони специалиста на этот день
+            await conn.execute(
+                """SELECT id FROM service_bookings
+                   WHERE specialist_id = $1 AND booking_date = $2
+                     AND status NOT IN ('cancelled')
+                   FOR UPDATE""",
+                specialist_id, book_date,
+            )
+            # Свежая проверка на пересечение уже под lock'ом
+            conflict = await conn.fetchrow(
+                """SELECT id FROM service_bookings
+                   WHERE specialist_id = $1 AND booking_date = $2
+                     AND status NOT IN ('cancelled')
+                     AND start_time < $3 AND end_time > $4""",
+                specialist_id, book_date, book_end, book_start,
+            )
+            if conflict:
+                raise HTTPException(status_code=400, detail="Это время уже занято")
+
+            # Цена — из БД в текущем моменте, не полагаемся на client-sent
+            custom = await conn.fetchrow(
+                "SELECT custom_price FROM specialist_services WHERE specialist_id = $1 AND service_id = $2",
+                specialist_id, service_id,
+            )
+            price = float(custom["custom_price"]) if custom and custom.get("custom_price") is not None else float(service["price"] or 0)
+
+            client_name = body.get("client_name") or ""
+            client_phone = body.get("client_phone") or ""
+            client_max_user_id = str(body["client_max_user_id"]) if body.get("client_max_user_id") else None
+
+            row = await conn.fetchrow(
+                """INSERT INTO service_bookings (channel_id, branch_id, specialist_id, service_id,
+                   client_name, client_phone, client_email, client_max_user_id,
+                   booking_date, start_time, end_time, amount)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id""",
+                channel["id"], specialist["branch_id"],
+                specialist_id, service_id,
+                client_name, client_phone, body.get("client_email"),
+                client_max_user_id,
+                book_date, book_start, book_end,
+                price,
+            )
+            bid = row["id"] if row else None
 
     # Send notification to client via MAX bot
     if client_max_user_id:

@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from ..middleware.auth import get_current_user
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
@@ -878,7 +879,8 @@ async def create_promotion(tc: str, request: Request, user=Depends(get_current_u
         """INSERT INTO shop_promotions (channel_id, name, promo_type, code, discount_value,
            min_order_amount, max_uses, starts_at, expires_at)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id""",
-        channel["id"], body.get("name", ""), body.get("promo_type", "percentage"),
+        channel["id"], body.get("name", ""),
+        ("percent" if (body.get("promo_type") or "percent") in ("percent", "percentage") else body.get("promo_type")),
         body.get("code"), float(body.get("discount_value", 0)),
         float(body["min_order_amount"]) if body.get("min_order_amount") else None,
         int(body["max_uses"]) if body.get("max_uses") else None,
@@ -1343,7 +1345,7 @@ async def checkout(tc: str, request: Request):
             elif promo.get("max_uses") and promo.get("used_count", 0) >= promo["max_uses"]:
                 pass  # лимит превышен — used_count не инкрементируем
             else:
-                if promo["promo_type"] == "percent":
+                if promo["promo_type"] in ("percent", "percentage"):
                     discount = subtotal * float(promo["discount_value"]) / 100
                 elif promo["promo_type"] == "fixed":
                     discount = float(promo["discount_value"])
@@ -1371,35 +1373,87 @@ async def checkout(tc: str, request: Request):
         total = 0.0
 
     import secrets as _sec
-    order_number = f"SH-{_sec.token_hex(4).upper()}"
+    from ..database import get_pool as _get_pool
 
-    try:
-        order_id = await execute_returning_id(
-            """INSERT INTO shop_orders (channel_id, order_number, user_identifier, client_name, client_phone, client_email,
-               client_address, delivery_method_id, discount_amount, subtotal, delivery_price, total, notes, status)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'new') RETURNING id""",
-            channel["id"], order_number, user_identifier, body.get("client_name"), body.get("client_phone"),
-            body.get("client_email"), body.get("client_address"),
-            delivery_method_id, discount, subtotal, delivery_cost, total, body.get("notes"),
-        )
-    except Exception as e:
-        print(f"[Shop checkout] INSERT shop_orders FAILED: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail=f"Не удалось создать заказ. Обратитесь в поддержку. ({type(e).__name__})")
-    print(f"[Shop checkout] order created: id={order_id} num={order_number} total={total}")
+    # Transactional block: блокируем строки товаров/вариантов через FOR UPDATE,
+    # чтобы два одновременных чекаута не могли overselling'нуть склад. Внутри
+    # транзакции пересчитываем stock (актуальное значение из БД), а не то что
+    # было прочитано в начале ф-ции. Если stock не хватает — 400, всё
+    # откатывается автоматом. UNIQUE-констрейнта на order_number нет, поэтому
+    # генерим и пробуем INSERT в цикле — при collision (крайне редкой)
+    # генерим новый token.
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Блокируем строки товаров/вариантов из корзины
+            product_ids = list({int(it["product_id"]) for it in items})
+            variant_ids = [int(it["variant_id"]) for it in items if it.get("variant_id")]
+            if product_ids:
+                await conn.execute(
+                    "SELECT id FROM shop_products WHERE id = ANY($1::int[]) FOR UPDATE",
+                    product_ids,
+                )
+            if variant_ids:
+                await conn.execute(
+                    "SELECT id FROM shop_product_variants WHERE id = ANY($1::int[]) FOR UPDATE",
+                    variant_ids,
+                )
+            # Пересчитываем актуальный stock под блокировкой
+            for item in items:
+                if item.get("variant_id"):
+                    cur = await conn.fetchrow(
+                        "SELECT stock FROM shop_product_variants WHERE id = $1",
+                        int(item["variant_id"]),
+                    )
+                else:
+                    cur = await conn.fetchrow(
+                        "SELECT stock FROM shop_products WHERE id = $1",
+                        int(item["product_id"]),
+                    )
+                if not cur:
+                    raise HTTPException(status_code=400, detail=f"Товар пропал из каталога: {item['product_name']}")
+                cur_stock = cur["stock"]
+                if cur_stock is not None and cur_stock != -1 and item["quantity"] > cur_stock:
+                    raise HTTPException(status_code=400, detail=f"Недостаточно товара: {item['product_name']} (осталось {cur_stock})")
 
-    for item in items:
-        price = float(item["variant_price"] if item["variant_price"] is not None else item["product_price"])
-        await execute(
-            "INSERT INTO shop_order_items (order_id, product_id, variant_id, product_name, variant_name, quantity, price) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-            order_id, item["product_id"], item["variant_id"],
-            item["product_name"], item.get("variant_name"), item["quantity"], price)
-        if item["variant_id"] and item.get("variant_stock") is not None and item["variant_stock"] != -1:
-            await execute("UPDATE shop_product_variants SET stock = stock - $1 WHERE id = $2 AND stock > 0", item["quantity"], item["variant_id"])
-        elif item.get("product_stock") is not None and item["product_stock"] != -1:
-            await execute("UPDATE shop_products SET stock = stock - $1 WHERE id = $2 AND stock > 0", item["quantity"], item["product_id"])
+            # Генерация order_number с retry на collision (крайне маловероятна)
+            order_id = None
+            for attempt in range(5):
+                order_number = f"SH-{_sec.token_hex(4).upper()}"
+                try:
+                    row = await conn.fetchrow(
+                        """INSERT INTO shop_orders (channel_id, order_number, user_identifier, client_name, client_phone, client_email,
+                           client_address, delivery_method_id, discount_amount, subtotal, delivery_price, total, notes, status)
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'new') RETURNING id""",
+                        channel["id"], order_number, user_identifier, body.get("client_name"), body.get("client_phone"),
+                        body.get("client_email"), body.get("client_address"),
+                        delivery_method_id, discount, subtotal, delivery_cost, total, body.get("notes"),
+                    )
+                    order_id = row["id"] if row else None
+                    break
+                except asyncpg.UniqueViolationError:
+                    if attempt == 4:
+                        raise
+                    continue
+                except Exception as e:
+                    print(f"[Shop checkout] INSERT shop_orders FAILED: {type(e).__name__}: {e}")
+                    raise HTTPException(status_code=500, detail=f"Не удалось создать заказ. Обратитесь в поддержку. ({type(e).__name__})")
+            print(f"[Shop checkout] order created: id={order_id} num={order_number} total={total}")
 
-    await execute("DELETE FROM shop_cart_items WHERE cart_id = $1", cart["id"])
-    await execute("DELETE FROM shop_carts WHERE id = $1", cart["id"])
+            # Items + stock decrements в той же транзакции
+            for item in items:
+                price = float(item["variant_price"] if item["variant_price"] is not None else item["product_price"])
+                await conn.execute(
+                    "INSERT INTO shop_order_items (order_id, product_id, variant_id, product_name, variant_name, quantity, price) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+                    order_id, item["product_id"], item["variant_id"],
+                    item["product_name"], item.get("variant_name"), item["quantity"], price)
+                if item["variant_id"] and item.get("variant_stock") is not None and item["variant_stock"] != -1:
+                    await conn.execute("UPDATE shop_product_variants SET stock = stock - $1 WHERE id = $2 AND stock >= $1", item["quantity"], item["variant_id"])
+                elif item.get("product_stock") is not None and item["product_stock"] != -1:
+                    await conn.execute("UPDATE shop_products SET stock = stock - $1 WHERE id = $2 AND stock >= $1", item["quantity"], item["product_id"])
+
+            await conn.execute("DELETE FROM shop_cart_items WHERE cart_id = $1", cart["id"])
+            await conn.execute("DELETE FROM shop_carts WHERE id = $1", cart["id"])
 
     # Notify manager (or owner as fallback) about new order
     try:
@@ -1531,7 +1585,7 @@ async def apply_promo(tc: str, request: Request):
     if promo.get("max_uses") and promo.get("used_count", 0) >= promo["max_uses"]:
         raise HTTPException(status_code=400, detail="Промокод исчерпан")
 
-    if promo["promo_type"] == "percentage":
+    if promo["promo_type"] in ("percent", "percentage"):
         discount = subtotal * promo["discount_value"] / 100
     else:
         discount = promo["discount_value"]
