@@ -2503,10 +2503,24 @@ async function loadProduct() {{
 
 async function addToCart() {{
   try {{
+    // Собираем выбранные параметры (Размер: L, Цвет: красный) в notes,
+    // чтобы админ видел выбор при обработке заказа.
+    var noteParts = [];
+    if (S.selectedAttrs) {{
+      Object.keys(S.selectedAttrs).forEach(k => noteParts.push(k + ': ' + S.selectedAttrs[k]));
+    }}
+    // Проверяем что выбраны все обязательные атрибуты
+    if (S.product?.attribute_groups?.length && !S.product.variants?.length) {{
+      for (var g of S.product.attribute_groups) {{
+        if (!S.selectedAttrs?.[g.name]) {{ alert('Выберите: ' + g.name); return; }}
+      }}
+    }}
+    S.pendingAttrNote = noteParts.length ? noteParts.join(', ') : '';
     await api('/cart', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{
       user_identifier: uid, product_id: S.prodId,
       variant_id: S.variant?.id || null, quantity: S.qty
     }})}});
+    S.selectedAttrs = {{}};
     await loadCart();
     render();
     haptic('light');
@@ -2624,6 +2638,21 @@ function renderProduct() {{
       h += `<button class="vbtn ${{S.variant?.id===v.id?'active':''}}" onclick="S.variant=S.product.variants.find(x=>x.id===${{v.id}});render()">${{v.name}}</button>`;
     }});
     h += `</div>`;
+  }} else if (p.attribute_groups?.length > 0) {{
+    // Параметры товара (Размер, Цвет) без явных variants — рендерим
+    // как выбираемые чипсы по группам. Выбор сохраняется в
+    // S.selectedAttrs[groupName] и уходит в notes при оформлении.
+    S.selectedAttrs = S.selectedAttrs || {{}};
+    p.attribute_groups.forEach(g => {{
+      h += `<div style="margin-top:12px"><div style="font-size:.85rem;font-weight:600;margin-bottom:6px">${{g.name}}</div><div class="variants">`;
+      g.values.forEach(v => {{
+        const isOn = S.selectedAttrs[g.name] === v.value;
+        h += `<button class="vbtn ${{isOn?'active':''}}" onclick="S.selectedAttrs=S.selectedAttrs||{{}};S.selectedAttrs['${{g.name}}']='${{String(v.value).replace(/'/g,\"\\\\'\")}}';render()">`;
+        if (v.color_hex) h += `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${{v.color_hex}};margin-right:6px;vertical-align:middle;border:1px solid rgba(0,0,0,.15)"></span>`;
+        h += `${{v.value}}</button>`;
+      }});
+      h += `</div></div>`;
+    }});
   }}
   h += `<div class="qty-row"><button class="qty-btn" onclick="if(S.qty>1)S.qty--;render()">−</button><span class="qty-val">${{S.qty}}</span><button class="qty-btn" onclick="S.qty++;render()">+</button></div>`;
   h += `<button class="btn" style="background:${{pc()}}" onclick="addToCart()">Добавить в корзину</button></div>`;
@@ -2669,9 +2698,12 @@ async function goCheckout() {{ await loadDM(); await loadCustomer(); S.screen = 
 function renderCheckout() {{
   let h = headerHtml('Оформление', true);
   h += `<div class="section">`;
-  h += '<label class="form-label">Имя</label><input class="form-input" id="cname" placeholder="Ваше имя" value="' + (S.userName || '') + '">';
-  h += '<label class="form-label">Телефон</label><div style="display:flex;gap:8px"><input class="form-input" id="cphone" type="tel" placeholder="+7..." value="' + (S.userPhone || '') + '" style="flex:1;margin:0">';
-  if (WA.requestContact) h += '<button class="btn" style="background:' + pc() + ';padding:8px 12px;font-size:0.8rem;white-space:nowrap" onclick="fillPhone()">Автозаполнение</button>';
+  // Экранируем значения — иначе кавычка в телефоне ('+7"1') ломает
+  // HTML-атрибут value и поле становится нередактируемым.
+  var _esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  h += '<label class="form-label">Имя</label><input class="form-input" id="cname" placeholder="Ваше имя" value="' + _esc(S.userName) + '">';
+  h += '<label class="form-label">Телефон</label><div style="display:flex;gap:8px;align-items:stretch"><input class="form-input" id="cphone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7..." value="' + _esc(S.userPhone) + '" style="flex:1 1 auto;min-width:0;margin:0">';
+  if (WA.requestContact) h += '<button class="btn" style="background:' + pc() + ';padding:8px 12px;font-size:0.8rem;white-space:nowrap;flex:0 0 auto" onclick="fillPhone()">Автозаполнение</button>';
   h += '</div>';
   h += '<label class="form-label">Адрес</label><input class="form-input" id="caddr" placeholder="Город, улица, дом">';
   if (S.deliveryMethods.length) {{
@@ -2698,7 +2730,7 @@ async function submitOrder() {{
       user_identifier: uid, client_name: name, client_phone: phone,
       client_email: '', client_address: addr,
       delivery_method_id: S.dmId, promo_code: S.promoApplied ? S.promo : '',
-      notes: ''
+      notes: S.pendingAttrNote || ''
     }})}});
     if (d.order_id || d.success) {{
       S.orderNum = d.order_number || d.order_id || '';

@@ -1137,6 +1137,28 @@ async def public_product(tc: str, pid: int):
     variants = await fetch_all(
         "SELECT * FROM shop_product_variants WHERE product_id = $1 ORDER BY id", pid)
     product["variants"] = variants
+    # Параметры товара из shop_product_attribute_values (Размер, Цвет и т.п.).
+    # Юзеры часто заполняют их вместо явных вариантов — надо показывать в
+    # mini-app как read-only группы.
+    attr_rows = await fetch_all(
+        """SELECT av.id AS value_id, av.value, av.color_hex,
+                  a.id AS attr_id, a.name AS attr_name
+           FROM shop_product_attribute_values pav
+           JOIN shop_attribute_values av ON av.id = pav.attribute_value_id
+           JOIN shop_attributes a ON a.id = av.attribute_id
+           WHERE pav.product_id = $1
+           ORDER BY a.id, av.id""",
+        pid,
+    )
+    groups = {}
+    for r in attr_rows:
+        g = groups.setdefault(r["attr_id"], {"name": r["attr_name"], "values": []})
+        g["values"].append({
+            "id": r["value_id"],
+            "value": r["value"],
+            "color_hex": r.get("color_hex"),
+        })
+    product["attribute_groups"] = list(groups.values())
     return {"success": True, "product": product}
 
 

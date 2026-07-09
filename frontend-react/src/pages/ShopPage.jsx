@@ -400,7 +400,7 @@ export default function ShopPage() {
 
   const updateOrderStatus = async (id, status) => {
     try {
-      await api.put(`/shop/${tc}/orders/${id}`, { status });
+      await api.put(`/shop/${tc}/orders/${id}/status`, { status });
       showToast('Статус обновлён');
       loadOrders();
       loadOrderStats();
