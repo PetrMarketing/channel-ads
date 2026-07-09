@@ -6,7 +6,13 @@ from fastapi import HTTPException
 from ..config import settings
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
+# Production модель (без "-preview" — та ушла в 403 на нашем ключе).
+# Fallback'ы пробуем последовательно если основная упала.
+IMAGE_MODEL = "google/gemini-3.1-flash-image"
+IMAGE_FALLBACK_MODELS = [
+    "google/gemini-3.1-flash-lite-image",
+    "google/gemini-2.5-flash-image",
+]
 TEXT_MODEL = "openai/gpt-5.4-nano"
 
 
@@ -265,10 +271,24 @@ async def openrouter_image_gen(prompt: str, photo_base64=None) -> str:
         "max_tokens": 4096,
     }
     timeout = aiohttp.ClientTimeout(total=180)
-    try:
+
+    async def _post(mdl):
+        p = dict(payload)
+        p["model"] = mdl
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
-                result = await resp.json()
+            async with session.post(OPENROUTER_URL, json=p, headers=headers) as resp:
+                return resp.status, await resp.json()
+
+    try:
+        img_status, result = await _post(IMAGE_MODEL)
+        # Если основная модель отдала 403 / 404 / 429 — сразу пробуем fallback
+        # image-модели (у OpenRouter иногда preview-версии дизаблят).
+        if img_status in (403, 404, 429, 500, 502, 503) or (result.get("error") and not result.get("choices")):
+            for fb in IMAGE_FALLBACK_MODELS:
+                print(f"[AI Image] {IMAGE_MODEL} status={img_status} → trying {fb}")
+                img_status, result = await _post(fb)
+                if img_status == 200 and not result.get("error"):
+                    break
     except aiohttp.ClientError as e:
         print(f"[AI Image] network error: {e}")
         raise HTTPException(status_code=503, detail="Сетевая ошибка при обращении к ИИ — попробуйте ещё раз")
