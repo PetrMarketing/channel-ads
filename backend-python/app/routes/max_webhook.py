@@ -1856,11 +1856,12 @@ async def _attach_comments_to_channel_post(max_api, channel: dict, message: dict
         return
     text = (body_msg.get("text") or "").strip()
     attachments_in = body_msg.get("attachments") or []
-    # Из attachments вытаскиваем file_token — чтобы edit_message его вернул,
-    # иначе MAX PUT затрёт медиа.
-    max_file_token = None
-    file_type = None
+    # Из attachments вытаскиваем ВСЕ file_token'ы — чтобы edit_message
+    # их вернул, иначе MAX PUT затрёт всё кроме одного (или всё).
+    # Для медиа-группы (несколько фото) собираем массив.
     _type_reverse = {"image": "photo", "video": "video", "audio": "audio"}
+    all_tokens = []           # для attachment_tokens (медиа-группа)
+    file_type = None          # тип первого attachment — идёт в БД
     for att in attachments_in:
         if not isinstance(att, dict):
             continue
@@ -1868,35 +1869,52 @@ async def _attach_comments_to_channel_post(max_api, channel: dict, message: dict
         payload = att.get("payload") or {}
         tok = payload.get("token") or payload.get("photo_token") or payload.get("file_id")
         if att_type in ("image", "video", "audio", "file") and tok:
-            max_file_token = tok
-            file_type = _type_reverse.get(att_type, "document")
-            break
+            if file_type is None:
+                file_type = _type_reverse.get(att_type, "document")
+            all_tokens.append(tok)
 
-    # Создаём content_posts запись — без неё deep-link комментариев не найдёт пост
+    # max_file_token — только для одиночного вложения (совместимость)
+    # attachment_tokens — массив для медиа-групп (post_button_refresh
+    # заново соберёт их при edit-е кнопок).
+    single_tok = all_tokens[0] if len(all_tokens) == 1 else None
+    multi_toks = all_tokens if len(all_tokens) > 1 else None
+
     inline_buttons_json = _json.dumps([{"type": "comments", "text": "Комментарии"}], ensure_ascii=False)
     post_id = await execute_returning_id(
         """INSERT INTO content_posts (channel_id, title, message_text, status,
                                        telegram_message_id, inline_buttons,
-                                       file_type, max_file_token, ai_generated, published_at)
-           VALUES ($1, $2, $3, 'published', $4, $5::jsonb, $6, $7, 0, NOW())
+                                       file_type, max_file_token, attachment_tokens,
+                                       ai_generated, published_at)
+           VALUES ($1, $2, $3, 'published', $4, $5::jsonb, $6, $7, $8, 0, NOW())
            RETURNING id""",
         channel["id"], (text[:80] or "Пост в канале"), text, msg_id,
-        inline_buttons_json, file_type, max_file_token,
+        inline_buttons_json, file_type, single_tok, multi_toks,
     )
-    # Резолвим кнопку в MAX-формат (deep-link на бота)
     from .pins import _resolve_buttons
     from ..services.messenger import build_max_inline_buttons
     resolved = await _resolve_buttons(inline_buttons_json, channel, post_id=post_id, post_type="content")
     max_buttons = build_max_inline_buttons(resolved)
-    # Пересобираем attachments — файлы оригинала + клавиатура
+    # Пересобираем attachments — ВСЕ файлы оригинала + клавиатура.
+    # Тип для всех токенов — из первого attachment (гомогенная медиа-группа).
     edit_attachments = None
-    if max_file_token:
-        edit_attachments = [{"type": _type_reverse.get(file_type, "file") if file_type != "photo" else "image",
-                             "payload": {"token": max_file_token}}]
+    if all_tokens:
+        att_type_out = _type_reverse.get(file_type, "file") if file_type != "photo" else "image"
+        # Точнее — маппим напрямую по типу первого attachment MAX
+        if file_type == "photo":
+            att_type_out = "image"
+        elif file_type == "video":
+            att_type_out = "video"
+        elif file_type == "audio":
+            att_type_out = "audio"
+        else:
+            att_type_out = "file"
+        edit_attachments = [{"type": att_type_out, "payload": {"token": t}} for t in all_tokens[:10]]
     try:
         r = await max_api.edit_message(str(msg_id), text or "", attachments=edit_attachments, buttons=max_buttons)
         if not r.get("success"):
             print(f"[MAX Bot] auto_attach edit failed msg={msg_id}: {r.get('error')}")
+        else:
+            print(f"[MAX Bot] auto_attach OK msg={msg_id} attachments={len(edit_attachments or [])}")
     except Exception as e:
         print(f"[MAX Bot] auto_attach edit exception msg={msg_id}: {e}")
 
