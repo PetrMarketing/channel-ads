@@ -1,4 +1,5 @@
 """Сервис для работы с OpenRouter API — генерация текста и изображений."""
+import json
 import aiohttp
 from fastapi import HTTPException
 
@@ -37,14 +38,18 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
-                return await resp.json()
+                status = resp.status
+                raw = await resp.text()
+                try:
+                    return status, json.loads(raw), raw
+                except Exception:
+                    return status, {}, raw
 
     # Строим последовательность моделей: основная + fallback'и (без дублей)
     tried = []
     chain = [model] + [m for m in FALLBACK_TEXT_MODELS if m != model]
-    last_diag = ""
     for m in chain:
-        result = await _call(m)
+        status, result, raw = await _call(m)
         text = _extract_text(result, m)
         if text:
             return text
@@ -59,9 +64,13 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
         err_msg = ""
         if isinstance(err, dict):
             err_msg = str(err.get("message") or "")[:120]
-        tried.append(f"{m}: finish={finish or '—'} err={err_msg or '—'}")
-        last_diag = tried[-1]
-        print(f"[OpenRouter] chain step failed → {last_diag}")
+        elif isinstance(err, str):
+            err_msg = err[:120]
+        # Если ничего внятного не нашли — возьмём начало raw body
+        if not err_msg and not finish:
+            err_msg = f"raw[:120]={raw[:120]!r}"
+        tried.append(f"{m}[{status}]: finish={finish or '—'} err={err_msg or '—'}")
+        print(f"[OpenRouter] chain step failed → {tried[-1]}")
     # Все модели вернули пусто — кидаем осмысленное сообщение чтобы юзер
     # не смотрел на «пустой ответ» без контекста.
     raise HTTPException(
