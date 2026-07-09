@@ -9,23 +9,44 @@ IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
 TEXT_MODEL = "openai/gpt-5.4-nano"
 
 
+FALLBACK_TEXT_MODEL = "openai/gpt-4o-mini"
+
+
 async def openrouter_chat(prompt: str, model: str = None) -> str:
-    """Генерация текста через OpenRouter chat completions."""
+    """Генерация текста через OpenRouter chat completions.
+
+    При пустом ответе или refusal у основной модели автоматически
+    ретраим на FALLBACK_TEXT_MODEL. Полезно когда Claude отказывается
+    от нейтрального с виду промпта (safety guidelines у Anthropic
+    иногда срабатывают на бизнес-темы вроде «алкоголь», «ставки» и т.п.).
+    """
     model = model or TEXT_MODEL
     api_key = settings.OPENROUTER_API_KEY
     if not api_key:
         raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7,
-        "max_tokens": 4096,
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
-            result = await resp.json()
-    return _extract_text(result, model)
+
+    async def _call(m):
+        payload = {
+            "model": m,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_tokens": 4096,
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
+                return await resp.json()
+
+    result = await _call(model)
+    text = _extract_text(result, model)
+    if text:
+        return text
+    # Первая модель отказалась / пусто — пробуем fallback
+    if model != FALLBACK_TEXT_MODEL:
+        print(f"[OpenRouter] {model} empty → retrying with {FALLBACK_TEXT_MODEL}")
+        result2 = await _call(FALLBACK_TEXT_MODEL)
+        return _extract_text(result2, FALLBACK_TEXT_MODEL)
+    return ""
 
 
 def _extract_text(result: dict, model: str = "") -> str:
@@ -82,11 +103,22 @@ async def openrouter_chat_messages(messages: list, model: str = None) -> str:
     if not api_key:
         raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {"model": model, "messages": messages, "temperature": 0.4, "max_tokens": 4096}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
-            result = await resp.json()
-    return _extract_text(result, model)
+
+    async def _call(m):
+        payload = {"model": m, "messages": messages, "temperature": 0.4, "max_tokens": 4096}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(OPENROUTER_URL, json=payload, headers=headers) as resp:
+                return await resp.json()
+
+    result = await _call(model)
+    text = _extract_text(result, model)
+    if text:
+        return text
+    if model != FALLBACK_TEXT_MODEL:
+        print(f"[OpenRouter] {model} empty → retrying with {FALLBACK_TEXT_MODEL}")
+        result2 = await _call(FALLBACK_TEXT_MODEL)
+        return _extract_text(result2, FALLBACK_TEXT_MODEL)
+    return ""
 
 
 def _shrink_b64_photo(b64: str, max_side: int = 1024, quality: int = 78) -> str:
