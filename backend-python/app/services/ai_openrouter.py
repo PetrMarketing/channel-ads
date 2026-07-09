@@ -238,51 +238,58 @@ async def openrouter_image_gen(prompt: str, photo_base64=None) -> str:
                      or "blocked" in ml or "prohibited" in ml or "harm" in ml
                      or "access denied" in ml)
         if is_safety:
-            # Gemini safety-filter триггерится либо лицами в фото, либо
-            # «чувствительными» словами в тексте промпта (даже безобидные
-            # «политика», «оружие», «алкоголь», названия ниш — всё что
-            # угодно). Делаем один retry:
-            # - Если было фото → тот же промпт без фото.
-            # - Если фото не было → нейтральный fallback-промпт с той же
-            #   grid-структурой (модель отдаёт картинку без опоры на текст).
+            # Gemini safety-filter триггерится лицами / чувствительными
+            # словами. Делаем ДВУХСТУПЕНЧАТЫЙ retry:
+            # 1) если было фото — тот же промпт без фото
+            # 2) нейтральный fallback-промпт вообще без ниши
+            fallback_prompt = (
+                "9 modern abstract icons in a colorful geometric flat style, "
+                "arranged as a 3x3 grid. No text, no letters, no faces, no people. "
+                "Each icon is centered in its cell, minimalist illustrations, "
+                "vibrant gradient background. Perfect square 1:1 aspect ratio."
+            )
+            retry_stages = []
             if photos:
-                print("[AI Image] safety filter blocked — retrying WITHOUT photo reference")
-                retry_content = [{"type": "text", "text": prompt}]
-            else:
-                print("[AI Image] safety filter blocked — retrying with neutral fallback prompt")
-                fallback_prompt = (
-                    "9 modern abstract icons in a colorful geometric flat style, "
-                    "arranged as a 3x3 grid. No text, no letters, no faces, no people. "
-                    "Each icon is centered in its cell, minimalist illustrations, "
-                    "vibrant gradient background. Perfect square 1:1 aspect ratio."
-                )
-                retry_content = [{"type": "text", "text": fallback_prompt}]
-            retry_payload = dict(payload)
-            retry_payload["messages"] = [{"role": "user", "content": retry_content}]
-            try:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post(OPENROUTER_URL, json=retry_payload, headers=headers) as resp:
-                        result = await resp.json()
-            except aiohttp.ClientError as e:
-                print(f"[AI Image] retry network error: {e}")
-                raise HTTPException(status_code=503, detail="Сетевая ошибка при обращении к ИИ — попробуйте ещё раз")
-            if result.get("error"):
+                # Стадия A: убираем фото, оставляем оригинальный текст
+                retry_stages.append(("no-photo", [{"type": "text", "text": prompt}]))
+            # Стадия B: полностью нейтральный промпт без ниши (последний шанс)
+            retry_stages.append(("neutral-fallback", [{"type": "text", "text": fallback_prompt}]))
+
+            recovered = False
+            for stage_name, retry_content in retry_stages:
+                print(f"[AI Image] safety block — retry stage: {stage_name}")
+                retry_payload = dict(payload)
+                retry_payload["messages"] = [{"role": "user", "content": retry_content}]
+                try:
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.post(OPENROUTER_URL, json=retry_payload, headers=headers) as resp:
+                            result = await resp.json()
+                except aiohttp.ClientError as e:
+                    print(f"[AI Image] retry {stage_name} network error: {e}")
+                    continue
+                if not result.get("error"):
+                    recovered = True
+                    break
                 err2 = result["error"]
                 msg2 = err2.get("message", "") if isinstance(err2, dict) else str(err2)
-                print(f"[AI Image] retry also failed: {msg2[:200]}")
+                print(f"[AI Image] retry {stage_name} failed: {msg2[:200]}")
+
+            if not recovered:
+                # Все ретраи провалились — сообщаем юзеру честно
                 if photos:
                     raise HTTPException(
                         status_code=422,
-                        detail=("ИИ отклонил фото (safety-фильтр). Попробуйте другое "
-                                "фото — без лиц людей и без надписей — или измените "
-                                "тематику канала."),
+                        detail=("ИИ отклонил и фото, и нейтральный fallback (safety-фильтр). "
+                                "Попробуйте другое фото — без лиц — и смените описание "
+                                "канала на более общее."),
                     )
                 raise HTTPException(
                     status_code=422,
-                    detail=("ИИ отклонил запрос (safety-фильтр). Смените описание "
-                            "канала на более нейтральное или попробуйте позже."),
+                    detail=("ИИ отклонил запрос даже с нейтральным промптом. "
+                            "Скорее всего временный сбой safety-фильтра — попробуйте "
+                            "через 5-10 минут."),
                 )
-            # успех — продолжаем ниже, извлекаем картинку
+            # успех на одной из стадий — идём ниже извлекать картинку
         else:
             raise HTTPException(status_code=502, detail=f"Ошибка ИИ: {msg[:200]}")
 
