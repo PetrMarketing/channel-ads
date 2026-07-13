@@ -3,6 +3,11 @@ services:
     image: postgres:18
     container_name: channel-ads-db
     restart: unless-stopped
+    # Лимиты ресурсов: 2 CPU / 4 GiB RAM — для PostgreSQL обычно достаточно
+    # под среднюю нагрузку, защищает соседние сервисы от runaway-процесса.
+    cpus: 2.0
+    mem_limit: 4g
+    mem_reservation: 1g
     environment:
       POSTGRES_DB: channel_ads
       POSTGRES_USER: channel_ads
@@ -24,6 +29,11 @@ services:
     build: .
     container_name: channel-ads
     restart: unless-stopped
+    # Лимиты ресурсов: 2 CPU / 2 GiB RAM — FastAPI приложение, обычно укладывается
+    # в 200-500 MiB, лимит ставим с запасом под пики и долгие фоновые задачи.
+    cpus: 2.0
+    mem_limit: 2g
+    mem_reservation: 256m
     depends_on:
       db:
         condition: service_healthy
@@ -53,6 +63,11 @@ services:
     image: tiangolo/nginx-rtmp:latest
     container_name: channel-ads-rtmp
     restart: unless-stopped
+    # Лимиты ресурсов: 4 CPU / 1 GiB RAM — nginx-rtmp + HLS-сегментация,
+    # 4 ядра под параллельные транскодирования и раздачу зрителям.
+    cpus: 4.0
+    mem_limit: 1g
+    mem_reservation: 128m
     ports:
       - "1935:1935"            # RTMP — публично для OBS
       - "127.0.0.1:8081:8081"  # HLS — внутри (прокидывается через app)
