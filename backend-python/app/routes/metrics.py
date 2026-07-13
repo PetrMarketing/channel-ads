@@ -204,6 +204,26 @@ async def overview(
     # Выручка заказы
     orev = await fetch_one(f"SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE payment_status = 'paid' AND {ch_where}", *ch_params)
 
+    # Выручка AI-токены (нет channel_id/platform — только без фильтров:
+    # это платформенная выручка, к каналу её не привязать)
+    if channel_id is None and not platform:
+        ai_rev = await fetch_one(
+            "SELECT COALESCE(SUM(amount), 0) as total FROM ai_token_purchases WHERE payment_status = 'paid'"
+        )
+    else:
+        ai_rev = None
+
+    # Выручка платных чатов (channel_id и platform есть в самой таблице)
+    pc_rev = await fetch_one(
+        f"SELECT COALESCE(SUM(amount), 0) as total FROM paid_chat_payments WHERE status = 'paid' AND {ch_where}",
+        *ch_params,
+    )
+
+    total_revenue = float(rev["total"]) if rev else 0
+    total_orders = float(orev["total"]) if orev else 0
+    total_ai = float(ai_rev["total"]) if ai_rev else 0
+    total_pc = float(pc_rev["total"]) if pc_rev else 0
+
     return {
         "users": users["c"] if users else 0,
         "channels": channels["c"] if channels else 0,
@@ -213,8 +233,12 @@ async def overview(
         "active_billings": active_bill["c"] if active_bill else 0,
         "orders": orders["c"] if orders else 0,
         "clients": clients["c"] if clients else 0,
-        "total_revenue": float(rev["total"]) if rev else 0,
-        "total_orders_revenue": float(orev["total"]) if orev else 0,
+        "total_revenue": total_revenue,
+        "total_orders_revenue": total_orders,
+        "total_ai_tokens_revenue": total_ai,
+        "total_paid_chats_revenue": total_pc,
+        # Все источники вместе: тарифы + заказы + AI-токены + платные чаты
+        "total_all_revenue": total_revenue + total_orders + total_ai + total_pc,
     }
 
 
@@ -386,7 +410,20 @@ async def revenue_metrics(
     date_to: Optional[str] = Query(None),
     channel_id: Optional[int] = Query(None, description="Фильтр по каналу"),
 ):
-    """Выручка по дням: биллинг-платежи и заказы. С фильтрацией по каналу и датам."""
+    """Выручка по дням: тарифы (billing), заказы, AI-токены и платные чаты.
+
+    Источники:
+    - billing_payments (status='paid')          — оплата тарифов каналами;
+    - orders (payment_status='paid')            — заказы;
+    - ai_token_purchases (payment_status='paid')— покупки AI-токенов
+      (НЕТ channel_id: при фильтре по каналу блок обнуляется и не входит
+      в combined_total — это выручка платформы, а не канала);
+    - paid_chat_payments (status='paid')        — оплаты входа в платные чаты.
+
+    Для новых блоков дата = COALESCE(paid_at, created_at): платёж мог висеть
+    в pending и оплатиться позже — выручку относим к моменту оплаты.
+    combined_by_day — сумма всех источников по дням для общего графика.
+    """
     start, end = _parse_dates(date_from, date_to, days)
 
     # --- Биллинг ---
@@ -441,10 +478,84 @@ async def revenue_metrics(
         *o_params,
     )
 
+    # --- AI-токены ---
+    # У ai_token_purchases нет channel_id — при фильтре по каналу блок пустой
+    # (это платформенная выручка, к конкретному каналу её не привязать).
+    if channel_id is None:
+        at_cond = "payment_status = 'paid' AND COALESCE(paid_at, created_at) >= $1 AND COALESCE(paid_at, created_at) <= $2"
+        ai_by_day = await fetch_all(
+            f"""SELECT COALESCE(paid_at, created_at)::date as day,
+                       COALESCE(SUM(amount), 0) as amount,
+                       COUNT(*) as count
+                FROM ai_token_purchases WHERE {at_cond}
+                GROUP BY day ORDER BY day""",
+            start, end,
+        )
+        ai_total_row = await fetch_one(
+            f"""SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count,
+                       COALESCE(SUM(tokens), 0) as tokens
+                FROM ai_token_purchases WHERE {at_cond}""",
+            start, end,
+        )
+    else:
+        ai_by_day = []
+        ai_total_row = None
+
+    # --- Платные чаты ---
+    pc_cond = "status = 'paid' AND COALESCE(paid_at, created_at) >= $1 AND COALESCE(paid_at, created_at) <= $2"
+    pc_params: list = [start, end]
+    if channel_id is not None:
+        pc_cond += " AND channel_id = $3"
+        pc_params.append(channel_id)
+
+    pc_by_day = await fetch_all(
+        f"""SELECT COALESCE(paid_at, created_at)::date as day,
+                   COALESCE(SUM(amount), 0) as amount,
+                   COUNT(*) as count
+            FROM paid_chat_payments WHERE {pc_cond}
+            GROUP BY day ORDER BY day""",
+        *pc_params,
+    )
+    pc_total_row = await fetch_one(
+        f"SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM paid_chat_payments WHERE {pc_cond}",
+        *pc_params,
+    )
+    # Последние оплаты платных чатов (для таблицы в админке).
+    # То же условие, что pc_cond, но с алиасом pp (JOIN каналов за названием).
+    pc_list_cond = (
+        "pp.status = 'paid' AND COALESCE(pp.paid_at, pp.created_at) >= $1 "
+        "AND COALESCE(pp.paid_at, pp.created_at) <= $2"
+    )
+    if channel_id is not None:
+        pc_list_cond += " AND pp.channel_id = $3"
+    pc_list = await fetch_all(
+        f"""SELECT pp.id, pp.amount, pp.currency, pp.platform, pp.username,
+                   pp.channel_id, c.title as channel_title,
+                   COALESCE(pp.paid_at, pp.created_at) as created_at
+            FROM paid_chat_payments pp
+            LEFT JOIN channels c ON c.id = pp.channel_id
+            WHERE {pc_list_cond}
+            ORDER BY COALESCE(pp.paid_at, pp.created_at) DESC LIMIT 50""",
+        *pc_params,
+    )
+
     b_total = float(billing_total["total"]) if billing_total else 0
     b_count = billing_total["count"] if billing_total else 0
     o_total = float(orders_total["total"]) if orders_total else 0
     o_count = orders_total["count"] if orders_total else 0
+    ai_total = float(ai_total_row["total"]) if ai_total_row else 0
+    ai_count = ai_total_row["count"] if ai_total_row else 0
+    pc_total = float(pc_total_row["total"]) if pc_total_row else 0
+    pc_count = pc_total_row["count"] if pc_total_row else 0
+
+    # Общий график: суммируем все источники по дням
+    combined_days: dict = {}
+    for rows in (billing_by_day, orders_by_day, ai_by_day, pc_by_day):
+        for r in rows:
+            d = str(r["day"])
+            acc = combined_days.setdefault(d, {"amount": 0.0, "count": 0})
+            acc["amount"] += float(r["amount"])
+            acc["count"] += r["count"]
 
     return {
         "period": {"from": _dt(start), "to": _dt(end)},
@@ -468,7 +579,33 @@ async def revenue_metrics(
             "avg_check": round(o_total / o_count, 2) if o_count else 0,
             "by_day": [{"date": str(r["day"]), "amount": float(r["amount"]), "count": r["count"]} for r in orders_by_day],
         },
-        "combined_total": b_total + o_total,
+        "ai_tokens": {
+            "total": ai_total,
+            "count": ai_count,
+            "avg_check": round(ai_total / ai_count, 2) if ai_count else 0,
+            "tokens_sold": int(ai_total_row["tokens"]) if ai_total_row else 0,
+            "by_day": [{"date": str(r["day"]), "amount": float(r["amount"]), "count": r["count"]} for r in ai_by_day],
+        },
+        "paid_chats": {
+            "total": pc_total,
+            "count": pc_count,
+            "avg_check": round(pc_total / pc_count, 2) if pc_count else 0,
+            "by_day": [{"date": str(r["day"]), "amount": float(r["amount"]), "count": r["count"]} for r in pc_by_day],
+            "payments": [
+                {
+                    "id": r["id"], "amount": float(r["amount"]), "currency": r["currency"],
+                    "platform": r["platform"], "username": r["username"],
+                    "channel_id": r["channel_id"], "channel_title": r["channel_title"],
+                    "created_at": _dt(r["created_at"]),
+                }
+                for r in pc_list
+            ],
+        },
+        "combined_total": b_total + o_total + ai_total + pc_total,
+        "combined_by_day": [
+            {"date": d, "amount": round(v["amount"], 2), "count": v["count"]}
+            for d, v in sorted(combined_days.items())
+        ],
     }
 
 
@@ -1032,11 +1169,14 @@ async def paid_chats_metrics(
         *params,
     )
 
-    # Выручка за период
+    # Выручка за период.
+    # ВАЖНО: реальный статус успешной оплаты в paid_chat_payments — 'paid'
+    # (webhook его и ставит); 'completed' в данных не встречается, из-за него
+    # выручка тут всегда была 0. Оставляем оба значения на случай легаси.
     revenue = await fetch_one(
         f"""SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
             FROM paid_chat_payments
-            WHERE status = 'completed' AND created_at >= $1 AND created_at <= $2 {ch_filter}""",
+            WHERE status IN ('paid', 'completed') AND created_at >= $1 AND created_at <= $2 {ch_filter}""",
         *params,
     )
 
