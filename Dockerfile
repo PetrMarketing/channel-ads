@@ -10,6 +10,16 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /app
 
+# Устанавливаем корневые сертификаты Минцифры (Russian Trusted Root CA + Sub CA),
+# чтобы TLS-соединения к российским сервисам с сертификатом Минцифры проходили верификацию
+# (securepay.tinkoff.ru перешёл на цепочку Минцифры 30.09.2025 — без этих CA aiohttp падает
+# c SSLCertVerificationError: self-signed certificate in certificate chain).
+COPY docker/ca-certificates/russian_trusted_root_ca.crt /usr/local/share/ca-certificates/russian_trusted_root_ca.crt
+COPY docker/ca-certificates/russian_trusted_sub_ca.crt /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Python dependencies
 COPY backend-python/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
