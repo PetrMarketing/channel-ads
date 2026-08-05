@@ -12,6 +12,17 @@ router = APIRouter()
 
 # Columns to return in API responses (excludes file_data BYTEA)
 _LM_COLS = "id, channel_id, code, title, message_text, file_path, file_type, telegram_file_id, attach_type, subscribers_only, created_at"
+
+
+def _serialize_lm(row):
+    """asyncpg Record → dict + file_url для превью в UI редактирования."""
+    if row is None:
+        return None
+    import os as _os
+    d = dict(row)
+    fp = d.get("file_path")
+    d["file_url"] = ("/uploads/" + _os.path.basename(fp)) if fp else None
+    return d
 _PIN_COLS = "id, channel_id, title, message_text, status, telegram_message_id, lead_magnet_id, inline_buttons, file_path, file_type, button_type, lm_button_text, attach_type, created_at, published_at"
 
 
@@ -34,7 +45,7 @@ async def list_lead_magnets(tc: str, user: Dict[str, Any] = Depends(get_current_
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
     magnets = await fetch_all(f"SELECT {_LM_COLS} FROM lead_magnets WHERE channel_id = $1 ORDER BY created_at DESC", channel["id"])
-    return {"success": True, "leadMagnets": magnets}
+    return {"success": True, "leadMagnets": [_serialize_lm(m) for m in magnets]}
 
 
 @router.post("/{tc}/lead-magnets")
@@ -67,7 +78,7 @@ async def create_lead_magnet(
         int(channel["id"]), code, title, message_text or "", file_path, file_type, file_data,
         attach_type or None, subs_only, back_btn,
     )
-    magnet = await fetch_one(f"SELECT {_LM_COLS} FROM lead_magnets WHERE id = $1", lm_id)
+    magnet = _serialize_lm(await fetch_one(f"SELECT {_LM_COLS} FROM lead_magnets WHERE id = $1", lm_id))
     try:
         from ..services.achievements import track_event
         await track_event(int(channel["id"]), "lead_magnet", 1)
@@ -110,7 +121,7 @@ async def update_lead_magnet(
             title, message_text or "", attach_type or None, subs_only, back_btn, lm_id,
         )
 
-    magnet = await fetch_one(f"SELECT {_LM_COLS} FROM lead_magnets WHERE id = $1", lm_id)
+    magnet = _serialize_lm(await fetch_one(f"SELECT {_LM_COLS} FROM lead_magnets WHERE id = $1", lm_id))
     return {"success": True, "leadMagnet": magnet}
 
 
@@ -354,11 +365,13 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
     uploaded_file_type = None
     uploaded_attachment_paths: list = []  # до 10 файлов от FormData
 
+    inline_buttons = None
     if "multipart/form-data" in content_type:
         form = await request.form()
         message_text = form.get("message_text", "")
         entity_type = form.get("entity_type", "")
         entity_id = form.get("entity_id")
+        inline_buttons = form.get("inline_buttons") or None
         # `files` (множественное) — приоритет; fallback на `file` (легаси)
         files_list = form.getlist("files")[:10]
         if not files_list:
@@ -378,6 +391,7 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
         message_text = body.get("message_text", "")
         entity_type = body.get("entity_type", "")
         entity_id = body.get("entity_id")
+        inline_buttons = body.get("inline_buttons") or None
 
     if not message_text.strip():
         raise HTTPException(status_code=400, detail="Текст пустой")
@@ -425,6 +439,23 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
                     import os as _os
                     attachment_paths = [p for p in post["attachment_paths"] if p and _os.path.exists(p)]
 
+    elif entity_id and entity_type == "funnel_step":
+        step = await fetch_one("SELECT * FROM funnel_steps WHERE id = $1", int(entity_id))
+        if step:
+            # Текст берём из клиента если явно передан (юзер редактирует),
+            # иначе из БД — чтобы не отсылать пустоту.
+            if not message_text.strip():
+                message_text = step.get("message_text") or ""
+            if not file_path:
+                file_path = step.get("file_path")
+                file_type = step.get("file_type")
+                max_file_token = step.get("max_file_token")
+                from ..services.file_storage import ensure_file
+                file_path = ensure_file(file_path, step.get("file_data"))
+            # Кнопки из БД если клиент их не прислал
+            if not inline_buttons:
+                inline_buttons = step.get("inline_buttons")
+
     elif entity_id and entity_type == "giveaway":
         gw = await fetch_one("SELECT * FROM giveaways WHERE id = $1", int(entity_id))
         if gw:
@@ -437,10 +468,31 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
                     file_path = None
 
     # Send to user via bot
-    from ..services.messenger import sanitize_html_for_telegram, html_to_max_markdown
+    from ..services.messenger import sanitize_html_for_telegram, html_to_max_markdown, build_max_inline_buttons, build_reply_markup
 
     _type_map = {"photo": "image", "video": "video", "audio": "audio", "voice": "audio"}
     max_attach_type = _type_map.get(file_type, "file")
+
+    # Резолвим кнопки в готовые (deep-link для comments/lm/poll/etc)
+    # используя канал этого пина/лид-магнита/шага если он есть.
+    resolved_buttons = inline_buttons
+    if inline_buttons and entity_id and entity_type in ("pin", "lead_magnet", "content", "funnel_step"):
+        try:
+            # Пытаемся достать канал для правильных deep-links
+            _tbl_map = {"pin": "pin_posts", "lead_magnet": "lead_magnets",
+                        "content": "content_posts", "funnel_step": "funnel_steps"}
+            tbl = _tbl_map.get(entity_type)
+            if tbl:
+                ent_row = await fetch_one(f"SELECT channel_id FROM {tbl} WHERE id = $1", int(entity_id))
+                if ent_row:
+                    ch_row = await fetch_one("SELECT * FROM channels WHERE id = $1", ent_row["channel_id"])
+                    if ch_row:
+                        resolved_buttons = await _resolve_buttons(
+                            inline_buttons, dict(ch_row),
+                            post_id=int(entity_id), post_type=entity_type,
+                        )
+        except Exception as e:
+            print(f"[send-preview] resolve buttons failed: {e}")
 
     # Try MAX first
     if user.get("max_user_id"):
@@ -470,7 +522,11 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
                     token = _extract_max_file_token(upload_result.get("data", {}))
                     if token:
                         attachments = [{"type": max_attach_type, "payload": {"token": token}}]
-            result = await max_api.send_direct_message(str(user["max_user_id"]), max_text, attachments=attachments)
+            max_buttons = build_max_inline_buttons(resolved_buttons) if resolved_buttons else None
+            result = await max_api.send_direct_message(
+                str(user["max_user_id"]), max_text,
+                attachments=attachments, buttons=max_buttons,
+            )
             if result.get("success"):
                 return {"success": True, "platform": "max"}
 
@@ -478,14 +534,19 @@ async def send_preview(tc: str, request: Request, user: Dict[str, Any] = Depends
     if user.get("telegram_id"):
         from ..services.messenger import send_telegram_message, send_telegram_photo, send_telegram_media_group
         tg_text = sanitize_html_for_telegram(message_text)
+        reply_markup = build_reply_markup(resolved_buttons) if resolved_buttons else None
         try:
-            # Медиа-группа из >1 фото
+            kw = {"reply_markup": reply_markup} if reply_markup else {}
+            # Медиа-группа из >1 фото (reply_markup игнорируется для sendMediaGroup — TG-ограничение)
             if attachment_paths and len(attachment_paths) > 1 and (file_type == "photo" or all(p.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')) for p in attachment_paths)):
                 await send_telegram_media_group(user["telegram_id"], attachment_paths, caption=tg_text)
+                # Кнопки шлём отдельным сообщением т.к. медиа-группа их не поддерживает
+                if reply_markup:
+                    await send_telegram_message(user["telegram_id"], "⤴ Кнопки к посту выше", reply_markup=reply_markup)
             elif file_path and file_type == "photo":
-                await send_telegram_photo(user["telegram_id"], file_path, caption=tg_text)
+                await send_telegram_photo(user["telegram_id"], file_path, caption=tg_text, **kw)
             else:
-                await send_telegram_message(user["telegram_id"], tg_text)
+                await send_telegram_message(user["telegram_id"], tg_text, **kw)
             return {"success": True, "platform": "telegram"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Ошибка отправки: {e}")

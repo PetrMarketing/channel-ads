@@ -1200,7 +1200,8 @@ export default function PinsPage() {
                 onFileChange={setLmFile}
                 attachType={lmForm.attach_type}
                 onAttachTypeChange={v => setLmForm(p => ({ ...p, attach_type: v }))}
-                existingFileInfo={editingLm?.file_type || ''}
+                existingFileInfo={editingLm?.file_type || editingLm?.attach_type || ''}
+                existingFileUrl={editingLm?.file_url || ''}
               />
             </div>
 

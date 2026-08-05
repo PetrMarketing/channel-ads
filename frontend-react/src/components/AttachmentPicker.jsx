@@ -86,29 +86,48 @@ export default function AttachmentPicker({ file, onFileChange, attachType, onAtt
           </button>
         </div>
       )}
-      {!file && existingFileInfo && (
-        <div style={{ padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 6, border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>{existingFileInfo === 'photo' ? '📷' : existingFileInfo === 'video' ? '🎬' : existingFileInfo === 'video_note' ? '⭕' : existingFileInfo === 'voice' ? '🎤' : '📎'}</span>
-              <span>Прикреплён файл ({existingFileInfo})</span>
+      {!file && (existingFileInfo || existingFileUrl) && (() => {
+        const t = existingFileInfo || 'file';
+        const isPhoto = t === 'photo';
+        const iconMap = { photo: '📷', video: '🎬', video_note: '⭕', voice: '🎤', audio: '🎵', document: '📄', file: '📎' };
+        const labelMap = { photo: 'Фото', video: 'Видео', video_note: 'Кружок', voice: 'Голосовое', audio: 'Аудио', document: 'Документ', file: 'Файл' };
+        return (
+          <div style={{ padding: '10px 12px', background: 'var(--bg-glass)', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {isPhoto && existingFileUrl ? (
+                <img src={existingFileUrl} alt="" style={{
+                  width: 64, height: 64, objectFit: 'cover', borderRadius: 6,
+                  border: '1px solid var(--border)', flexShrink: 0,
+                }} onError={e => { e.target.style.display = 'none'; }} />
+              ) : (
+                <div style={{
+                  width: 64, height: 64, borderRadius: 6, background: 'var(--bg)',
+                  border: '1px solid var(--border)', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem', flexShrink: 0,
+                }}>{iconMap[t] || '📎'}</div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {labelMap[t] || 'Файл'} прикреплён
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Загрузите новый файл чтобы заменить
+                </div>
+              </div>
+              {onRemoveExisting && (
+                <button type="button" title="Удалить вложение"
+                  onClick={onRemoveExisting}
+                  style={{
+                    width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)',
+                    background: 'var(--bg)', color: 'var(--text-secondary)',
+                    fontSize: '1rem', cursor: 'pointer', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>✕</button>
+              )}
             </div>
-            {onRemoveExisting && (
-              <button type="button" className="btn btn-danger"
-                style={{ padding: '2px 8px', fontSize: '0.75rem' }}
-                onClick={onRemoveExisting}>
-                Удалить
-              </button>
-            )}
           </div>
-          {existingFileUrl && existingFileInfo === 'photo' && (
-            <img src={existingFileUrl} alt="" style={{ maxWidth: '100%', maxHeight: 120, borderRadius: 6, marginTop: 6 }} />
-          )}
-          <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-            Загрузите новый файл для замены или удалите текущий
-          </p>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

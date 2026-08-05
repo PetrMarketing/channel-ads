@@ -51,20 +51,22 @@ export default function MessagePreview({ messageText, buttons, file, fileUrl, tc
     setSending(true);
     try {
       let data;
+      // Всегда шлём inline_buttons — иначе кнопки не приходят в preview.
+      const btnsJson = typeof buttons === 'string' ? buttons : JSON.stringify(buttons || []);
       if (allFiles.length > 0) {
-        // Новые файлы выбраны — шлём ВСЕ как FormData files[]
         const formData = new FormData();
         formData.append('message_text', messageText || '');
         formData.append('entity_type', entityType || '');
         if (entityId) formData.append('entity_id', entityId);
+        formData.append('inline_buttons', btnsJson);
         for (const f of allFiles) formData.append('files', f);
         data = await api.upload(`/pins/${tc}/send-preview`, formData, 'POST');
       } else {
-        // Нет новых файлов — backend подтянет attachment_paths из БД по entity_id
         data = await api.post(`/pins/${tc}/send-preview`, {
           message_text: messageText,
           entity_type: entityType,
           entity_id: entityId,
+          inline_buttons: btnsJson,
         });
       }
       if (data.success) {

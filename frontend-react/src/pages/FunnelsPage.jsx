@@ -9,6 +9,7 @@ import RichTextEditor from '../components/RichTextEditor';
 import ButtonBuilder from '../components/ButtonBuilder';
 import AttachmentPicker from '../components/AttachmentPicker';
 import UploadProgress from '../components/UploadProgress';
+import MessagePreview from '../components/MessagePreview';
 import { usePageOnboarding } from '../components/OnboardingTour';
 
 const WEEKDAYS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
@@ -989,7 +990,8 @@ export default function FunnelsPage() {
                 onFileChange={setStepFile}
                 attachType={form.attach_type}
                 onAttachTypeChange={v => setForm(p => ({ ...p, attach_type: v }))}
-                existingFileInfo={editingStep?.file_url ? 'файл прикреплён' : ''}
+                existingFileInfo={!stepFile ? (editingStep?.file_type || editingStep?.attach_type || '') : ''}
+                existingFileUrl={!stepFile ? (editingStep?.file_url || '') : ''}
               />
             </div>
 
@@ -1122,6 +1124,16 @@ export default function FunnelsPage() {
                 showLeadMagnet={true}
               />
             </div>
+
+            <MessagePreview
+              messageText={form.message_text}
+              buttons={form.inline_buttons}
+              file={stepFile}
+              fileUrl={!stepFile ? (editingStep?.file_url || '') : ''}
+              tc={tc}
+              entityType="funnel_step"
+              entityId={editingStep?.id}
+            />
 
             {saving && uploadProgress > 0 && (
               <UploadProgress progress={uploadProgress} />
