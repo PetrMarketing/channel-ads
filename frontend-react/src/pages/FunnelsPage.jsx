@@ -950,7 +950,11 @@ export default function FunnelsPage() {
               </div>
               {errors.message_text && <div className="field-error-text">{errors.message_text}</div>}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, gap: 10 }}>
-                <div style={hintStyle}>Это сообщение будет отправлено подписчику после задержки. Поддерживается HTML.</div>
+                <div style={hintStyle}>
+                  Отправится подписчику после задержки. Поддерживается HTML.
+                  Переменные: <code>{'{name}'}</code>, <code>{'{first_name}'}</code> —
+                  имя лида; <code>{'{username}'}</code> — юзернейм.
+                </div>
                 <button
                   type="button"
                   className={showPreview ? 'fp-primary' : 'fp-ghost'}

@@ -155,7 +155,9 @@ async def process_pending_funnel_messages():
         SELECT fp.*, fs.message_text, fs.file_path, fs.file_type, fs.telegram_file_id,
                fs.inline_buttons, fs.file_data, fs.attach_type, fs.max_file_token,
                l.telegram_id as lead_tg_id, l.max_user_id as lead_max_id,
-               l.platform as lead_platform
+               l.platform as lead_platform,
+               l.first_name as lead_first_name,
+               l.username as lead_username
         FROM funnel_progress fp
         JOIN funnel_steps fs ON fs.id = fp.funnel_step_id
         JOIN leads l ON l.id = fp.lead_id
@@ -185,9 +187,20 @@ async def process_pending_funnel_messages():
                     print(f"[FunnelProcessor] step={msg.get('funnel_step_id')} progress={msg['id']} "
                           f"file_path='{msg.get('file_path')}' data_len={len(msg.get('file_data') or b'')} "
                           f"→ ensure_file returned None, attachment will be missing")
+                # Подстановка переменных в тексте сообщения:
+                # {name} / {first_name} — имя лида (из вебхука бота).
+                # {username} — username если есть, иначе пусто.
+                # Если имени нет — подставляем "друг" чтобы не оставлять
+                # пустоту типа «Привет, !».
+                fname = (msg.get("lead_first_name") or "").strip()
+                uname = (msg.get("lead_username") or "").strip()
+                text = msg.get("message_text", "") or ""
+                text = (text.replace("{first_name}", fname or "друг")
+                             .replace("{name}", fname or "друг")
+                             .replace("{username}", uname))
                 r = await send_to_user(
                     user_id=user_id, platform=platform,
-                    text=msg.get("message_text", ""),
+                    text=text,
                     file_path=msg_file_path, file_type=msg.get("file_type"),
                     telegram_file_id=msg.get("telegram_file_id"),
                     inline_buttons=msg.get("inline_buttons"),

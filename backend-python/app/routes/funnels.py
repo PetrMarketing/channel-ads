@@ -15,6 +15,21 @@ _LM_COLS = "id, channel_id, code, title, message_text, file_path, file_type, tel
 _STEP_COLS = "id, channel_id, lead_magnet_id, step_number, delay_minutes, message_text, file_path, file_type, telegram_file_id, is_active, inline_buttons, attach_type, delay_type, delay_config, created_at"
 
 
+def _serialize_step(row):
+    """asyncpg Record → dict, добавляет file_url для превью на фронте.
+    Фронт ожидает `editingStep.file_url` при редактировании — без него
+    прикреплённый файл «пропадает» из UI хотя в БД остался."""
+    if row is None:
+        return None
+    d = dict(row)
+    fp = d.get("file_path")
+    if fp:
+        d["file_url"] = "/uploads/" + os.path.basename(fp)
+    else:
+        d["file_url"] = None
+    return d
+
+
 async def _get_owned_channel(tc: str, uid: int):
     from ..middleware.auth import get_channel_for_user
     return await get_channel_for_user(tc, uid, "funnels")
@@ -39,7 +54,7 @@ async def list_funnels(tc: str, user: Dict[str, Any] = Depends(get_current_user)
             f"SELECT {_STEP_COLS} FROM funnel_steps WHERE lead_magnet_id = $1 ORDER BY step_number", lm["id"]
         )
         lm_dict = dict(lm)
-        lm_dict["steps"] = steps
+        lm_dict["steps"] = [_serialize_step(s) for s in steps]
         result.append(lm_dict)
     return {"success": True, "funnels": result}
 
@@ -100,7 +115,7 @@ async def create_step(tc: str, lm_id: int, request: Request, user: Dict[str, Any
         await track_event(int(channel["id"]), "funnel_step", 1)
     except Exception as e:
         print(f"[Achievements] track funnel_step skip: {e}")
-    return {"success": True, "step": step}
+    return {"success": True, "step": _serialize_step(step)}
 
 
 @router.put("/{tc}/{lm_id}/steps/{step_id}")
@@ -165,7 +180,7 @@ async def update_step(tc: str, lm_id: int, step_id: int, request: Request, user:
     params.extend([step_id, lm_id])
     await execute(f"UPDATE funnel_steps SET {', '.join(fields)} WHERE id = ${idx} AND lead_magnet_id = ${idx+1}", *params)
     step = await fetch_one(f"SELECT {_STEP_COLS} FROM funnel_steps WHERE id = $1", step_id)
-    return {"success": True, "step": step}
+    return {"success": True, "step": _serialize_step(step)}
 
 
 @router.delete("/{tc}/{lm_id}/steps/{step_id}")
