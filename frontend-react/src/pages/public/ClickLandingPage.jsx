@@ -51,11 +51,30 @@ export default function ClickLandingPage() {
         return;
       }
       setInfo(data.link);
+      // Ждём MAX WebApp SDK (см. SubscribePage) — без user_id из
+      // initDataUnsafe visit создаётся анонимным и конверсия не
+      // выстрелит в YM/VK когда бот получит событие подписки.
+      let maxUserId = null, mUsername = null, mFirstName = null;
+      for (let i = 0; i < 20; i++) {
+        try {
+          const u = window.WebApp?.initDataUnsafe?.user;
+          if (u && (u.id || u.user_id)) {
+            maxUserId = String(u.user_id || u.id);
+            mUsername = u.username || null;
+            mFirstName = u.first_name || u.name || null;
+            break;
+          }
+        } catch {}
+        await new Promise(r => setTimeout(r, 200));
+      }
       try {
         const visitData = await api.post('/track/visit', {
           short_code: shortCode,
           ip_address: '',
           user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+          max_user_id: maxUserId,
+          username: mUsername,
+          first_name: mFirstName,
         });
         if (visitData?.success && visitData.visitId) {
           setVisitId(visitData.visitId);

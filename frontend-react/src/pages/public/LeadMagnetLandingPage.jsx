@@ -20,9 +20,25 @@ export default function LeadMagnetLandingPage() {
       const data = await api.get(`/track/info/${shortCode}`);
       if (data.success) {
         setInfo(data.link);
+        // Ждём MAX WebApp — подхватываем user_id как в комментариях,
+        // иначе конверсия в YM/VK не привяжется к visit'у.
+        let maxUserId = null, mUsername = null, mFirstName = null;
+        for (let i = 0; i < 20; i++) {
+          try {
+            const u = window.WebApp?.initDataUnsafe?.user;
+            if (u && (u.id || u.user_id)) {
+              maxUserId = String(u.user_id || u.id);
+              mUsername = u.username || null;
+              mFirstName = u.first_name || u.name || null;
+              break;
+            }
+          } catch {}
+          await new Promise(r => setTimeout(r, 200));
+        }
         try {
           const visitData = await api.post('/track/visit', {
             short_code: shortCode, ip_address: '', user_agent: navigator.userAgent,
+            max_user_id: maxUserId, username: mUsername, first_name: mFirstName,
           });
           if (visitData.success && visitData.visitId) setVisitId(visitData.visitId);
         } catch {}

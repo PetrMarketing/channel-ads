@@ -208,6 +208,9 @@ async def create_visit(request: Request):
         link["id"], body.get("ip_address"), body.get("user_agent"),
     )
 
+    print(f"[track] visit created id={visit_id} code={short_code} "
+          f"max_user_id={max_user_id} tg_id={telegram_id} platform={platform} "
+          f"ym_client_id={body.get('ym_client_id')}")
     return {
         "success": True,
         "visitId": visit_id,

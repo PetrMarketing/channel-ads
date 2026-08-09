@@ -30,11 +30,32 @@ export default function SubscribePage() {
       const data = await api.get(`/track/info/${shortCode}`);
       if (data.success) {
         setInfo(data.link);
+        // Ждём до 4 сек пока подгрузится MAX WebApp SDK — юзер часто
+        // открывает /subscribe/{code} прямо из бота-mini-app. Без user_id
+        // из initDataUnsafe visit создаётся анонимным, и когда юзер
+        // подпишется в канал, бот не сможет привязать visit → subscription
+        // → конверсия в YM/VK не выстрелит.
+        let maxUserId = null, mUsername = null, mFirstName = null;
+        for (let i = 0; i < 20; i++) {
+          try {
+            const u = window.WebApp?.initDataUnsafe?.user;
+            if (u && (u.id || u.user_id)) {
+              maxUserId = String(u.user_id || u.id);
+              mUsername = u.username || null;
+              mFirstName = u.first_name || u.name || null;
+              break;
+            }
+          } catch {}
+          await new Promise(r => setTimeout(r, 200));
+        }
         try {
           const visitData = await api.post('/track/visit', {
             short_code: shortCode,
             ip_address: '',
             user_agent: navigator.userAgent,
+            max_user_id: maxUserId,
+            username: mUsername,
+            first_name: mFirstName,
           });
           if (visitData.success && visitData.visitId) {
             setVisitId(visitData.visitId);
