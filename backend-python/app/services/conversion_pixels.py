@@ -139,23 +139,22 @@ async def fire_server_goals(subscription_id: int) -> None:
 
                 visit_id = sub["visit_id"]
 
-        # Resolve goal config from the visit + tracking_link + channel join.
+        # Пиксели настраиваются ТОЛЬКО на уровне tracking_link — на
+        # уровне канала пиксель больше не берём (fallback снят). Так юзер
+        # управляет конверсиями точечно по каждой рекламной ссылке.
         cfg = await fetch_one(
             """
             SELECT
-                v.id          AS visit_id,
-                v.user_agent  AS user_agent,
+                v.id           AS visit_id,
+                v.user_agent   AS user_agent,
                 v.ym_client_id AS ym_client_id,
-                tl.short_code  AS short_code,
+                tl.short_code    AS short_code,
                 tl.ym_counter_id AS link_ym_counter,
                 tl.ym_goal_name  AS link_ym_goal,
                 tl.vk_pixel_id   AS link_vk_pixel,
-                tl.vk_goal_name  AS link_vk_goal,
-                c.yandex_metrika_id AS channel_ym_counter,
-                c.vk_pixel_id       AS channel_vk_pixel
+                tl.vk_goal_name  AS link_vk_goal
             FROM visits v
             LEFT JOIN tracking_links tl ON tl.id = v.tracking_link_id
-            LEFT JOIN channels c        ON c.id = v.channel_id
             WHERE v.id = $1
             """,
             visit_id,
@@ -164,9 +163,9 @@ async def fire_server_goals(subscription_id: int) -> None:
             print(f"[track] server-fire skipped subscription={subscription_id} reason=no_visit_row")
             return
 
-        ym_counter = cfg.get("link_ym_counter") or cfg.get("channel_ym_counter")
+        ym_counter = cfg.get("link_ym_counter")
         ym_goal = cfg.get("link_ym_goal") or _DEFAULT_GOAL
-        vk_pixel = cfg.get("link_vk_pixel") or cfg.get("channel_vk_pixel")
+        vk_pixel = cfg.get("link_vk_pixel")
         vk_goal = cfg.get("link_vk_goal") or _DEFAULT_GOAL
 
         if not ym_counter and not vk_pixel:
@@ -236,11 +235,8 @@ async def _fire_goals_for_link(
         """
         SELECT tl.short_code,
                tl.ym_counter_id, tl.ym_goal_name,
-               tl.vk_pixel_id,   tl.vk_goal_name,
-               c.yandex_metrika_id AS channel_ym_id,
-               c.vk_pixel_id       AS channel_vk_pixel_id
+               tl.vk_pixel_id,   tl.vk_goal_name
         FROM tracking_links tl
-        JOIN channels c ON c.id = tl.channel_id
         WHERE tl.id = $1
         """,
         link_id,
@@ -249,10 +245,9 @@ async def _fire_goals_for_link(
         print(f"[track] {log_prefix} link {link_id} missing — skipping fire")
         return out
 
-    counter_id = (link.get("ym_counter_id") or link.get("channel_ym_id") or "")
-    counter_id = str(counter_id).strip() if counter_id else ""
-    pixel_id = (link.get("vk_pixel_id") or link.get("channel_vk_pixel_id") or "")
-    pixel_id = str(pixel_id).strip() if pixel_id else ""
+    # Пиксели теперь ТОЛЬКО на уровне ссылки — канальный fallback снят
+    counter_id = str(link.get("ym_counter_id") or "").strip()
+    pixel_id = str(link.get("vk_pixel_id") or "").strip()
     ym_goal = link.get("ym_goal_name") or _DEFAULT_GOAL
     vk_goal = link.get("vk_goal_name") or _DEFAULT_GOAL
 
@@ -311,29 +306,20 @@ async def _record_offline_conversion_for_subscription(
     привязки к IP — это РАБОТАЕТ. Уникальность по subscription_id защищает
     от дублей.
     """
-    if not subscription_id or not channel_id or not ym_client_id:
+    if not subscription_id or not channel_id or not ym_client_id or not link_id:
         return
     try:
-        # Резолвим goal_name + ym_counter_id (link > channel)
-        link = None
-        if link_id:
-            link = await fetch_one(
-                """SELECT tl.ym_counter_id AS tl_counter, tl.ym_goal_name AS tl_goal,
-                          c.yandex_metrika_id AS c_counter
-                   FROM tracking_links tl JOIN channels c ON c.id = tl.channel_id
-                   WHERE tl.id = $1""", link_id,
-            )
-        if not link:
-            link = await fetch_one(
-                "SELECT yandex_metrika_id AS c_counter FROM channels WHERE id = $1",
-                channel_id,
-            )
+        # Резолвим goal_name + ym_counter_id — ТОЛЬКО из ссылки
+        link = await fetch_one(
+            """SELECT tl.ym_counter_id AS tl_counter, tl.ym_goal_name AS tl_goal
+               FROM tracking_links tl WHERE tl.id = $1""",
+            link_id,
+        )
         if not link:
             return
-        counter_id = (link.get("tl_counter") or link.get("c_counter") or "")
-        counter_id = str(counter_id).strip() if counter_id else ""
+        counter_id = str(link.get("tl_counter") or "").strip()
         if not counter_id:
-            return  # нет YM-счётчика — некуда заливать
+            return  # нет YM-счётчика на ссылке — некуда заливать
         goal_name = link.get("tl_goal") or _DEFAULT_GOAL
         await execute(
             """INSERT INTO offline_conversions

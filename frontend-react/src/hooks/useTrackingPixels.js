@@ -35,8 +35,10 @@ function getOrCreateCid() {
 }
 
 export function useTrackingPixels(info) {
-  const counterId = info?.ym_counter_id || info?.channel_ym_id || info?.yandex_metrika_id;
-  const pixelId = info?.vk_pixel_id || info?.channel_vk_pixel_id;
+  // Пиксели ТОЛЬКО на уровне ссылки — канальный fallback снят.
+  // Юзер настраивает YM/VK для каждой рекламной ссылки отдельно.
+  const counterId = info?.ym_counter_id;
+  const pixelId = info?.vk_pixel_id;
   const ymGoalName = info?.ym_goal_name || 'subscribe_channel';
   const vkGoalName = info?.vk_goal_name || 'subscribe_channel';
 

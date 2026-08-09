@@ -208,9 +208,9 @@ export default function LinksPage() {
   const openMetrika = (link) => {
     setMetrikaLink(link);
     setMetrikaForm({
-      ym_counter_id: link.ym_counter_id || currentChannel?.yandex_metrika_id || '',
+      ym_counter_id: link.ym_counter_id || '',
       ym_goal_name: link.ym_goal_name || 'subscribe_channel',
-      vk_pixel_id: link.vk_pixel_id || currentChannel?.vk_pixel_id || '',
+      vk_pixel_id: link.vk_pixel_id || '',
       vk_goal_name: link.vk_goal_name || 'subscribe_channel',
     });
     setShowMetrikaModal(true);
@@ -861,11 +861,6 @@ export default function LinksPage() {
               <label style={labelStyle}>ID счётчика</label>
               <input className="lp-input" style={inputStyle} placeholder="12345678" value={metrikaForm.ym_counter_id}
                 onChange={e => setMetrikaForm(p => ({ ...p, ym_counter_id: e.target.value }))} />
-              {currentChannel?.yandex_metrika_id && !metrikaForm.ym_counter_id && (
-                <p style={{ ...hintStyle, color: ACCENT }}>
-                  Используется счётчик канала: {currentChannel.yandex_metrika_id}
-                </p>
-              )}
             </div>
             <div>
               <label style={labelStyle}>Название цели</label>
@@ -890,11 +885,6 @@ export default function LinksPage() {
               <label style={labelStyle}>ID пикселя VK</label>
               <input className="lp-input" style={inputStyle} placeholder="3751584" value={metrikaForm.vk_pixel_id}
                 onChange={e => setMetrikaForm(p => ({ ...p, vk_pixel_id: e.target.value }))} />
-              {currentChannel?.vk_pixel_id && !metrikaForm.vk_pixel_id && (
-                <p style={{ ...hintStyle, color: ACCENT }}>
-                  Используется пиксель канала: {currentChannel.vk_pixel_id}
-                </p>
-              )}
             </div>
             <div>
               <label style={labelStyle}>Название цели VK</label>
