@@ -513,7 +513,13 @@ export default function ContentPage() {
     return `${m.getUTCFullYear()}-${pad(m.getUTCMonth() + 1)}-${pad(m.getUTCDate())}T${pad(m.getUTCHours())}:${pad(m.getUTCMinutes())}`;
   };
 
+  // Редактируем пост, который УЖЕ опубликован в канале. В этом режиме дата
+  // публикации не нужна (пост в канале), а сохранение обновляет сообщение
+  // прямо в канале через edit, а не отправляет его заново.
+  const isPublished = editingPost?.status === 'published';
+
   const isScheduledInPast = () => {
+    if (isPublished) return false;
     if (!form.scheduled_at) return false;
     return form.scheduled_at < nowMskString();
   };
@@ -521,7 +527,9 @@ export default function ContentPage() {
   const validate = () => {
     const newErrors = {};
     if (!form.message_text.trim()) newErrors.message_text = 'Текст поста обязателен';
-    if (!form.scheduled_at) {
+    if (isPublished) {
+      // Опубликованный пост — дату не проверяем, она уже не используется
+    } else if (!form.scheduled_at) {
       newErrors.scheduled_at = 'Укажите дату публикации';
     } else if (isScheduledInPast()) {
       newErrors.scheduled_at = 'Нельзя запланировать в прошедшем времени (МСК)';
@@ -561,8 +569,13 @@ export default function ContentPage() {
         const fd = new FormData();
         fd.append('title', defaultTitle);
         fd.append('message_text', form.message_text);
-        fd.append('scheduled_at', scheduledUtc);
-        fd.append('status', 'scheduled');
+        // Для уже опубликованного поста статус и дату не трогаем: иначе он
+        // снова станет 'scheduled' и уйдёт в канал новым сообщением вместо
+        // редактирования существующего.
+        if (!isPublished) {
+          fd.append('scheduled_at', scheduledUtc);
+          fd.append('status', 'scheduled');
+        }
         if (parsedButtons) fd.append('inline_buttons', JSON.stringify(parsedButtons));
         if (form.attach_type) fd.append('attach_type', form.attach_type);
         // Главный файл + до 9 дополнительных = до 10 файлов как `files[]`
@@ -580,9 +593,12 @@ export default function ContentPage() {
         const payload = {
           title: defaultTitle,
           message_text: form.message_text,
-          scheduled_at: scheduledUtc || null,
-          status: 'scheduled',
         };
+        // Опубликованный пост: статус и дату оставляем как есть (см. выше)
+        if (!isPublished) {
+          payload.scheduled_at = scheduledUtc || null;
+          payload.status = 'scheduled';
+        }
         if (parsedButtons) payload.inline_buttons = parsedButtons;
         if (form.attach_type) payload.attach_type = form.attach_type;
         if (form.erid) payload.erid = form.erid;
@@ -596,7 +612,18 @@ export default function ContentPage() {
       }
 
       if (data.success) {
-        showToast(editingPost ? 'Пост обновлён, ждёт публикации' : 'Пост запланирован');
+        if (isPublished) {
+          // Пост уже в канале — просим сервер обновить само сообщение (edit).
+          // Если мессенджер отредактировать не дал, сервер отправит новое
+          // сообщение и вернёт edited=false — честно сообщаем об этом.
+          const res = await api.post(`/content/${tc}/${editingPost.id}/publish`, {});
+          showToast(res?.edited
+            ? 'Пост обновлён в канале'
+            : 'Не получилось отредактировать старое сообщение — пост опубликован заново',
+            res?.edited ? 'success' : 'error');
+        } else {
+          showToast(editingPost ? 'Пост обновлён, ждёт публикации' : 'Пост запланирован');
+        }
         setShowModal(false);
         loadPosts();
       } else {
@@ -635,6 +662,9 @@ export default function ContentPage() {
 
   const saveDraft = useCallback(async () => {
     if (!showModal || !tc) return;
+    // Опубликованный пост в фоне не переписываем: иначе правки осядут в базе,
+    // а в канале останется старый текст. Сохранение — только по кнопке.
+    if (editingPost?.status === 'published') return;
     if (draftSavingRef.current) return;
     const hasText = !!(form.message_text || '').trim();
     const hasFile = !!postFile;
@@ -1549,6 +1579,7 @@ export default function ContentPage() {
                 type="datetime-local"
                 value={form.scheduled_at}
                 min={nowMskString()}
+                disabled={isPublished}
                 onChange={e => {
                   setForm(p => ({ ...p, scheduled_at: e.target.value }));
                   if (e.target.value) setErrors(er => ({ ...er, scheduled_at: '' }));
@@ -1559,7 +1590,9 @@ export default function ContentPage() {
                   boxShadow: (errors.scheduled_at || isScheduledInPast()) ? '0 0 0 3px rgba(230,57,70,0.12)' : 'none',
                 }}
               />
-              {(errors.scheduled_at || isScheduledInPast()) ? (
+              {isPublished ? (
+                <div style={hintStyle}>Пост уже опубликован — дата не меняется. Правки уйдут в тот же пост в канале.</div>
+              ) : (errors.scheduled_at || isScheduledInPast()) ? (
                 <div style={{ ...hintStyle, color: '#e63946', fontWeight: 600 }}>
                   ⚠️ {errors.scheduled_at || 'Нельзя запланировать в прошедшем времени (МСК)'}
                 </div>
@@ -1624,7 +1657,9 @@ export default function ContentPage() {
                 disabled={saving || isScheduledInPast()}
                 title={isScheduledInPast() ? 'Нельзя запланировать в прошедшем времени' : ''}
               >
-                {saving ? (uploadProgress > 0 ? `Загрузка ${uploadProgress}%` : 'Сохранение...') : 'Запланировать'}
+                {saving
+                  ? (uploadProgress > 0 ? `Загрузка ${uploadProgress}%` : 'Сохранение...')
+                  : (isPublished ? 'Сохранить и обновить в канале' : 'Запланировать')}
               </button>
             </div>
           </div>

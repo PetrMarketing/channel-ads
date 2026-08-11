@@ -219,10 +219,17 @@ def _parse_json_field(val):
 
 
 async def _get_owned_channel(tc: str, user_id: int):
-    return await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code=$1 AND user_id=$2 AND is_active=1",
-        tc, user_id,
-    )
+    """Канал по tracking_code для владельца ИЛИ сотрудника с правом на контент.
+
+    Раньше проверялся только владелец (user_id), из-за чего у добавленных
+    администраторов/редакторов ИИ-функции отвечали «Канал не найден».
+    """
+    from ..middleware.auth import get_channel_for_user
+    channel = await get_channel_for_user(tc, user_id, "content")
+    # Удалённый/отключённый канал недоступен даже владельцу
+    if not channel or not channel.get("is_active"):
+        return None
+    return channel
 
 
 async def _get_session(session_id: int, user_id: int, channel_id: int):

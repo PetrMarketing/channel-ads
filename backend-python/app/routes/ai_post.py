@@ -26,10 +26,9 @@ MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 МБ
 
 
 async def _get_owned_channel(tc: str, user_id: int) -> Optional[Dict[str, Any]]:
-    return await fetch_one(
-        "SELECT * FROM channels WHERE tracking_code = $1 AND user_id = $2",
-        tc, user_id,
-    )
+    """Канал по tracking_code для владельца ИЛИ сотрудника с правом на контент."""
+    from ..middleware.auth import get_channel_for_user
+    return await get_channel_for_user(tc, user_id, "content")
 
 
 async def _charge(user_id: int, amount: int, action: str, description: str) -> None:
