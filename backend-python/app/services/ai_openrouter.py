@@ -28,6 +28,22 @@ TEXT_MODEL = "openai/gpt-5.4-nano"
 
 FALLBACK_TEXT_MODELS = ["openai/gpt-4o-mini", "openai/gpt-4o"]
 
+# Блок «фиксация личности» для генерации картинок с фото-референсом.
+# Без него image-модель воспринимает фото человека как стилевой ориентир
+# и свободно перерисовывает лицо — жалобы вида «меняет внешность, хотя
+# в промпте прошу не менять». Добавляется во ВСЕ места, где юзер грузит
+# своё фото: картинка поста, картинка публикации, ИИ Оформление, баннер
+# лид-магнита.
+IDENTITY_LOCK_HINT = (
+    "\n\nIDENTITY LOCK (highest priority rule): if a reference image contains a person, "
+    "that person is real and specific. Reproduce them exactly — same face, same facial "
+    "features and proportions, same eyes, nose and lips, same hairstyle and hair colour, "
+    "same age, same skin tone, same body type. Do NOT beautify, slim down, rejuvenate, "
+    "restyle or replace them; do NOT generate a different or merely 'similar looking' "
+    "person. Background, scene, clothing and lighting follow the prompt, but the person's "
+    "appearance must stay identical to the photo."
+)
+
 
 async def openrouter_chat(prompt: str, model: str = None) -> str:
     """Генерация текста через OpenRouter chat completions.

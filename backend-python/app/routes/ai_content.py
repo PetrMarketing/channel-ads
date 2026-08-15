@@ -25,7 +25,12 @@ from typing import Any, Dict, Optional, List
 from ..config import settings
 from ..database import execute, execute_returning_id, fetch_all, fetch_one
 from ..middleware.auth import get_current_user
-from ..services.ai_openrouter import openrouter_chat, openrouter_image_gen, save_image_result
+from ..services.ai_openrouter import (
+    openrouter_chat,
+    openrouter_image_gen,
+    save_image_result,
+    IDENTITY_LOCK_HINT,
+)
 
 router = APIRouter()
 
@@ -1789,10 +1794,21 @@ async def _do_image_generation_for_post(
     if fmt_hint:
         enhanced = f"{enhanced}\n\n{fmt_hint}"
     if palette_str:
-        enhanced = (
-            f"{enhanced}\n\nDominant color palette (HARD CONSTRAINT): {palette_str}. "
-            f"Walls, props, clothing, background and accents must stay within this palette."
+        # При фото-референсе палитра НЕ распространяется на одежду и внешность —
+        # иначе модель перекрашивает человека под цвета канала.
+        scope = (
+            "Walls, props, background and accents must stay within this palette. "
+            "Do NOT recolor the person from the reference photo — their appearance, "
+            "skin, hair and clothing stay as they are."
+            if photo_base64 else
+            "Walls, props, clothing, background and accents must stay within this palette."
         )
+        enhanced = (
+            f"{enhanced}\n\nDominant color palette (HARD CONSTRAINT): {palette_str}. {scope}"
+        )
+    # Фото-референс: жёстко фиксируем личность человека на фото
+    if photo_base64:
+        enhanced += IDENTITY_LOCK_HINT
     enhanced += (
         "\n\nPhotographic realism is mandatory: real human skin texture, natural "
         "lighting, real-world environment, sharp focus, shallow depth of field, soft "

@@ -12,7 +12,12 @@ from ..config import settings
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
 from ..middleware.auth import get_current_user
 from ..services.max_api import get_max_api
-from ..services.ai_openrouter import openrouter_chat, openrouter_image_gen, save_image_result
+from ..services.ai_openrouter import (
+    openrouter_chat,
+    openrouter_image_gen,
+    save_image_result,
+    IDENTITY_LOCK_HINT,
+)
 
 router = APIRouter()
 
@@ -240,7 +245,11 @@ async def generate_avatars(tc: str, session_id: int, user: Dict[str, Any] = Depe
     if session.get("photo_path") and os.path.exists(session["photo_path"]):
         with open(session["photo_path"], "rb") as f:
             photo_base64 = base64.b64encode(f.read()).decode()
-        photo_instruction = " На каждой аватарке используй приложенное фото как элемент дизайна."
+        # Фото человека — только как элемент дизайна, но с сохранением внешности
+        photo_instruction = (
+            " На каждой аватарке используй приложенное фото как элемент дизайна."
+            + IDENTITY_LOCK_HINT
+        )
 
     prompt = (
         f"Создай квадратное изображение (соотношение сторон строго 1:1) с ровной сеткой 3x3 из 9 аватарок "

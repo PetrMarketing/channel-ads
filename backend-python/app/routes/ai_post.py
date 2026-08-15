@@ -16,7 +16,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from ..config import settings
 from ..database import execute, fetch_one, fetch_all
 from ..middleware.auth import get_current_user
-from ..services.ai_openrouter import openrouter_chat, openrouter_image_gen, save_image_result
+from ..services.ai_openrouter import (
+    openrouter_chat,
+    openrouter_image_gen,
+    save_image_result,
+    IDENTITY_LOCK_HINT,
+)
 from ..services.channel_levels import skill_cost, track_skill
 from ..services.achievements import track_event
 
@@ -238,12 +243,15 @@ async def generate_post_image(
         "3:4": "Portrait 3:4 aspect ratio composition.",
     }[image_format]
 
+    # Референсы: стиль берём с фото, но личность человека на нём — фиксируем,
+    # иначе модель перерисовывает лицо (см. IDENTITY_LOCK_HINT).
     refs_hint = ""
     if ref_b64_list:
         refs_hint = (
             f"\n\nUse the {len(ref_b64_list)} reference image(s) above as visual anchor: "
             f"match the style, mood, lighting, color palette and composition. "
             f"Combine elements from them where it makes sense."
+            f"{IDENTITY_LOCK_HINT}"
         )
 
     enhanced = (

@@ -10,7 +10,12 @@ from fastapi import APIRouter, Request, HTTPException, Depends, UploadFile, File
 from ..config import settings
 from ..database import fetch_one, execute, execute_returning_id
 from ..middleware.auth import get_current_user
-from ..services.ai_openrouter import openrouter_chat, openrouter_image_gen, save_image_result
+from ..services.ai_openrouter import (
+    openrouter_chat,
+    openrouter_image_gen,
+    save_image_result,
+    IDENTITY_LOCK_HINT,
+)
 
 router = APIRouter()
 
@@ -332,7 +337,10 @@ async def _generate_banner(session, idea_title: str, niche: str, style: str, col
     if session.get("photo_path") and os.path.exists(session["photo_path"]):
         with open(session["photo_path"], "rb") as f:
             photo_base64 = base64.b64encode(f.read()).decode()
-        photo_instruction = " Используй приложенное фото человека на баннере."
+        # Фото человека на баннере — внешность не переписываем
+        photo_instruction = (
+            " Используй приложенное фото человека на баннере." + IDENTITY_LOCK_HINT
+        )
 
     banner_prompt = (
         f"Сделай дизайнерский баннер размером 16:9. "
