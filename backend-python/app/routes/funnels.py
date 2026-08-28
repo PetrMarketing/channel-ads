@@ -92,7 +92,10 @@ async def create_step(tc: str, lm_id: int, request: Request, user: Dict[str, Any
             file_path, file_type, file_data = await _save_upload(uploaded_file)
     else:
         body = await request.json()
-        delay_minutes = body.get("delay_minutes", 60)
+        try:
+            delay_minutes = int(body.get("delay_minutes", 60) or 60)
+        except (TypeError, ValueError):
+            delay_minutes = 60
         message_text = body.get("message_text", "")
         inline_buttons = json.dumps(body["inline_buttons"]) if body.get("inline_buttons") else None
         delay_type = body.get("delay_type", "after_minutes")
@@ -151,8 +154,16 @@ async def update_step(tc: str, lm_id: int, step_id: int, request: Request, user:
         if key in body:
             fields.append(f"{key} = ${idx}")
             val = body[key]
+            # Multipart всегда даёт строки — приводим числовые колонки.
+            # Без этого PUT с FormData падал: «invalid input for query
+            # argument $N: '60' (str object cannot be interpreted as int)».
+            if key in ("delay_minutes", "is_active") and val is not None and not isinstance(val, int):
+                try:
+                    val = int(val)
+                except (TypeError, ValueError):
+                    val = 0 if key == "delay_minutes" else 1
             if key == "inline_buttons" and val:
-                val = json.dumps(val)
+                val = json.dumps(val) if not isinstance(val, str) else val
             if key == "delay_config" and isinstance(val, dict):
                 val = json.dumps(val)
             params.append(val)
@@ -202,6 +213,62 @@ async def delete_step(tc: str, lm_id: int, step_id: int, user: Dict[str, Any] = 
     for i, s in enumerate(remaining, 1):
         await execute("UPDATE funnel_steps SET step_number = $1 WHERE id = $2", i, s["id"])
 
+    return {"success": True}
+
+
+@router.post("/{tc}/{lm_id}/steps/reorder")
+async def reorder_steps(tc: str, lm_id: int, request: Request,
+                        user: Dict[str, Any] = Depends(get_current_user)):
+    """Меняет порядок шагов воронки. Принимает `{ids: [<step_id>, ...]}`
+    в желаемом порядке — step_number пересчитывается 1..N. Идёт в
+    транзакции: сначала все step_number обнуляем в отрицательные (обход
+    UNIQUE (lead_magnet_id, step_number) если такой есть), потом
+    выставляем финальные."""
+    channel = await _get_owned_channel(tc, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    lm = await fetch_one(
+        "SELECT id FROM lead_magnets WHERE id = $1 AND channel_id = $2",
+        lm_id, channel["id"],
+    )
+    if not lm:
+        raise HTTPException(status_code=404, detail="Воронка не найдена")
+    body = await request.json()
+    ids = body.get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=400, detail="ids должно быть непустым массивом")
+    try:
+        ids = [int(x) for x in ids]
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="ids должны быть числами")
+
+    # Проверяем что все шаги принадлежат этому lm_id (и юзеру через _get_owned_channel).
+    existing = await fetch_all(
+        "SELECT id FROM funnel_steps WHERE lead_magnet_id = $1", lm_id,
+    )
+    existing_ids = {r["id"] for r in existing}
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status_code=400, detail="Список содержит повторяющиеся шаги")
+    if set(ids) != existing_ids:
+        raise HTTPException(status_code=400, detail="Нужно передать все шаги воронки ровно один раз")
+
+    # Транзакция: два прохода чтобы избежать конфликтов уникальности
+    from ..database import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # 1. Отрицательные временные значения — обходим конфликт
+            for i, sid in enumerate(ids, 1):
+                await conn.execute(
+                    "UPDATE funnel_steps SET step_number = $1 WHERE id = $2 AND lead_magnet_id = $3",
+                    -i, sid, lm_id,
+                )
+            # 2. Финальные позиции
+            for i, sid in enumerate(ids, 1):
+                await conn.execute(
+                    "UPDATE funnel_steps SET step_number = $1 WHERE id = $2 AND lead_magnet_id = $3",
+                    i, sid, lm_id,
+                )
     return {"success": True}
 
 

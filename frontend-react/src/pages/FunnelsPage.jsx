@@ -420,6 +420,7 @@ export default function FunnelsPage() {
   const [errors, setErrors] = useState({});
   const [showPreview, setShowPreview] = useState(false);
   const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [reorderingLmId, setReorderingLmId] = useState(null);
 
   const messageRef = useRef(null);
 
@@ -595,6 +596,29 @@ export default function FunnelsPage() {
       else showToast(data.error || 'Ошибка копирования', 'error');
     } catch { showToast('Ошибка копирования', 'error'); }
     setOpenDropdownId(null);
+  };
+
+  const handleMoveStep = async (lm, stepIndex, direction) => {
+    const steps = [...(lm.steps || [])];
+    const targetIndex = stepIndex + direction;
+    if (targetIndex < 0 || targetIndex >= steps.length || reorderingLmId === lm.id) return;
+
+    [steps[stepIndex], steps[targetIndex]] = [steps[targetIndex], steps[stepIndex]];
+    const previousFunnels = funnels;
+    setReorderingLmId(lm.id);
+    setFunnels(current => current.map(funnel => funnel.id === lm.id
+      ? { ...funnel, steps: steps.map((item, index) => ({ ...item, step_number: index + 1 })) }
+      : funnel));
+    try {
+      const data = await api.post(`/funnels/${tc}/${lm.id}/steps/reorder`, { ids: steps.map(item => item.id) });
+      if (!data.success) throw new Error(data.error || 'Ошибка изменения порядка');
+      showToast('Порядок шагов сохранён');
+    } catch {
+      setFunnels(previousFunnels);
+      showToast('Не удалось изменить порядок шагов', 'error');
+    } finally {
+      setReorderingLmId(null);
+    }
   };
 
   const formatDelay = (minutes, delayCfg) => {
@@ -798,7 +822,7 @@ export default function FunnelsPage() {
                         }} />
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'relative' }}>
-                          {steps.map((step) => (
+                          {steps.map((step, stepIndex) => (
                             <div
                               key={step.id}
                               className="fp-step"
@@ -876,6 +900,22 @@ export default function FunnelsPage() {
                               </div>
 
                               <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start', position: 'relative' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                  <button
+                                    className="fp-ghost"
+                                    style={{ ...iconGhostBtn, width: 28, height: 26, opacity: stepIndex === 0 ? 0.35 : 1 }}
+                                    onClick={() => handleMoveStep(lm, stepIndex, -1)}
+                                    disabled={stepIndex === 0 || reorderingLmId === lm.id}
+                                    title="Переместить выше"
+                                  >↑</button>
+                                  <button
+                                    className="fp-ghost"
+                                    style={{ ...iconGhostBtn, width: 28, height: 26, opacity: stepIndex === steps.length - 1 ? 0.35 : 1 }}
+                                    onClick={() => handleMoveStep(lm, stepIndex, 1)}
+                                    disabled={stepIndex === steps.length - 1 || reorderingLmId === lm.id}
+                                    title="Переместить ниже"
+                                  >↓</button>
+                                </div>
                                 <button
                                   className="fp-ghost"
                                   style={iconGhostBtn}
