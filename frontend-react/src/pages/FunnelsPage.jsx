@@ -282,6 +282,54 @@ function getFunnelStatus(lm) {
   return hasActive ? 'active' : 'paused';
 }
 
+function StepAttachmentPreview({ step }) {
+  if (!step?.file_url) return null;
+  const type = step.file_type || step.attach_type || 'document';
+  const isPhoto = type === 'photo';
+  const meta = {
+    video: ['🎬', 'Видео'],
+    video_note: ['⭕', 'Кружок'],
+    audio: ['🎵', 'Аудио'],
+    voice: ['🎤', 'Голосовое'],
+    document: ['📄', 'Документ'],
+    file: ['📎', 'Файл'],
+  }[type] || ['📎', 'Вложение'];
+
+  return (
+    <a
+      href={step.file_url}
+      target="_blank"
+      rel="noreferrer"
+      onClick={event => event.stopPropagation()}
+      style={{ display: 'inline-flex', textDecoration: 'none', marginBottom: 8 }}
+      title="Открыть вложение"
+    >
+      {isPhoto ? (
+        <img
+          src={step.file_url}
+          alt="Вложение шага"
+          loading="lazy"
+          style={{
+            display: 'block', width: 112, height: 78, objectFit: 'cover',
+            borderRadius: 9, border: `1px solid ${BORDER}`, background: SOFT_BG,
+          }}
+        />
+      ) : (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 9,
+          minWidth: 150, padding: '9px 12px', borderRadius: 9,
+          border: `1px solid ${BORDER}`, background: SOFT_BG,
+          color: DARK, fontSize: '0.78rem', fontWeight: 600,
+        }}>
+          <span style={{ fontSize: '1.3rem' }}>{meta[0]}</span>
+          <span>{meta[1]}</span>
+          <span style={{ marginLeft: 'auto', color: MUTED, fontWeight: 400 }}>↗</span>
+        </span>
+      )}
+    </a>
+  );
+}
+
 function FunnelIcon({ size = 26, color = '#fff' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -891,12 +939,14 @@ export default function FunnelsPage() {
                                     fontSize: '0.85rem',
                                     color: DARK,
                                     lineHeight: 1.55,
-                                    maxHeight: 110,
+                                    maxHeight: step.file_url ? 190 : 110,
                                     overflowY: 'auto',
                                     wordBreak: 'break-word',
                                   }}
-                                  dangerouslySetInnerHTML={{ __html: step.message_text || '' }}
-                                />
+                                >
+                                  <StepAttachmentPreview step={step} />
+                                  <div dangerouslySetInnerHTML={{ __html: step.message_text || '' }} />
+                                </div>
                               </div>
 
                               <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start', position: 'relative' }}>
