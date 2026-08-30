@@ -424,6 +424,8 @@ app.include_router(polls.public_router, prefix="/api/polls/public", tags=["polls
 app.include_router(polls.router, prefix="/api/polls", tags=["polls"])
 from .routes import ai_assistant
 app.include_router(ai_assistant.router, prefix="/api/ai-assistant", tags=["ai-assistant"])
+from .routes import ai_agent
+app.include_router(ai_agent.router, prefix="/api/ai-agent", tags=["ai-agent"])
 from .routes import streams
 app.include_router(streams.public_router, prefix="/api/streams/public", tags=["streams-public"])
 app.include_router(streams.rtmp_router, prefix="/rtmp", tags=["rtmp"])  # без auth, для nginx-rtmp хуков

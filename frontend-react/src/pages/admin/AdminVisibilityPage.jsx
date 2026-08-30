@@ -38,7 +38,7 @@ const SECTIONS = [
   {
     group: 'ИИ',
     items: [
-      { key: 'ai_assistant', label: 'ИИ Помощник' },
+      { key: 'ai_assistant', label: 'ИИ Агент' },
     ],
   },
   {

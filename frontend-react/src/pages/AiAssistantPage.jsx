@@ -1,383 +1,76 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 import { useChannels } from '../contexts/ChannelContext';
 import Paywall from '../components/Paywall';
+import UploadProgress from '../components/UploadProgress';
 
-const ACCENT = '#7b68ee';
-const ACCENT2 = '#4361ee';
-const DARK = '#1a1a2e';
-const BORDER = '#e5e7eb';
-const MUTED = '#6b7280';
-const SUCCESS = '#10b981';
-const WARNING = '#f59e0b';
-const DANGER = '#dc2626';
-const SOFT_BG = '#f8f9fc';
-const REC_RED = '#dc2626';
-
-const SpeechRec = typeof window !== 'undefined'
-  ? (window.SpeechRecognition || window.webkitSpeechRecognition)
-  : null;
-
-const TOOL_LABELS = {
-  create_post: '📝 Создать пост',
-  create_lead_magnet: '🎁 Лид-магнит',
-  create_link: '🔗 Трекинг-ссылка',
-  start_ai_content: '🧠 ИИ-Контент пакет',
-  start_broadcast: '📢 Рассылка',
-};
-
-function fmtDt(iso) {
-  if (!iso) return '';
-  try { return new Date(iso).toLocaleString('ru-RU', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); } catch { return iso; }
-}
+const PRICE = 3990;
+const ACCENT = '#6d5dfc', DARK = '#17172b', MUTED = '#6b7280', BORDER = '#e6e7ef', BG = '#f7f8fc';
+const CATEGORIES = [['business','О бизнесе'],['products','Товары и услуги'],['competitors','Конкуренты'],['content','Контент и соцсети'],['brand','Бренд и материалы'],['general','Другое']];
+const FIELDS = [
+  ['niche','Ниша и география *','Например: стоматология в Москве'],
+  ['business','О бизнесе *','Что продаёте, опыт, преимущества, средний чек'],
+  ['audience','Целевая аудитория *','Кто покупает, боли, желания и возражения'],
+  ['goal','Главная цель *','Подписчики, заявки, продажи, запись или повторные покупки'],
+  ['products','Приоритетные продукты','Названия, цены, маржинальность, сезонность'],
+  ['sales','Как сейчас происходят продажи','Путь клиента, менеджеры, CRM, оплата'],
+  ['content','Контент и возможности производства','Готовность сниматься, форматы, частота'],
+  ['tone','Стиль и ограничения','Тон общения, запрещённые темы и формулировки'],
+  ['competitors','Известные конкуренты','Названия или ссылки; ссылки также можно добавить ниже'],
+  ['notes','Дополнительная информация','Всё, что агент обязательно должен учесть'],
+];
+const card = { background:'#fff', border:`1px solid ${BORDER}`, borderRadius:16, padding:20, boxShadow:'0 2px 10px rgba(20,25,50,.04)' };
+const input = { width:'100%', boxSizing:'border-box', border:`1px solid ${BORDER}`, borderRadius:10, padding:'11px 12px', font:'inherit', color:DARK, outline:'none', background:'#fff' };
+const primary = { border:0, borderRadius:11, padding:'12px 18px', color:'#fff', fontWeight:700, cursor:'pointer', background:`linear-gradient(135deg,${ACCENT},#4361ee)` };
 
 export default function AiAssistantPage() {
-  const { showToast } = useToast();
   const { currentChannel } = useChannels();
-  const [tab, setTab] = useState('input'); // input | pending | done
-  const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  // Input state
-  const [query, setQuery] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [listening, setListening] = useState(false);
-  const recRef = useRef(null);
-
+  const { showToast } = useToast();
   const tc = currentChannel?.tracking_code;
-  const loadTasks = useCallback(async () => {
-    if (!tc) { setTasks([]); return; }
-    setLoading(true);
-    try {
-      const d = await api.get(`/ai-assistant/tasks?limit=50&tracking_code=${encodeURIComponent(tc)}`);
-      if (d?.success) setTasks(d.tasks || []);
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
-  }, [tc]);
-  useEffect(() => { loadTasks(); setTab('input'); }, [loadTasks]);
-
-  // Polling: пока есть executing — обновляем каждые 2 сек
-  useEffect(() => {
-    const hasActive = tasks.some(t => t.status === 'executing');
-    if (!hasActive) return;
-    const t = setInterval(loadTasks, 2000);
-    return () => clearInterval(t);
-  }, [tasks, loadTasks]);
-
-  const pending = tasks.filter(t => t.status === 'parsed' || t.status === 'executing' || t.status === 'awaiting_answers');
-  const done = tasks.filter(t => t.status === 'done' || t.status === 'failed' || t.status === 'cancelled');
-
-  const submitAnswers = async (taskId, answers) => {
-    try {
-      await api.post(`/ai-assistant/${taskId}/answer`, { answers });
-      loadTasks();
-    } catch (e) {
-      showToast(e.message || 'Ошибка', 'error');
-    }
-  };
-
-  const startListening = () => {
-    if (!SpeechRec) { showToast('Голосовой ввод не поддерживается этим браузером', 'error'); return; }
-    if (listening) { try { recRef.current?.stop(); } catch {} setListening(false); return; }
-    try {
-      const rec = new SpeechRec();
-      rec.lang = 'ru-RU'; rec.continuous = true; rec.interimResults = true;
-      let finalText = '';
-      rec.onstart = () => setListening(true);
-      rec.onresult = (ev) => {
-        let interim = '';
-        for (let i = ev.resultIndex; i < ev.results.length; i++) {
-          const res = ev.results[i];
-          if (res.isFinal) finalText += res[0].transcript;
-          else interim += res[0].transcript;
-        }
-        setQuery((finalText + interim).trim());
-      };
-      rec.onerror = (ev) => {
-        if (ev.error === 'not-allowed') showToast('Разрешите доступ к микрофону', 'error');
-        else if (ev.error !== 'no-speech' && ev.error !== 'aborted') showToast('Ошибка: ' + ev.error, 'error');
-        setListening(false);
-      };
-      rec.onend = () => setListening(false);
-      recRef.current = rec;
-      rec.start();
-    } catch { setListening(false); showToast('Не удалось включить микрофон', 'error'); }
-  };
-
-  const submit = async () => {
-    if (!query.trim() || !tc) return;
-    setSubmitting(true);
-    try {
-      const d = await api.post('/ai-assistant/parse', { query: query.trim(), tracking_code: tc });
-      if (d?.success) {
-        setQuery('');
-        setTab('pending');
-        loadTasks();
-        showToast('Задача распознана — подтверди для выполнения');
-      }
-    } catch (e) {
-      showToast(e.message || 'Ошибка', 'error');
-    } finally { setSubmitting(false); }
-  };
-
-  const confirm = async (taskId) => {
-    try {
-      await api.post(`/ai-assistant/${taskId}/confirm`);
-      loadTasks();
-    } catch (e) { showToast(e.message || 'Ошибка', 'error'); }
-  };
-
-  return (
-    <Paywall>
-    <div style={{ padding: '24px', maxWidth: 920, margin: '0 auto', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
-      <style>{`@keyframes micPulse { 0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.4)} 50%{box-shadow:0 0 0 8px rgba(220,38,38,0)} }
-                @keyframes spin { to { transform: rotate(360deg) } }`}</style>
-
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 800, color: DARK }}>🤖 ИИ-Помощник</h1>
-        <p style={{ margin: '6px 0 0', color: MUTED, fontSize: 14 }}>
-          Опиши задачу — Помощник разберёт и предложит план. Можно текстом или голосом 🎤.
-        </p>
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18, borderBottom: `1px solid ${BORDER}` }}>
-        {[
-          { key: 'input', label: '✏ Новая задача', count: null },
-          { key: 'pending', label: '⏳ Ожидание', count: pending.length },
-          { key: 'done', label: '✅ Выполнено', count: done.length },
-        ].map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            style={{
-              padding: '10px 18px', border: 'none', background: 'transparent',
-              borderBottom: tab === t.key ? `3px solid ${ACCENT}` : '3px solid transparent',
-              color: tab === t.key ? ACCENT : DARK, fontWeight: tab === t.key ? 700 : 500,
-              fontSize: 14, cursor: 'pointer', marginBottom: -1,
-            }}>
-            {t.label}{t.count != null && t.count > 0 ? ` (${t.count})` : ''}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'input' && (
-        <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 14, padding: 20 }}>
-          <div style={{ position: 'relative' }}>
-            <textarea
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder={listening
-                ? 'Слушаю… говорите 🎤'
-                : 'Например: «Сделай лид-магнит и пост на 22 июня в 10 утра на тему "Лето в Орле" с картинкой»'}
-              style={{
-                width: '100%', minHeight: 140, padding: '14px 56px 14px 14px',
-                border: `1px solid ${listening ? REC_RED : BORDER}`, borderRadius: 12, fontSize: 15,
-                fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box',
-                transition: 'border-color .15s',
-              }} />
-            {SpeechRec && (
-              <button onClick={startListening}
-                title={listening ? 'Остановить' : 'Голос'}
-                style={{
-                  position: 'absolute', right: 12, top: 12,
-                  width: 40, height: 40, borderRadius: '50%', border: 'none',
-                  background: listening ? REC_RED : '#f3f4f6',
-                  color: listening ? '#fff' : '#374151', cursor: 'pointer', fontSize: 18,
-                  animation: listening ? 'micPulse 1.2s ease-in-out infinite' : 'none',
-                }}>
-                {listening ? '⏹' : '🎤'}
-              </button>
-            )}
-          </div>
-          <div style={{ marginTop: 10, fontSize: 12, color: MUTED, lineHeight: 1.5 }}>
-            <b>Списание токенов:</b> 1 ИИт за распознавание запроса (parse) + стоимость каждого
-            действия. Точная сумма за выполнение покажется на шаге подтверждения, и списывается
-            только если ты нажмёшь «Выполнить».
-            <ul style={{ margin: '6px 0 0 18px', paddingLeft: 0 }}>
-              <li>Пост с готовым текстом — 1 ИИт</li>
-              <li>Генерация поста на тему — 10 ИИт</li>
-              <li>+ картинка — ещё 10 ИИт (итого 20)</li>
-              <li>Лид-магнит — 5 ИИт</li>
-              <li>Ссылка / рассылка — 0 ИИт</li>
-            </ul>
-            <div style={{ marginTop: 8, fontSize: 11, color: WARNING }}>
-              ⚠ Для генерации картинки нужно хотя бы одно фото в медиафайлах канала
-              (Контент → Мои файлы) — ИИ возьмёт его как референс стиля.
-            </div>
-          </div>
-          <button onClick={submit} disabled={!query.trim() || submitting || listening}
-            style={{
-              marginTop: 16, width: '100%', padding: '14px 16px', borderRadius: 12, border: 'none',
-              background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
-              color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer',
-              opacity: (!query.trim() || submitting || listening) ? 0.5 : 1,
-            }}>
-            {submitting ? 'Думаю…' : (listening ? 'Закончите запись' : 'Распознать задачу →')}
-          </button>
-        </div>
-      )}
-
-      {tab === 'pending' && (
-        <div>
-          {loading ? <Spinner /> : pending.length === 0 ? (
-            <Empty text="Нет задач в ожидании. Создай новую на вкладке «Новая задача»." />
-          ) : pending.map(t => t.status === 'awaiting_answers'
-            ? <ClarifyCard key={t.id} task={t} onSubmit={(a) => submitAnswers(t.id, a)} />
-            : <PendingCard key={t.id} task={t} onConfirm={() => confirm(t.id)} />)}
-        </div>
-      )}
-
-      {tab === 'done' && (
-        <div>
-          {loading ? <Spinner /> : done.length === 0 ? (
-            <Empty text="Пока ничего не выполнено." />
-          ) : done.map(t => <DoneCard key={t.id} task={t} />)}
-        </div>
-      )}
-    </div>
-    </Paywall>
-  );
+  const [project,setProject] = useState(null), [loading,setLoading] = useState(true), [creating,setCreating] = useState(false);
+  const load = useCallback(async (silent=false) => {
+    if (!tc) return;
+    if (!silent) setLoading(true);
+    try { const data=await api.get(`/ai-agent/${tc}/current`); setProject(data.project||null); }
+    catch(e){ showToast(e.message||'Не удалось загрузить проект','error'); }
+    finally { if(!silent)setLoading(false); }
+  },[tc]);
+  useEffect(()=>{ load(); },[load]);
+  useEffect(()=>{ if(!project||!['queued','running'].includes(project.status))return; const timer=setInterval(()=>load(true),2500); return()=>clearInterval(timer); },[project?.status,load]);
+  const create=async()=>{ setCreating(true); try{const d=await api.post(`/ai-agent/${tc}/project`,{});setProject(d.project);}catch(e){showToast(e.message,'error');}finally{setCreating(false);} };
+  if(loading)return <Page><div style={{...card,textAlign:'center'}}>Загрузка…</div></Page>;
+  if(!project)return <Page><Hero onStart={create} busy={creating}/></Page>;
+  return <Page><Project project={project} tc={tc} reload={()=>load(true)}/></Page>;
 }
 
-function Spinner() {
-  return (
-    <div style={{ textAlign: 'center', padding: 40 }}>
-      <div style={{ width: 32, height: 32, margin: '0 auto', border: `4px solid ${BORDER}`, borderTopColor: ACCENT, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-    </div>
-  );
+function Page({children}) { return <Paywall><div style={{maxWidth:1080,margin:'0 auto',padding:24,color:DARK,fontFamily:"'DM Sans',system-ui,sans-serif"}}>{children}</div></Paywall>; }
+
+function Hero({onStart,busy}) {
+  const items=['Анализ конкурентов и их контента','Упаковка канала MAX','Продукты, лид-магниты и воронки','Сайт с геймификацией','Чат-боты и мини-приложения','Контент и сценарии на год','Рассылки и план набора аудитории'];
+  return <><div style={{...card,padding:30,background:'linear-gradient(135deg,#17172b,#352a79)',color:'#fff'}}><div style={{fontSize:13,opacity:.75,fontWeight:700,letterSpacing:'.08em'}}>МАРКЕТИНГОВАЯ СИСТЕМА ПОД КЛЮЧ</div><h1 style={{margin:'10px 0 8px',fontSize:34}}>ИИ Агент</h1><p style={{maxWidth:720,lineHeight:1.6,opacity:.88}}>Изучит бизнес и конкурентов, согласует стратегию и создаст рабочие материалы прямо в кабинете.</p><div style={{display:'flex',alignItems:'center',gap:14,marginTop:22,flexWrap:'wrap'}}><button onClick={onStart} disabled={busy} style={{...primary,background:'#fff',color:'#342b78',opacity:busy?.6:1}}>{busy?'Создаю проект…':'Начать подготовку →'}</button><b>{PRICE.toLocaleString('ru-RU')} ИИ-токенов</b><span style={{opacity:.65}}>спишутся только после заполнения брифа</span></div></div><div style={{...card,marginTop:16}}><h2 style={{marginTop:0}}>Что войдёт</h2><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:10}}>{items.map(x=><div key={x} style={{padding:12,borderRadius:10,background:BG}}>✓ {x}</div>)}</div></div></>;
 }
 
-function Empty({ text }) {
-  return (
-    <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 14, padding: 40, textAlign: 'center', color: MUTED }}>
-      {text}
-    </div>
-  );
+function Project({project,tc,reload}) {
+  const {showToast}=useToast();
+  const [brief,setBrief]=useState(project.brief_json||{}),[saving,setSaving]=useState(false),[starting,setStarting]=useState(false);
+  const [url,setUrl]=useState(''),[category,setCategory]=useState('business'),[addingUrl,setAddingUrl]=useState(false);
+  const [uploadProgress,setUploadProgress]=useState(0),[uploading,setUploading]=useState(false);
+  const editable=project.status==='draft';
+  useEffect(()=>setBrief(project.brief_json||{}),[project.id]);
+  const complete=useMemo(()=>['niche','business','audience','goal'].filter(k=>(brief[k]||'').trim()).length,[brief]);
+  const save=async()=>{setSaving(true);try{await api.put(`/ai-agent/${tc}/project/${project.id}/brief`,{brief});showToast('Бриф сохранён');await reload();return true;}catch(e){showToast(e.message,'error');return false;}finally{setSaving(false);}};
+  const addUrl=async()=>{if(!url.trim())return;setAddingUrl(true);try{const d=await api.post(`/ai-agent/${tc}/project/${project.id}/source-url`,{url:url.trim(),category});setUrl('');await reload();showToast(d.warning?'Ссылка сохранена; соцсеть ограничила автоматическое чтение':'Страница загружена');}catch(e){showToast(e.message,'error');}finally{setAddingUrl(false);}};
+  const upload=async e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;setUploading(true);setUploadProgress(0);const fd=new FormData();fd.append('file',file);fd.append('category',category);try{await api.upload(`/ai-agent/${tc}/project/${project.id}/source-file`,fd,'POST',setUploadProgress);showToast('Файл загружен и разобран');await reload();}catch(err){showToast(err.message,'error');}finally{setUploading(false);setUploadProgress(0);}};
+  const remove=async id=>{try{await api.delete(`/ai-agent/${tc}/project/${project.id}/source/${id}`);await reload();}catch(e){showToast(e.message,'error');}};
+  const start=async()=>{if(!(await save()))return;setStarting(true);try{await api.post(`/ai-agent/${tc}/project/${project.id}/start`,{});showToast('ИИ Агент запущен');await reload();}catch(e){showToast(e.message,'error');}finally{setStarting(false);}};
+  return <><div style={{...card,marginBottom:16}}><div style={{display:'flex',justifyContent:'space-between',gap:16,alignItems:'center',flexWrap:'wrap'}}><div><div style={{color:ACCENT,fontWeight:800,fontSize:13}}>ИИ АГЕНТ · ПРОЕКТ #{project.id}</div><h1 style={{margin:'5px 0 2px'}}>{stageName(project.current_stage)}</h1><div style={{color:MUTED}}>{statusName(project.status)}</div></div><div style={{fontSize:22,fontWeight:800}}>{project.tokens_charged?`${project.tokens_charged} ИИт оплачено`:`${PRICE} ИИт`}</div></div><div style={{height:10,background:'#eceefa',borderRadius:99,marginTop:18,overflow:'hidden'}}><div style={{height:'100%',width:`${project.progress||0}%`,background:`linear-gradient(90deg,${ACCENT},#32b8ff)`,transition:'width .4s'}}/></div>{project.error_message&&<div style={{marginTop:12,color:'#b91c1c'}}>{project.error_message}</div>}</div>
+  {editable&&<><section style={{...card,marginBottom:16}}><h2 style={{marginTop:0}}>1. Бриф <span style={{color:MUTED,fontSize:14,fontWeight:500}}>обязательные поля {complete}/4</span></h2><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(340px,1fr))',gap:14}}>{FIELDS.map(([key,label,placeholder])=><label key={key} style={{fontSize:13,fontWeight:700}}>{label}<textarea value={brief[key]||''} onChange={e=>setBrief(p=>({...p,[key]:e.target.value}))} placeholder={placeholder} rows={3} style={{...input,display:'block',marginTop:6,resize:'vertical',fontWeight:400}}/></label>)}</div><button onClick={save} disabled={saving} style={{...primary,marginTop:16}}>{saving?'Сохраняю…':'Сохранить бриф'}</button></section>
+  <section style={{...card,marginBottom:16}}><h2 style={{marginTop:0}}>2. Сайты, соцсети и файлы</h2><p style={{color:MUTED}}>Вставьте сайт, канал, группу VK или страницу конкурента. Для товаров загрузите CSV/XML либо ссылку на каталог.</p><select value={category} onChange={e=>setCategory(e.target.value)} style={{...input,maxWidth:260,marginBottom:10}}>{CATEGORIES.map(([v,l])=><option value={v} key={v}>{l}</option>)}</select><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addUrl()} placeholder="https://site.ru или https://vk.com/group" style={{...input,flex:'1 1 420px'}}/><button onClick={addUrl} disabled={addingUrl} style={primary}>{addingUrl?'Читаю…':'Добавить ссылку'}</button></div><label style={{display:'inline-flex',marginTop:12,cursor:'pointer',padding:'11px 15px',border:`1px dashed ${ACCENT}`,borderRadius:10,color:ACCENT,fontWeight:700}}>📎 Загрузить CSV, XML, JSON, TXT, MD или PDF<input type="file" accept=".csv,.xml,.json,.txt,.md,.pdf" onChange={upload} disabled={uploading} hidden/></label>{uploading&&<div style={{marginTop:12}}><UploadProgress progress={uploadProgress} label="Загрузка и обработка файла…"/></div>}<div style={{display:'grid',gap:8,marginTop:14}}>{(project.sources||[]).map(s=><div key={s.id} style={{display:'flex',alignItems:'center',gap:10,padding:11,borderRadius:10,background:BG}}><span>{s.source_type==='url'?'🌐':s.category==='products'?'📦':'📎'}</span><div style={{minWidth:0,flex:1}}><b>{s.title||s.file_name||s.source_url}</b><div style={{color:MUTED,fontSize:12,overflow:'hidden',textOverflow:'ellipsis'}}>{CATEGORIES.find(x=>x[0]===s.category)?.[1]} · {s.status==='link_only'?'ссылка сохранена':'данные прочитаны'}</div></div><button onClick={()=>remove(s.id)} style={{border:0,background:'transparent',cursor:'pointer',fontSize:18}}>×</button></div>)}</div></section>
+  <section style={{...card,borderColor:'#c9c4ff'}}><h2 style={{marginTop:0}}>3. Запуск анализа</h2><p style={{color:MUTED,lineHeight:1.6}}>После запуска спишется один раз <b>{PRICE} ИИ-токенов</b>. Внутри проекта дополнительные списания не производятся.</p><button onClick={start} disabled={starting||complete<4} style={{...primary,opacity:(starting||complete<4) ? 0.5 : 1}}>{starting?'Запускаю…':`Запустить ИИ Агента за ${PRICE} ИИт →`}</button></section></>}
+  {!editable&&<Results project={project}/>}</>;
 }
 
-function ClarifyCard({ task, onSubmit }) {
-  const plan = typeof task.plan_json === 'string' ? JSON.parse(task.plan_json) : task.plan_json;
-  const questions = plan?.questions || [];
-  const [answers, setAnswers] = useState({});
-  const [busy, setBusy] = useState(false);
-  const set = (k, v) => setAnswers(prev => ({ ...prev, [k]: v }));
-  const handle = async () => {
-    const filled = Object.fromEntries(Object.entries(answers).filter(([, v]) => (v || '').toString().trim()));
-    if (!Object.keys(filled).length) return;
-    setBusy(true);
-    try { await onSubmit(filled); } finally { setBusy(false); }
-  };
-  return (
-    <div style={{ background: '#fff', border: `1px solid ${WARNING}55`, borderRadius: 14, padding: 20, marginBottom: 12 }}>
-      <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>{fmtDt(task.created_at)}</div>
-      <div style={{ fontSize: 15, color: DARK, marginBottom: 10 }}>{task.raw_query}</div>
-      <div style={{ background: 'rgba(245,158,11,0.08)', padding: 12, borderRadius: 10, marginBottom: 12 }}>
-        <div style={{ fontWeight: 700, color: WARNING, marginBottom: 8 }}>❓ Нужны уточнения</div>
-        <div style={{ fontSize: 13, color: '#374151', marginBottom: 10 }}>{task.confirm_summary}</div>
-        {questions.map((q, i) => (
-          <div key={i} style={{ marginBottom: 8 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: DARK, marginBottom: 4 }}>
-              {q.question}
-            </label>
-            <input
-              type="text"
-              value={answers[q.key] || ''}
-              onChange={e => set(q.key, e.target.value)}
-              placeholder={q.placeholder || ''}
-              style={{
-                width: '100%', padding: '10px 12px', border: `1px solid ${BORDER}`,
-                borderRadius: 8, fontSize: 14, boxSizing: 'border-box',
-              }}
-            />
-          </div>
-        ))}
-      </div>
-      <button onClick={handle} disabled={busy}
-        style={{ padding: '10px 18px', border: 'none', borderRadius: 10,
-                 background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
-                 color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, opacity: busy ? 0.5 : 1 }}>
-        {busy ? 'Обрабатываю…' : 'Отправить ответы →'}
-      </button>
-    </div>
-  );
-}
-
-function PendingCard({ task, onConfirm }) {
-  const plan = typeof task.plan_json === 'string' ? JSON.parse(task.plan_json) : task.plan_json;
-  const steps = plan?.steps || [];
-  const totalEst = steps.reduce((s, x) => s + (x.est_tokens || 0), 0);
-  const isExecuting = task.status === 'executing';
-  return (
-    <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 14, padding: 20, marginBottom: 12 }}>
-      <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>{fmtDt(task.created_at)}</div>
-      <div style={{ fontSize: 15, color: DARK, marginBottom: 10 }}>{task.raw_query}</div>
-      <div style={{ background: SOFT_BG, padding: 12, borderRadius: 10, marginBottom: 12 }}>
-        <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>{task.confirm_summary}</div>
-        {steps.map((s, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0' }}>
-            <span style={{ color: DARK }}>{i + 1}. {TOOL_LABELS[s.tool] || s.tool}</span>
-            {s.est_tokens > 0 && <span style={{ color: ACCENT, fontWeight: 700 }}>{s.est_tokens} ИИт</span>}
-          </div>
-        ))}
-      </div>
-      {isExecuting ? (
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: WARNING, fontWeight: 600 }}>
-          <div style={{ width: 16, height: 16, border: `3px solid ${BORDER}`, borderTopColor: WARNING, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-          Выполняю…
-        </div>
-      ) : (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button onClick={onConfirm}
-            style={{ padding: '10px 18px', border: 'none', borderRadius: 10,
-                     background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT2} 100%)`,
-                     color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
-            Выполнить ({totalEst} ИИт)
-          </button>
-          <span style={{ fontSize: 12, color: MUTED }}>1 ИИт уже списан за распознавание</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DoneCard({ task }) {
-  const results = typeof task.steps_results === 'string' ? JSON.parse(task.steps_results) : (task.steps_results || []);
-  const failed = task.status === 'failed';
-  return (
-    <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 14, padding: 20, marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-        <div>
-          <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>
-            {fmtDt(task.finished_at || task.created_at)}
-          </div>
-          <div style={{ fontSize: 15, color: DARK }}>{task.raw_query}</div>
-        </div>
-        <span style={{
-          padding: '4px 12px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-          background: failed ? 'rgba(220,38,38,0.10)' : 'rgba(16,185,129,0.10)',
-          color: failed ? DANGER : SUCCESS,
-        }}>
-          {failed ? 'Ошибка' : 'Готово'}
-        </span>
-      </div>
-      <div style={{ fontSize: 12, color: MUTED, marginBottom: 10 }}>
-        Списано: <b style={{ color: ACCENT }}>{task.tokens_used} ИИт</b>
-      </div>
-      {results.map((r, i) => (
-        <div key={i} style={{
-          padding: '8px 12px', marginBottom: 6,
-          background: r.ok ? 'rgba(16,185,129,0.05)' : 'rgba(220,38,38,0.05)',
-          borderRadius: 8, fontSize: 13,
-        }}>
-          <div style={{ fontWeight: 600 }}>{TOOL_LABELS[r.tool] || r.tool}</div>
-          <div style={{ color: r.ok ? '#065f46' : DANGER, marginTop: 2 }}>
-            {r.ok ? (r.message || 'Готово') : (r.error || 'Ошибка')}
-          </div>
-          {r.link && (
-            <a href={r.link} style={{ color: ACCENT, fontSize: 12 }}>Открыть раздел →</a>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
+function Results({project}) { const active=['queued','running'].includes(project.status);return <div style={{display:'grid',gap:14}}>{active&&<div style={card}><h2 style={{marginTop:0}}>Агент работает</h2><p style={{color:MUTED}}>Можно закрыть страницу — этапы выполняются в фоне, прогресс сохранится.</p></div>}{(project.deliverables||[]).map(d=><article key={d.id} style={card}><div style={{color:'#0f9f6e',fontSize:12,fontWeight:800}}>ГОТОВО</div><h2>{d.title}</h2><div style={{whiteSpace:'pre-wrap',lineHeight:1.65,fontSize:14}}>{d.content_text}</div></article>)}{(project.activity||[]).length>0&&<div style={card}><h3 style={{marginTop:0}}>Журнал</h3>{project.activity.slice(0,10).map(x=><div key={x.id} style={{padding:'8px 0',borderBottom:`1px solid ${BORDER}`,fontSize:13}}><b>{x.message}</b> <span style={{color:MUTED}}>{new Date(x.created_at).toLocaleString('ru-RU')}</span></div>)}</div>}</div>; }
+function stageName(stage){return({brief:'Подготовка проекта',research:'Анализ источников',strategy:'Формирование стратегии',strategy_approval:'Стратегия готова'})[stage]||'ИИ Агент';}
+function statusName(status){return({draft:'Заполните бриф и добавьте источники',queued:'Задача поставлена в очередь',running:'Агент выполняет исследование',awaiting_approval:'Результаты готовы к проверке',failed:'Выполнение остановлено из-за ошибки'})[status]||status;}
