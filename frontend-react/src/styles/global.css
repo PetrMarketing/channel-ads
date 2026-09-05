@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
+
 /* ===== Clean Light Theme — white/black + blue→purple gradient accents ===== */
 
 /* ===== Variables ===== */
@@ -3952,8 +3954,6 @@ code, .pc-info-box code { word-break: break-all; }
    accent #4361ee, secondary #7b68ee, refined transitions.
 ═══════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
-
 :root {
   --dp-bg: #eef0f4;
   --dp-surface: #ffffff;
@@ -4615,4 +4615,3 @@ button[role="tab"][aria-selected="true"] {
     overflow-x: hidden;
   }
 }
-

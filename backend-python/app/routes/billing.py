@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..middleware.auth import get_current_user, get_channel_for_user
 from ..config import settings
-from ..database import fetch_one, fetch_all, execute, execute_returning_id
+from ..database import fetch_one, fetch_all, execute, execute_returning_id, get_pool
 from ..services.promocodes import resolve_promo, calculate_discount, consume_promo
 
 router = APIRouter()
@@ -802,6 +802,39 @@ async def add_staff(tracking_code: str, request: Request, user=Depends(get_curre
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
+    # Сначала полностью проверяем сотрудника. Раньше подписка сокращалась до
+    # этой проверки, поэтому при неверном PKid пользователь терял дни, хотя
+    # сотрудник в канал так и не добавлялся.
+    role = body.get("role", "editor")
+    if role not in STAFF_ROLES:
+        raise HTTPException(status_code=400, detail="Неизвестная роль")
+
+    identifier = body.get("identifier", "").strip()
+    if not identifier:
+        raise HTTPException(status_code=400, detail="Укажите Telegram ID, MAX ID или username")
+
+    target_user = None
+    if identifier.isdigit():
+        target_user = await fetch_one("SELECT * FROM users WHERE id = $1", int(identifier))
+        if not target_user:
+            target_user = await fetch_one("SELECT * FROM users WHERE telegram_id = $1", int(identifier))
+        if not target_user:
+            target_user = await fetch_one("SELECT * FROM users WHERE max_user_id = $1", identifier)
+    else:
+        target_user = await fetch_one("SELECT * FROM users WHERE username = $1", identifier.lstrip("@"))
+
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден. Он должен сначала войти в систему.")
+    if target_user["id"] == user["id"]:
+        raise HTTPException(status_code=400, detail="Вы являетесь владельцем канала")
+
+    existing = await fetch_one(
+        "SELECT * FROM channel_staff WHERE channel_id = $1 AND user_id = $2",
+        channel["id"], target_user["id"],
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Пользователь уже добавлен")
+
     # Adding staff shortens subscription: remaining time divided by new user count
     billing = await fetch_one("SELECT * FROM channel_billing WHERE channel_id = $1", channel["id"])
     confirm = body.get("confirm", False)
@@ -809,6 +842,7 @@ async def add_staff(tracking_code: str, request: Request, user=Depends(get_curre
     current_staff = current_count["cnt"] if current_count else 0
     current_users = current_staff + 1  # +1 for owner
 
+    billing_update = None
     if billing and billing.get("status") == "active" and billing.get("expires_at"):
         now = datetime.utcnow()
         expires = billing["expires_at"]
@@ -834,10 +868,9 @@ async def add_staff(tracking_code: str, request: Request, user=Depends(get_curre
                 "reduction_ratio": reduction_ratio,
             }
 
-        # Apply: shorten subscription
+        # Изменение применим ниже в одной транзакции с добавлением сотрудника.
         new_expires = now + timedelta(seconds=remaining_seconds * current_users / new_users)
-        await execute("UPDATE channel_billing SET max_users = $1, expires_at = $2 WHERE id = $3",
-                      new_users, new_expires, billing["id"])
+        billing_update = (new_users, new_expires, billing["id"])
     elif not confirm:
         return {
             "success": False,
@@ -849,47 +882,27 @@ async def add_staff(tracking_code: str, request: Request, user=Depends(get_curre
             "reduction_ratio": "—",
         }
 
-    role = body.get("role", "editor")
-    if role not in STAFF_ROLES:
-        raise HTTPException(status_code=400, detail="Неизвестная роль")
-
-    # Find target user by telegram_id, max_user_id, or username
-    identifier = body.get("identifier", "").strip()
-    if not identifier:
-        raise HTTPException(status_code=400, detail="Укажите Telegram ID, MAX ID или username")
-
-    target_user = None
-    # Try PKid (internal user id) or platform IDs
-    if identifier.isdigit():
-        # First try PKid (internal user id)
-        target_user = await fetch_one("SELECT * FROM users WHERE id = $1", int(identifier))
-        if not target_user:
-            target_user = await fetch_one("SELECT * FROM users WHERE telegram_id = $1", int(identifier))
-        if not target_user:
-            target_user = await fetch_one("SELECT * FROM users WHERE max_user_id = $1", identifier)
-    else:
-        # Try username (strip @)
-        uname = identifier.lstrip("@")
-        target_user = await fetch_one("SELECT * FROM users WHERE username = $1", uname)
-
-    if not target_user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден. Он должен сначала войти в систему.")
-
-    if target_user["id"] == user["id"]:
-        raise HTTPException(status_code=400, detail="Вы являетесь владельцем канала")
-
-    # Check if already added
-    existing = await fetch_one(
-        "SELECT * FROM channel_staff WHERE channel_id = $1 AND user_id = $2",
-        channel["id"], target_user["id"],
-    )
-    if existing:
-        raise HTTPException(status_code=400, detail="Пользователь уже добавлен")
-
-    staff_id = await execute_returning_id(
-        "INSERT INTO channel_staff (channel_id, user_id, role) VALUES ($1, $2, $3) RETURNING id",
-        channel["id"], target_user["id"], role,
-    )
+    # Пересчёт подписки и добавление сотрудника атомарны: если INSERT не
+    # выполнится, PostgreSQL вернёт прежний срок автоматически.
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            duplicate = await conn.fetchrow(
+                "SELECT id FROM channel_staff WHERE channel_id=$1 AND user_id=$2 FOR UPDATE",
+                channel["id"], target_user["id"],
+            )
+            if duplicate:
+                raise HTTPException(status_code=400, detail="Пользователь уже добавлен")
+            if billing_update:
+                await conn.execute(
+                    "UPDATE channel_billing SET max_users=$1, expires_at=$2 WHERE id=$3",
+                    *billing_update,
+                )
+            row = await conn.fetchrow(
+                "INSERT INTO channel_staff (channel_id, user_id, role) VALUES ($1, $2, $3) RETURNING id",
+                channel["id"], target_user["id"], role,
+            )
+            staff_id = row["id"]
 
     return {"success": True, "staff_id": staff_id}
 

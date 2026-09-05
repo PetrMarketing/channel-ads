@@ -439,6 +439,49 @@ async def draw_winner(tc: str, giveaway_id: int, user: Dict[str, Any] = Depends(
             except Exception as e:
                 print(f"[Giveaways] notify winner failed: {e}")
 
+        # Публикуем итоги в том же канале. Раньше победители получали только
+        # личные уведомления, хотя интерфейс и инструкция обещали итоговый пост.
+        winner_lines = []
+        for index, w in enumerate(winners, start=1):
+            name = w.get("first_name") or w.get("username") or f"Победитель {index}"
+            username = (w.get("username") or "").lstrip("@")
+            if username:
+                winner_lines.append(f"{index}. [{name}](https://max.ru/{username})")
+            else:
+                winner_lines.append(f"{index}. {name}")
+
+        result_text = (
+            f"🎉 Итоги розыгрыша «{gw_title}»\n\n"
+            + "\n".join(winner_lines)
+            + "\n\nПоздравляем победителей! Организатор свяжется с вами для вручения призов."
+        )
+        result_message_id = None
+        result_publish_error = None
+        if channel.get("platform") == "max" and channel.get("max_chat_id"):
+            try:
+                from ..services.max_api import get_max_api
+                max_api = get_max_api()
+                publish_result = await max_api.send_message(str(channel["max_chat_id"]), result_text) if max_api else {
+                    "success": False, "error": "MAX бот не настроен"
+                }
+                if publish_result.get("success"):
+                    result_data = publish_result.get("data") or {}
+                    result_message_id = result_data.get("message_id") or result_data.get("id")
+                else:
+                    result_publish_error = publish_result.get("error") or "Неизвестная ошибка MAX API"
+            except Exception as e:
+                result_publish_error = str(e)
+                print(f"[Giveaways] publish results failed: {e}")
+        else:
+            try:
+                from ..services.messenger import send_to_channel
+                publish_result = await send_to_channel(channel, result_text)
+                if isinstance(publish_result, dict):
+                    result_message_id = publish_result.get("message_id") or (publish_result.get("result") or {}).get("message_id")
+            except Exception as e:
+                result_publish_error = str(e)
+                print(f"[Giveaways] publish results failed: {e}")
+
         # Достижение «Розыгрыши завершить»
         try:
             from ..services.achievements import track_event
@@ -464,6 +507,9 @@ async def draw_winner(tc: str, giveaway_id: int, user: Dict[str, Any] = Depends(
                 "first_name": winner.get("first_name"),
             },
             "participantsCount": len(participants),
+            "resultPublished": result_publish_error is None,
+            "resultMessageId": result_message_id,
+            "resultPublishError": result_publish_error,
         }
     except HTTPException:
         raise

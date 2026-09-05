@@ -37,16 +37,14 @@ async def max_status(tc: str, user: Dict[str, Any] = Depends(get_current_user)):
 
 @router.get("/{tc}/chats")
 async def list_chats(tc: str, user: Dict[str, Any] = Depends(get_current_user)):
-    from ..services.max_api import get_max_api
-    max_api = get_max_api()
-    if not max_api:
-        raise HTTPException(status_code=400, detail="MAX bot not configured")
-
-    result = await max_api.get_chats()
-    if not result.get("success"):
-        raise HTTPException(status_code=502, detail=result.get("error", "Failed to get chats"))
-
-    chats = result.get("data", {}).get("chats", [])
+    """Вернуть каналы пользователя, сохранённые из webhook-событий MAX."""
+    chats = await fetch_all(
+        """SELECT max_chat_id AS chat_id, title, username, max_connected, avatar_url
+           FROM channels
+           WHERE user_id=$1 AND platform='max' AND deleted_at IS NULL
+           ORDER BY created_at DESC""",
+        user["id"],
+    )
     return {"success": True, "chats": chats}
 
 
@@ -80,26 +78,12 @@ async def disconnect_channel(tc: str, user: Dict[str, Any] = Depends(get_current
 
 @router.post("/{tc}/discover")
 async def discover_channels(tc: str, user: Dict[str, Any] = Depends(get_current_user)):
-    """Discover MAX chats where bot is a member and create channel records."""
-    from ..services.max_api import get_max_api
-    max_api = get_max_api()
-    if not max_api:
-        raise HTTPException(status_code=400, detail="MAX bot not configured")
-
-    result = await max_api.get_chats()
-    if not result.get("success"):
-        raise HTTPException(status_code=502, detail="Failed to get chats")
-
-    chats = result.get("data", {}).get("chats", [])
-    discovered = []
-    for chat in chats:
-        chat_id = str(chat.get("chat_id", ""))
-        title = chat.get("title", "")
-        existing = await fetch_one("SELECT * FROM channels WHERE max_chat_id = $1", chat_id)
-        if not existing:
-            discovered.append({"chat_id": chat_id, "title": title})
-
-    return {"success": True, "discovered": discovered}
+    """MAX удалил общий поиск чатов; подключение выполняется через bot_added."""
+    return {
+        "success": True,
+        "discovered": [],
+        "message": "Добавьте бота администратором канала — канал появится автоматически",
+    }
 
 
 @router.post("/{tc}/refresh")

@@ -57,99 +57,52 @@ async def list_unclaimed(user: Dict[str, Any] = Depends(get_current_user)):
 
 @router.post("/scan")
 async def scan_channels(user: Dict[str, Any] = Depends(get_current_user)):
-    """Scan MAX bot chats to find channels owned by this user where bot is admin."""
-    import secrets as _secrets
+    """Перепроверить уже известные каналы пользователя через актуальный API.
+
+    Общий GET /chats удалён из MAX API. Новые каналы появляются в базе по
+    webhook-событию bot_added, а этот маршрут теперь проверяет их состояние,
+    вместо безуспешного сканирования всех чатов бота.
+    """
     from ..services.max_api import get_max_api
     max_api = get_max_api()
     if not max_api:
-        return {"success": True, "found": 0}
+        return {"success": False, "found": 0, "error": "MAX бот не настроен"}
 
     user_max_id = user.get("max_user_id")
     if not user_max_id:
         return {"success": True, "found": 0}
 
-    result = await max_api.get_chats()
-    if not result.get("success"):
-        return {"success": True, "found": 0}
-
-    chats = result.get("data", {}).get("chats", []) if isinstance(result.get("data"), dict) else (result.get("data") or [])
+    chats = await fetch_all(
+        "SELECT * FROM channels WHERE user_id = $1 AND platform = 'max' AND max_chat_id IS NOT NULL",
+        user["id"],
+    )
     found = 0
     for chat in chats:
-        chat_type = chat.get("type", "")
-        if chat_type != "channel":
-            continue
-        chat_id = str(chat.get("chat_id", ""))
+        chat_id = str(chat.get("max_chat_id", ""))
         if not chat_id:
             continue
-
-        # Already exists in DB? Update avatar if missing
-        existing = await fetch_one("SELECT id, user_id, avatar_url FROM channels WHERE max_chat_id = $1", chat_id)
-        if existing:
-            if not existing.get("avatar_url"):
-                # Fetch avatar from detailed chat info
-                try:
-                    chat_detail = await max_api.get_chat(chat_id)
-                    if chat_detail.get("success") and chat_detail.get("data"):
-                        _icon = chat_detail["data"].get("icon", {})
-                        _av = _icon.get("url") if isinstance(_icon, dict) else None
-                        if _av:
-                            await execute("UPDATE channels SET avatar_url = $1 WHERE id = $2", _av, existing["id"])
-                except Exception:
-                    pass
-            continue
-
-        # Check channel ownership — only add if current user is the owner
-        owner_id = chat.get("owner_id")
-        if not owner_id:
-            try:
-                chat_info = await max_api.get_chat(chat_id)
-                if chat_info.get("success") and chat_info.get("data"):
-                    owner_id = chat_info["data"].get("owner_id")
-            except Exception:
-                pass
-
-        if str(owner_id) != str(user_max_id):
-            continue
-
-        # Check if bot is admin
         try:
+            chat_info = await max_api.get_chat(chat_id)
             membership = await max_api.get_membership(chat_id)
             is_admin = membership.get("success") and membership.get("data", {}).get("is_admin", False)
+            if chat_info.get("success") and chat_info.get("data"):
+                info = chat_info["data"]
+                icon = info.get("icon") or {}
+                avatar = icon.get("url") if isinstance(icon, dict) else None
+                await execute(
+                    "UPDATE channels SET title=COALESCE($1,title), avatar_url=COALESCE($2,avatar_url), max_connected=$3 WHERE id=$4",
+                    info.get("title"), avatar, 1 if is_admin else 0, chat["id"],
+                )
+                found += 1 if is_admin else 0
         except Exception:
-            is_admin = False
-        if not is_admin:
-            continue
+            await execute("UPDATE channels SET max_connected=0 WHERE id=$1", chat["id"])
 
-        title = chat.get("title", "MAX Channel")
-        link = chat.get("link")
-        _icon = chat.get("icon", {})
-        avatar = _icon.get("url") if isinstance(_icon, dict) else None
-        tracking_code = _secrets.token_hex(8)
-
-        # Double-check (race condition)
-        exists = await fetch_one("SELECT id FROM channels WHERE max_chat_id = $1", chat_id)
-        if exists:
-            continue
-
-        await execute("""
-            INSERT INTO channels (channel_id, title, username, max_chat_id, max_connected, tracking_code, platform, is_active, user_id, owner_id, join_link, avatar_url)
-            VALUES ($1, $2, $3, $4, 1, $5, 'max', 1, $6, $7, $8, $9)
-        """, int(chat_id) if chat_id.lstrip('-').isdigit() else 0, title, link, chat_id, tracking_code, user["id"], user["id"], link, avatar)
-
-        # Activate trial
-        new_ch = await fetch_one("SELECT id FROM channels WHERE max_chat_id = $1", chat_id)
-        if new_ch:
-            await execute("""
-                INSERT INTO channel_billing (channel_id, plan, status, started_at, expires_at)
-                VALUES ($1, 'trial', 'active', NOW(), NOW() + INTERVAL '2 days')
-                ON CONFLICT DO NOTHING
-            """, new_ch["id"])
-            await execute("UPDATE channels SET trial_used = TRUE WHERE id = $1", new_ch["id"])
-
-        found += 1
-        print(f"[Scan] Found channel: {title} ({chat_id}), owner={owner_id}, bound to user {user['id']}")
-
-    return {"success": True, "found": found}
+    return {
+        "success": True,
+        "found": found,
+        "checked": len(chats),
+        "message": "Новые каналы подключаются автоматически после добавления бота администратором",
+    }
 
 
 @router.get("/trash")

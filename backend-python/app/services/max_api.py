@@ -4,7 +4,9 @@ from typing import Optional, Dict, Any, List
 
 from ..config import settings
 
-BASE_URL = "https://botapi.max.ru"
+# Актуальный домен Bot API. Старые botapi/platform-api домены больше не
+# используются платформой для новых версий API.
+BASE_URL = "https://platform-api2.max.ru"
 
 _max_api_instance = None
 
@@ -63,7 +65,17 @@ class MaxApi:
         return await self._request("GET", f"chats/{chat_id}")
 
     async def get_chats(self) -> Dict[str, Any]:
-        return await self._request("GET", "chats")
+        """Устаревший метод оставлен как явная ошибка для старых вызовов.
+
+        С июня 2026 MAX больше не предоставляет общий список чатов через
+        GET /chats. Подключённые каналы нужно сохранять по webhook-событиям
+        bot_added/bot_removed и при необходимости проверять по chat_id.
+        """
+        return {
+            "success": False,
+            "error": "GET /chats больше не поддерживается MAX; используйте сохранённые webhook-события",
+            "code": "max_chats_list_removed",
+        }
 
     async def get_messages(self, chat_id: str, count: int = 50, from_ts: int = None, to_ts: int = None) -> Dict[str, Any]:
         params = f"chat_id={chat_id}&count={count}"
@@ -178,6 +190,11 @@ class MaxApi:
                         result = _json.loads(raw) if raw.strip() else {}
                     except Exception:
                         return {"success": False, "error": f"Invalid response: {raw[:200]}"}
+                    # В актуальном API рабочий token приходит уже на шаге
+                    # POST /uploads; сервер загрузки может вернуть только
+                    # технический JSON без него.
+                    if upload_token and isinstance(result, dict):
+                        result.setdefault("token", upload_token)
                     return {"success": True, "data": result}
 
     async def answer_callback(self, callback_id: str, notification: str = None) -> Dict[str, Any]:
