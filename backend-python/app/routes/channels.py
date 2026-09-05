@@ -70,13 +70,15 @@ async def scan_channels(user: Dict[str, Any] = Depends(get_current_user)):
 
     user_max_id = user.get("max_user_id")
     if not user_max_id:
-        return {"success": True, "found": 0}
+        return {"success": True, "found": 0, "checked": 0,
+                "diagnostics": [], "reason": "max_account_not_linked"}
 
     chats = await fetch_all(
         "SELECT * FROM channels WHERE user_id = $1 AND platform = 'max' AND max_chat_id IS NOT NULL",
         user["id"],
     )
     found = 0
+    diagnostics = []
     for chat in chats:
         chat_id = str(chat.get("max_chat_id", ""))
         if not chat_id:
@@ -94,13 +96,27 @@ async def scan_channels(user: Dict[str, Any] = Depends(get_current_user)):
                     info.get("title"), avatar, 1 if is_admin else 0, chat["id"],
                 )
                 found += 1 if is_admin else 0
-        except Exception:
+                diagnostics.append({
+                    "channel_id": chat["id"],
+                    "title": info.get("title") or chat.get("title") or "MAX Channel",
+                    "connected": bool(is_admin),
+                    "reason": None if is_admin else "bot_not_admin",
+                })
+            else:
+                diagnostics.append({"channel_id": chat["id"], "title": chat.get("title") or "MAX Channel",
+                                    "connected": False, "reason": "channel_unavailable"})
+        except Exception as exc:
             await execute("UPDATE channels SET max_connected=0 WHERE id=$1", chat["id"])
+            diagnostics.append({"channel_id": chat["id"], "title": chat.get("title") or "MAX Channel",
+                                "connected": False, "reason": "api_error"})
+            print(f"[Channels] diagnostic failed channel={chat['id']}: {exc}")
 
     return {
         "success": True,
         "found": found,
         "checked": len(chats),
+        "diagnostics": diagnostics,
+        "reason": "no_known_channels" if not chats else None,
         "message": "Новые каналы подключаются автоматически после добавления бота администратором",
     }
 

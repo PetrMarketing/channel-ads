@@ -297,7 +297,14 @@ async def _get_broadcast_leads(bc):
 async def _send_broadcast(bc):
     """Send a single broadcast to all its recipients concurrently."""
     try:
-        await execute("UPDATE broadcasts SET status = 'sending', started_at = NOW() WHERE id = $1", bc["id"])
+        claimed = await fetch_one(
+            """UPDATE broadcasts SET status = 'sending', started_at = NOW()
+               WHERE id = $1 AND status = 'scheduled'
+               RETURNING id""",
+            bc["id"],
+        )
+        if not claimed:
+            return
         leads = await _get_broadcast_leads(bc)
         total = len(leads)
         sent = 0

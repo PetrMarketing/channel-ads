@@ -25,6 +25,7 @@ export default function DashboardPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [, setAddPlatform] = useState('max');
   const [unclaimedChannels, setUnclaimedChannels] = useState([]);
+  const [scanDiagnostics, setScanDiagnostics] = useState(null);
   const [bonuses, setBonuses] = useState([]);
   const [bonusBusyKey, setBonusBusyKey] = useState(null);
   const pollRef = useRef(null);
@@ -99,7 +100,7 @@ export default function DashboardPage() {
     const defaultPlatform = (user?.max_user_id && !user?.telegram_id) ? 'max' : 'telegram';
     setAddPlatform(defaultPlatform);
     setShowAddModal(true);
-    try { await api.post('/channels/scan'); } catch {}
+    try { setScanDiagnostics(await api.post('/channels/scan')); } catch {}
     loadUnclaimedChannels();
     loadChannels(true);
   }, [user, loadUnclaimedChannels, loadChannels]);
@@ -107,7 +108,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (showAddModal) {
       pollRef.current = setInterval(async () => {
-        try { await api.post('/channels/scan'); } catch {}
+        try { setScanDiagnostics(await api.post('/channels/scan')); } catch {}
         loadUnclaimedChannels();
         loadChannels(true);
       }, 5000);
@@ -401,6 +402,23 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+
+          {scanDiagnostics && unclaimedChannels.length === 0 && channels.length === 0 && (
+            <div style={{ padding: 14, borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: '0.82rem', lineHeight: 1.55 }}>
+              <b>Почему канал пока не появился:</b>{' '}
+              {scanDiagnostics.reason === 'max_account_not_linked'
+                ? 'этот кабинет не привязан к аккаунту MAX. Откройте бота по кнопке выше и войдите по его ссылке.'
+                : scanDiagnostics.reason === 'no_known_channels'
+                  ? 'бот ещё не получил событие подключения. Удалите его из канала, добавьте заново и обязательно выдайте права администратора.'
+                  : 'проверяем подключение. Убедитесь, что бот добавлен именно администратором.'}
+            </div>
+          )}
+
+          {(scanDiagnostics?.diagnostics || []).filter(x => !x.connected).map(item => (
+            <div key={item.channel_id} style={{ padding: 12, borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '0.82rem' }}>
+              <b>{item.title}:</b> {item.reason === 'bot_not_admin' ? 'бот найден, но у него нет прав администратора.' : 'MAX не разрешил проверить канал; переподключите бота и повторите.'}
+            </div>
+          ))}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button className="btn btn-outline" onClick={() => setShowAddModal(false)}>Закрыть</button>

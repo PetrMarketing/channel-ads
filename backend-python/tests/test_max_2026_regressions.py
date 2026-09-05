@@ -51,3 +51,39 @@ def test_max_attachments_use_image_not_photo():
     source = _read("app/services/max_api.py")
     assert 'type_map = {"photo": "image"' in source
 
+
+def test_reconnecting_channel_restores_it_without_touching_billing():
+    """Повторное bot_added возвращает канал из корзины и сохраняет billing."""
+    source = _read("app/routes/max_webhook.py")
+    block = source[source.index('# === bot_added ==='):source.index('# === bot_removed ===')]
+    assert "deleted_at = NULL" in block
+    assert "DELETE FROM channel_billing" not in block
+    assert "UPDATE channel_billing" not in block
+
+
+def test_max_subscription_attribution_requires_exact_user_visit():
+    """Органический подписчик не должен присваиваться последнему клику канала."""
+    source = _read("app/routes/max_webhook.py")
+    block = source[source.index('# === user_added / chat_member_joined ==='):]
+    assert "max_user_id = $2" in block
+    assert "max_user_id = $2 OR username" not in block
+    assert "visited_at > NOW() - INTERVAL '1 hour'" not in block
+    assert "ON CONFLICT DO NOTHING" in block
+    assert "reusing existing sub_id" not in block
+
+
+def test_scheduled_broadcast_is_claimed_atomically():
+    """Два раннера не могут одновременно отправить одну рассылку."""
+    source = _read("app/services/funnel_processor.py")
+    block = source[source.index("async def _send_broadcast"):source.index("async def process_scheduled_broadcasts")]
+    assert "AND status = 'scheduled'" in block
+    assert "RETURNING id" in block
+    assert "if not claimed:" in block
+
+
+def test_channel_scan_returns_actionable_diagnostics():
+    source = _read("app/routes/channels.py")
+    block = source[source.index("async def scan_channels"):source.index('@router.get("/trash")')]
+    assert '"diagnostics"' in block
+    assert '"bot_not_admin"' in block
+    assert '"max_account_not_linked"' in block

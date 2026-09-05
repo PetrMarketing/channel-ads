@@ -94,6 +94,8 @@ export default function AiTokensPage() {
   const [buying, setBuying] = useState(false);
   const [email, setEmail] = useState('');
   const [balance, setBalance] = useState(0);
+  const [purchases, setPurchases] = useState([]);
+  const [usage, setUsage] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const { overlay: pageTour } = usePageOnboarding('ai-tokens', [
@@ -104,7 +106,11 @@ export default function AiTokensPage() {
     setLoading(true);
     try {
       const data = await api.get('/billing/ai-tokens');
-      if (data.success) setBalance(data.balance || 0);
+      if (data.success) {
+        setBalance(data.balance || 0);
+        setPurchases(data.purchases || []);
+        setUsage(data.usage || []);
+      }
     } catch {} finally { setLoading(false); }
   }, []);
 
@@ -362,6 +368,42 @@ export default function AiTokensPage() {
               <span style={pill(`${ACCENT2}10`, ACCENT2)}>{item.cost}</span>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section style={{ marginBottom: 22 }}>
+        <div style={sectionHeaderRow}>
+          <div>
+            <h2 style={sectionTitleStyle}>История токенов</h2>
+            <p style={sectionSubStyle}>Пополнения и списания по вашему аккаунту</p>
+          </div>
+        </div>
+        <div style={{ ...cardBase, overflow: 'hidden' }}>
+          {[
+            ...purchases.filter(x => x.payment_status === 'paid').map(x => ({
+              id: `p-${x.id}`, created_at: x.paid_at || x.created_at,
+              title: 'Пополнение баланса', amount: Number(x.tokens || 0), positive: true,
+            })),
+            ...usage.map(x => ({
+              id: `u-${x.id}`, created_at: x.created_at,
+              title: x.description || x.action || 'ИИ-операция', amount: Number(x.tokens_used || 0), positive: false,
+            })),
+          ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 20).map((item, i) => (
+            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderTop: i ? `1px solid ${BORDER}` : 'none' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.86rem', fontWeight: 650, color: DARK }}>{item.title}</div>
+                <div style={{ marginTop: 3, fontSize: '0.72rem', color: MUTED }}>
+                  {item.created_at ? new Date(item.created_at).toLocaleString('ru-RU') : ''}
+                </div>
+              </div>
+              <strong style={{ color: item.positive ? '#059669' : '#dc2626', whiteSpace: 'nowrap' }}>
+                {item.positive ? '+' : '−'}{item.amount.toLocaleString('ru-RU')}
+              </strong>
+            </div>
+          ))}
+          {!loading && !purchases.some(x => x.payment_status === 'paid') && !usage.length && (
+            <div style={{ padding: 22, textAlign: 'center', color: MUTED, fontSize: '0.84rem' }}>Операций пока нет</div>
+          )}
         </div>
       </section>
 

@@ -46,6 +46,14 @@ const bubbleStyle = (role) => ({
   color: '#1a1a2e',
 });
 
+const fmtWaiting = (seconds) => {
+  if (seconds == null) return null;
+  const mins = Math.max(0, Math.floor(seconds / 60));
+  if (mins < 60) return `${mins} мин`;
+  const hours = Math.floor(mins / 60);
+  return hours < 24 ? `${hours} ч ${mins % 60} мин` : `${Math.floor(hours / 24)} д ${hours % 24} ч`;
+};
+
 export default function AdminSupportPage() {
   const [tickets, setTickets] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -173,6 +181,11 @@ export default function AdminSupportPage() {
                     <span style={statusBadge(t.status)}>
                       {statusLabels[t.status] || t.status}
                     </span>
+                    {t.waiting_seconds != null && (
+                      <div style={{ marginTop: 5, fontSize: 10, fontWeight: 700, color: t.waiting_seconds >= 3600 ? '#dc2626' : '#d97706' }}>
+                        ждёт {fmtWaiting(t.waiting_seconds)}
+                      </div>
+                    )}
                   </td>
                   <td style={{ ...td, fontSize: 11, color: '#999' }}>{fmtDate(t.updated_at)}</td>
                 </tr>

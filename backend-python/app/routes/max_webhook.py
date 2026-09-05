@@ -2388,7 +2388,7 @@ async def process_max_update(body: dict):
                 is_admin = True
 
             existing = await fetch_one(
-                "SELECT id, is_active, trial_used FROM channels WHERE max_chat_id = $1",
+                "SELECT id, is_active, trial_used, deleted_at FROM channels WHERE max_chat_id = $1",
                 chat_id_str,
             )
 
@@ -2487,7 +2487,8 @@ async def process_max_update(body: dict):
                     UPDATE channels SET is_active = $1, max_connected = 1, title = $2,
                         username = COALESCE($3, username),
                         user_id = COALESCE(user_id, $4),
-                        join_link = COALESCE($6, join_link)
+                        join_link = COALESCE($6, join_link),
+                        deleted_at = NULL
                     WHERE id = $5
                 """, active_status, chat_title, chat_link, bind_user_id, existing["id"], _join_link)
 
@@ -2644,24 +2645,23 @@ async def process_max_update(body: dict):
                 return
             print(f"[MAX Bot] user_added: matched channel id={channel['id']}")
 
-            # Find matching visit
+            # Attribute only to a visit that carries this exact MAX user id.
+            # Username and "latest visit in channel" fallbacks used to attach an
+            # organic subscriber to an unrelated ad click (empty usernames were
+            # especially dangerous), inflating per-link conversions.
             visit = None
             if user_id:
                 visit = await fetch_one("""
-                    SELECT id FROM visits WHERE channel_id = $1 AND (max_user_id = $2 OR username = $3)
+                    SELECT id FROM visits WHERE channel_id = $1 AND max_user_id = $2
                     AND visited_at > NOW() - INTERVAL '7 days' ORDER BY visited_at DESC LIMIT 1
-                """, channel["id"], user_id, username)
-            if not visit:
-                visit = await fetch_one("""
-                    SELECT id FROM visits WHERE channel_id = $1
-                    AND visited_at > NOW() - INTERVAL '1 hour' ORDER BY visited_at DESC LIMIT 1
-                """, channel["id"])
+                """, channel["id"], user_id)
 
             sub_id = None
             try:
                 sub_id = await execute_returning_id("""
                     INSERT INTO subscriptions (channel_id, telegram_id, max_user_id, username, first_name, visit_id, platform)
                     VALUES ($1, NULL, $2, $3, $4, $5, 'max')
+                    ON CONFLICT DO NOTHING
                     RETURNING id
                 """, channel["id"], user_id, username, first_name, visit["id"] if visit else None)
                 print(f"[MAX Bot] Subscription: user={username or user_id}, channel={channel['id']}, sub_id={sub_id}")
@@ -2672,20 +2672,10 @@ async def process_max_update(body: dict):
                         await fire_server_goals_safe(sub_id)
                     except Exception as fire_err:
                         print(f"[track] server-fire dispatch failed: {fire_err}")
+                if not sub_id:
+                    print(f"[MAX Bot] Subscription duplicate ignored: user={user_id}, channel={channel['id']}")
             except Exception as e:
-                if "duplicate" in str(e).lower() or "unique" in str(e).lower():
-                    # Юзер уже был в subscriptions — найдём существующую запись
-                    # чтобы всё равно стрельнуть pending (юзер же отписался и
-                    # снова подписался — это валидный конверсионный event).
-                    existing = await fetch_one(
-                        "SELECT id FROM subscriptions WHERE channel_id=$1 AND max_user_id=$2 LIMIT 1",
-                        channel["id"], user_id,
-                    )
-                    if existing:
-                        sub_id = existing["id"]
-                        print(f"[MAX Bot] Subscription duplicate: user={user_id}, reusing existing sub_id={sub_id}")
-                else:
-                    print(f"[MAX Bot] Subscription error: {e}")
+                print(f"[MAX Bot] Subscription error: {e}")
 
             # Atomic FIFO claim of oldest unfired pending_conversion in this
             # channel (60s window). 1 sub = 1 fire (or 0 if no pending).

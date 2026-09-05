@@ -2416,6 +2416,9 @@ async def admin_support_tickets(admin: Dict = Depends(get_current_admin), status
 
     rows = await fetch_all(
         f"""SELECT st.id, st.user_id, st.status, st.escalated, st.created_at, st.updated_at,
+                   CASE WHEN st.status IN ('waiting_human', 'escalated')
+                        THEN EXTRACT(EPOCH FROM (NOW() - st.updated_at))::int
+                        ELSE NULL END AS waiting_seconds,
                    u.first_name as user_name, u.username as user_username,
                    (SELECT content FROM support_messages sm WHERE sm.ticket_id = st.id ORDER BY sm.created_at DESC LIMIT 1) as last_message,
                    (SELECT role FROM support_messages sm WHERE sm.ticket_id = st.id ORDER BY sm.created_at DESC LIMIT 1) as last_role,
