@@ -61,11 +61,22 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(s.calls[1][1]['proxy'], 'http://backup-proxy')
 
     async def test_permanent_errors_do_not_spend_on_backup(self):
-        for code in (400, 401, 402, 403, 404):
+        for code in (400, 401, 403, 404):
             s = Session(Reply(code))
             with self.assertRaises(HTTPException):
                 await self.call(s)
             self.assertEqual(len(s.calls), 1)
+
+    async def test_empty_balance_falls_back_and_refill_restores_primary(self):
+        s = Session(Reply(402, {'error': {'message': 'Insufficient balance'}}), Reply(), Reply())
+        result = await self.call(s)
+        self.assertEqual(result['choices'][0]['message']['content'], 'OK')
+        self.assertEqual(len(s.calls), 2)
+        self.assertIn('openrouter.ai', s.calls[1][0])
+        self.assertEqual(s.calls[1][1]['headers']['Authorization'], 'Bearer backup-test')
+        await self.call(s)
+        self.assertEqual(len(s.calls), 3)
+        self.assertIn('gateway.api429.com', s.calls[2][0])
 
     async def test_consumer_error_does_not_start_backup(self):
         s = Session(Reply())

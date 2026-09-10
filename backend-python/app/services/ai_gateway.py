@@ -1,4 +1,4 @@
-"""API429 primary, OpenRouter only on transient provider failure.
+"""API429 primary, OpenRouter on exhausted balance or transient failure.
 
 Buffered responses ensure body read timeouts are handled before returning to
 callers. Credentials and request contents must never be written to logs.
@@ -55,10 +55,12 @@ async def post(session, url, *, json, headers, proxy=None):
             ) as response:
                 raw = await response.text()
                 status = response.status
-            if status == 429 or status >= 500 or status == 408:
+            if status == 402:
+                logger.warning('AI primary balance exhausted status=402; using OpenRouter')
+            elif status == 429 or status >= 500 or status == 408:
                 logger.warning('AI primary unavailable status=%s; using OpenRouter', status)
             elif status >= 400:
-                # Do not mask access/balance/validation failures with paid fallback.
+                # Do not mask access/validation failures with paid fallback.
                 logger.warning('AI primary rejected request status=%s model=%s', status, payload['model'])
                 raise HTTPException(502, 'API429 отклонил запрос. Проверьте баланс, доступ к модели и настройки API.')
             else:
