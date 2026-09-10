@@ -1,0 +1,408 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MAX Marketing REST API",
+    "version": "1.0.0",
+    "description": "API всех существующих разделов MAX Marketing. Пути /api сохраняются как в интерфейсе. Для пользовательских методов: Authorization: Bearer mmk_… (или JWT). Административные методы требуют отдельный admin JWT; вебхуки и публичные методы имеют свой протокол. API-ключи не дают дополнительных прав или бесплатных генераций. x-source-fields — подсказки из legacy-кода, НЕ полная типизированная схема. Публикации/рассылки/оплаты выполняют реальные действия: не повторяйте POST автоматически."
+  },
+  "paths": {
+    "/api/clients/{tc}/notes/{identifier}": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get Notes",
+        "operationId": "get_api_clients_tc_notes_identifier",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.client_notes.get_notes"
+      },
+      "post": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Add Note",
+        "operationId": "post_api_clients_tc_notes_identifier",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "channel_type",
+            "content",
+            "phone",
+            "transport"
+          ]
+        },
+        "x-handler": "app.routes.client_notes.add_note",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "channel_type": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "content": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "phone": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "transport": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/clients/{tc}/wazzup-settings": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get Wazzup Settings",
+        "operationId": "get_api_clients_tc_wazzup_settings",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.client_notes.get_wazzup_settings"
+      },
+      "post": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Save Wazzup Settings",
+        "operationId": "post_api_clients_tc_wazzup_settings",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "api_token",
+            "is_active"
+          ]
+        },
+        "x-handler": "app.routes.client_notes.save_wazzup_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "api_token": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "is_active": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/clients/{tc}/wazzup-channels": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get Wazzup Channels",
+        "operationId": "get_api_clients_tc_wazzup_channels",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.client_notes.get_wazzup_channels"
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "UserBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API-ключ mmk_… либо пользовательский JWT"
+      },
+      "AdminBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только JWT администратора платформы"
+      },
+      "SessionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только пользовательский JWT после входа; API-ключ не подходит"
+      },
+      "MetricsKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Отдельный служебный METRICS_API_KEY"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "clients",
+      "description": "Заметки о клиентах"
+    }
+  ]
+}

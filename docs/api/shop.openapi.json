@@ -1,0 +1,3656 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MAX Marketing REST API",
+    "version": "1.0.0",
+    "description": "API всех существующих разделов MAX Marketing. Пути /api сохраняются как в интерфейсе. Для пользовательских методов: Authorization: Bearer mmk_… (или JWT). Административные методы требуют отдельный admin JWT; вебхуки и публичные методы имеют свой протокол. API-ключи не дают дополнительных прав или бесплатных генераций. x-source-fields — подсказки из legacy-кода, НЕ полная типизированная схема. Публикации/рассылки/оплаты выполняют реальные действия: не повторяйте POST автоматически."
+  },
+  "paths": {
+    "/api/shop/{tc}/upload-image": {
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Upload Image",
+        "description": "Upload image, return URL.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_shop_tc_upload_image",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "multipart/form-data": [
+            "file"
+          ]
+        },
+        "x-handler": "app.routes.shop.upload_image",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/{tc}/settings": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Get Settings",
+        "operationId": "get_api_shop_tc_settings",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.get_settings"
+      },
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Save Settings",
+        "operationId": "post_api_shop_tc_settings",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "banner_url",
+            "banners",
+            "currency",
+            "manager_contact_url",
+            "manager_user_id",
+            "min_order_amount",
+            "primary_color",
+            "require_address",
+            "require_email",
+            "require_phone",
+            "shop_name",
+            "welcome_text"
+          ]
+        },
+        "x-handler": "app.routes.shop.save_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "banner_url": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "banners": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "currency": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "manager_contact_url": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "manager_user_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "min_order_amount": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "primary_color": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "require_address": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "require_email": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "require_phone": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "shop_name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "welcome_text": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/payment-settings": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "List Payment Settings",
+        "operationId": "get_api_shop_tc_payment_settings",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.list_payment_settings"
+      },
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Save Payment Settings",
+        "operationId": "post_api_shop_tc_payment_settings",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "credentials",
+            "is_active",
+            "provider"
+          ]
+        },
+        "x-handler": "app.routes.shop.save_payment_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "credentials": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "is_active": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "provider": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/payment-settings/{setting_id}": {
+      "delete": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Delete Payment Settings",
+        "operationId": "delete_api_shop_tc_payment_settings_setting_id",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "setting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Setting Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.delete_payment_settings"
+      }
+    },
+    "/api/shop/{tc}/categories": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "List Categories",
+        "operationId": "get_api_shop_tc_categories",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.list_categories"
+      },
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Create Category",
+        "operationId": "post_api_shop_tc_categories",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "description",
+            "name",
+            "parent_id",
+            "sort_order"
+          ]
+        },
+        "x-handler": "app.routes.shop.create_category",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "description": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "parent_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "sort_order": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/categories/{cid}": {
+      "put": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Update Category",
+        "operationId": "put_api_shop_tc_categories_cid",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "cid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Cid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "description",
+            "is_active",
+            "name",
+            "parent_id",
+            "sort_order"
+          ]
+        },
+        "x-handler": "app.routes.shop.update_category",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "description": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "is_active": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "parent_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "sort_order": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      },
+      "delete": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Delete Category",
+        "operationId": "delete_api_shop_tc_categories_cid",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "cid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Cid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.delete_category"
+      }
+    },
+    "/api/shop/{tc}/products": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "List Products",
+        "operationId": "get_api_shop_tc_products",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "category_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.list_products"
+      },
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Create Product",
+        "operationId": "post_api_shop_tc_products",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "attribute_value_ids",
+            "category_id",
+            "compare_at_price",
+            "description",
+            "image_url",
+            "images",
+            "is_hit",
+            "is_new",
+            "name",
+            "price",
+            "sku",
+            "stock"
+          ]
+        },
+        "x-handler": "app.routes.shop.create_product",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "attribute_value_ids": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "category_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "compare_at_price": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "description": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "image_url": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "images": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "is_hit": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "is_new": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "price": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "sku": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "stock": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/products/{pid}": {
+      "put": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Update Product",
+        "operationId": "put_api_shop_tc_products_pid",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "attribute_value_ids",
+            "category_id",
+            "compare_at_price",
+            "description",
+            "image_url",
+            "images",
+            "is_active",
+            "is_hit",
+            "is_new",
+            "name",
+            "price",
+            "sku",
+            "stock"
+          ]
+        },
+        "x-handler": "app.routes.shop.update_product",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "attribute_value_ids": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "category_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "compare_at_price": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "description": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "image_url": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "images": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "is_active": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "is_hit": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "is_new": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "price": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "sku": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "stock": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      },
+      "delete": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Delete Product",
+        "operationId": "delete_api_shop_tc_products_pid",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.delete_product"
+      }
+    },
+    "/api/shop/{tc}/import-feed": {
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Import Feed",
+        "description": "Import products from YML/XML feed (Yandex.Market format).\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_shop_tc_import_feed",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "url"
+          ]
+        },
+        "x-handler": "app.routes.shop.import_feed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "url": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/{tc}/import-feed-file": {
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Import Feed File",
+        "description": "Import products from uploaded YML/XML file.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_shop_tc_import_feed_file",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "multipart/form-data": [
+            "file"
+          ]
+        },
+        "x-handler": "app.routes.shop.import_feed_file",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop/{tc}/attributes": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "List Attributes",
+        "operationId": "get_api_shop_tc_attributes",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.list_attributes"
+      },
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Create Attribute",
+        "operationId": "post_api_shop_tc_attributes",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "name",
+            "sort_order",
+            "values"
+          ]
+        },
+        "x-handler": "app.routes.shop.create_attribute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "sort_order": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "values": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/attributes/{aid}": {
+      "put": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Update Attribute",
+        "operationId": "put_api_shop_tc_attributes_aid",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "aid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Aid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "name",
+            "sort_order",
+            "values"
+          ]
+        },
+        "x-handler": "app.routes.shop.update_attribute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "sort_order": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "values": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      },
+      "delete": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Delete Attribute",
+        "operationId": "delete_api_shop_tc_attributes_aid",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "aid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Aid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.delete_attribute"
+      }
+    },
+    "/api/shop/{tc}/products/{pid}/images": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "List Product Images",
+        "description": "Возвращает список доп. фото товара. Без этого фронт после загрузки\nне мог их прочитать (вызывал GET, получал 404 от catch-all → showed\nпустой список → юзер думал что фото не сохранились).",
+        "operationId": "get_api_shop_tc_products_pid_images",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.list_product_images"
+      },
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Upload Product Image",
+        "operationId": "post_api_shop_tc_products_pid_images",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "multipart/form-data": [
+            "file"
+          ]
+        },
+        "x-handler": "app.routes.shop.upload_product_image",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/products/{pid}/images/{idx}": {
+      "delete": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Delete Product Image",
+        "operationId": "delete_api_shop_tc_products_pid_images_idx",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "idx",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Idx"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.delete_product_image"
+      }
+    },
+    "/api/shop/{tc}/products/{pid}/main-image": {
+      "put": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Set Main Image",
+        "operationId": "put_api_shop_tc_products_pid_main_image",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "image_url"
+          ]
+        },
+        "x-handler": "app.routes.shop.set_main_image",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "image_url": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/products/{pid}/variants": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "List Variants",
+        "operationId": "get_api_shop_tc_products_pid_variants",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.list_variants"
+      },
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Create Variant",
+        "operationId": "post_api_shop_tc_products_pid_variants",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "attribute_values",
+            "image_url",
+            "name",
+            "price",
+            "sku",
+            "stock"
+          ]
+        },
+        "x-handler": "app.routes.shop.create_variant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "attribute_values": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "image_url": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "price": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "sku": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "stock": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/products/{pid}/variants/{vid}": {
+      "put": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Update Variant",
+        "operationId": "put_api_shop_tc_products_pid_variants_vid",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "attribute_values",
+            "image_url",
+            "name",
+            "price",
+            "sku",
+            "stock"
+          ]
+        },
+        "x-handler": "app.routes.shop.update_variant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "attribute_values": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "image_url": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "price": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "sku": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "stock": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      },
+      "delete": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Delete Variant",
+        "operationId": "delete_api_shop_tc_products_pid_variants_vid",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.delete_variant"
+      }
+    },
+    "/api/shop/{tc}/delivery": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "List Delivery",
+        "operationId": "get_api_shop_tc_delivery",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.list_delivery"
+      },
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Create Delivery",
+        "operationId": "post_api_shop_tc_delivery",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "description",
+            "estimated_days",
+            "free_from",
+            "name",
+            "price"
+          ]
+        },
+        "x-handler": "app.routes.shop.create_delivery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "description": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "estimated_days": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "free_from": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "price": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/delivery/{did}": {
+      "put": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Update Delivery",
+        "operationId": "put_api_shop_tc_delivery_did",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Did"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "description",
+            "estimated_days",
+            "free_from",
+            "is_active",
+            "name",
+            "price"
+          ]
+        },
+        "x-handler": "app.routes.shop.update_delivery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "description": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "estimated_days": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "free_from": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "is_active": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "price": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      },
+      "delete": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Delete Delivery",
+        "operationId": "delete_api_shop_tc_delivery_did",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Did"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.delete_delivery"
+      }
+    },
+    "/api/shop/{tc}/promotions": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "List Promotions",
+        "operationId": "get_api_shop_tc_promotions",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.list_promotions"
+      },
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Create Promotion",
+        "operationId": "post_api_shop_tc_promotions",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "code",
+            "discount_value",
+            "expires_at",
+            "max_uses",
+            "min_order_amount",
+            "name",
+            "promo_type",
+            "starts_at"
+          ]
+        },
+        "x-handler": "app.routes.shop.create_promotion",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "code": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "discount_value": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "expires_at": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "max_uses": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "min_order_amount": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "promo_type": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "starts_at": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/promotions/{pid}": {
+      "put": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Update Promotion",
+        "operationId": "put_api_shop_tc_promotions_pid",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "code",
+            "discount_value",
+            "expires_at",
+            "is_active",
+            "max_uses",
+            "min_order_amount",
+            "name",
+            "promo_type",
+            "starts_at"
+          ]
+        },
+        "x-handler": "app.routes.shop.update_promotion",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "code": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "discount_value": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "expires_at": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "is_active": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "max_uses": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "min_order_amount": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "promo_type": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "starts_at": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      },
+      "delete": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Delete Promotion",
+        "operationId": "delete_api_shop_tc_promotions_pid",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.delete_promotion"
+      }
+    },
+    "/api/shop/{tc}/orders": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "List Orders",
+        "operationId": "get_api_shop_tc_orders",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.list_orders"
+      }
+    },
+    "/api/shop/{tc}/orders/{oid}/status": {
+      "put": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Update Order Status",
+        "operationId": "put_api_shop_tc_orders_oid_status",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Oid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "status"
+          ]
+        },
+        "x-handler": "app.routes.shop.update_order_status",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "status": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/{tc}/orders/stats": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Orders Stats",
+        "operationId": "get_api_shop_tc_orders_stats",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.orders_stats"
+      }
+    },
+    "/api/shop/{tc}/clients": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Clients Funnel",
+        "operationId": "get_api_shop_tc_clients",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.clients_funnel"
+      }
+    },
+    "/api/shop/{tc}/clients/{identifier}/orders": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Client Orders",
+        "description": "Заказы конкретного клиента.",
+        "operationId": "get_api_shop_tc_clients_identifier_orders",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.client_orders"
+      }
+    },
+    "/api/shop/public/{tc}/catalog": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Public Catalog",
+        "operationId": "get_api_shop_public_tc_catalog",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.public_catalog"
+      }
+    },
+    "/api/shop/public/{tc}/product/{pid}": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Public Product",
+        "operationId": "get_api_shop_public_tc_product_pid",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.public_product"
+      }
+    },
+    "/api/shop/public/{tc}/appearance": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Public Appearance",
+        "operationId": "get_api_shop_public_tc_appearance",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.public_appearance"
+      }
+    },
+    "/api/shop/public/{tc}/customer-info": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Get Customer Info",
+        "description": "Возвращает имя клиента по user_identifier (= max_user_id).\nИспользуется UI миниаппа чтобы предзаполнить поле «Имя» в чекауте,\nт.к. window.WebApp.initDataUnsafe.user обычно пуст в MAX.",
+        "operationId": "get_api_shop_public_tc_customer_info",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "uid",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Uid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.get_customer_info"
+      }
+    },
+    "/api/shop/public/{tc}/delivery-methods": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Public Delivery Methods",
+        "operationId": "get_api_shop_public_tc_delivery_methods",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.public_delivery_methods"
+      }
+    },
+    "/api/shop/public/{tc}/cart/{user_id}": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Get Cart",
+        "operationId": "get_api_shop_public_tc_cart_user_id",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.get_cart"
+      }
+    },
+    "/api/shop/public/{tc}/cart": {
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Add To Cart",
+        "operationId": "post_api_shop_public_tc_cart",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {
+          "application/json": [
+            "product_id",
+            "quantity",
+            "user_identifier",
+            "variant_id"
+          ]
+        },
+        "x-handler": "app.routes.shop.add_to_cart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "product_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "quantity": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "user_identifier": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "variant_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/public/{tc}/cart/{user_id}/{item_id}": {
+      "delete": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Remove Cart Item",
+        "operationId": "delete_api_shop_public_tc_cart_user_id_item_id",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {},
+        "x-handler": "app.routes.shop.remove_cart_item"
+      }
+    },
+    "/api/shop/public/{tc}/checkout": {
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Checkout",
+        "operationId": "post_api_shop_public_tc_checkout",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {
+          "application/json": [
+            "client_address",
+            "client_email",
+            "client_name",
+            "client_phone",
+            "delivery_method_id",
+            "notes",
+            "promo_code",
+            "user_identifier"
+          ]
+        },
+        "x-handler": "app.routes.shop.checkout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "client_address": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "client_email": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "client_name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "client_phone": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "delivery_method_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "notes": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "promo_code": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "user_identifier": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/public/{tc}/apply-promo": {
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Apply Promo",
+        "operationId": "post_api_shop_public_tc_apply_promo",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {
+          "application/json": [
+            "code",
+            "subtotal"
+          ]
+        },
+        "x-handler": "app.routes.shop.apply_promo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "code": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "subtotal": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/shop/public/{tc}/track-visit": {
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "Track Visit",
+        "operationId": "post_api_shop_public_tc_track_visit",
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {
+          "application/json": [
+            "user_identifier"
+          ]
+        },
+        "x-handler": "app.routes.shop.track_visit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "user_identifier": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "UserBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API-ключ mmk_… либо пользовательский JWT"
+      },
+      "AdminBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только JWT администратора платформы"
+      },
+      "SessionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только пользовательский JWT после входа; API-ключ не подходит"
+      },
+      "MetricsKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Отдельный служебный METRICS_API_KEY"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "shop",
+      "description": "Интернет-магазин"
+    }
+  ]
+}

@@ -1,0 +1,490 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MAX Marketing REST API",
+    "version": "1.0.0",
+    "description": "API всех существующих разделов MAX Marketing. Пути /api сохраняются как в интерфейсе. Для пользовательских методов: Authorization: Bearer mmk_… (или JWT). Административные методы требуют отдельный admin JWT; вебхуки и публичные методы имеют свой протокол. API-ключи не дают дополнительных прав или бесплатных генераций. x-source-fields — подсказки из legacy-кода, НЕ полная типизированная схема. Публикации/рассылки/оплаты выполняют реальные действия: не повторяйте POST автоматически."
+  },
+  "paths": {
+    "/api/support/topics": {
+      "get": {
+        "tags": [
+          "support"
+        ],
+        "summary": "Get Support Topics",
+        "description": "Возвращает всё древо тем разом — фронт хранит локально и навигирует\nбез лишних запросов.",
+        "operationId": "get_api_support_topics",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {},
+        "x-handler": "app.routes.support.get_support_topics"
+      }
+    },
+    "/api/support/operator-request": {
+      "post": {
+        "tags": [
+          "support"
+        ],
+        "summary": "Operator Request",
+        "description": "Пользователь нажал «Позвать оператора» и описал проблему.\nСоздаём (или переиспользуем) тикет, добавляем сообщение с контекстом\nвыбранной темы, помечаем escalated. Админ увидит в /admin/support.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_support_operator_request",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "description",
+            "topic_id"
+          ]
+        },
+        "x-handler": "app.routes.support.operator_request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "description": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "topic_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/support/ticket": {
+      "get": {
+        "tags": [
+          "support"
+        ],
+        "summary": "Get Or Create Ticket",
+        "description": "Получить активный тикет или создать новый.",
+        "operationId": "get_api_support_ticket",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.support.get_or_create_ticket"
+      }
+    },
+    "/api/support/ticket/{ticket_id}/messages": {
+      "get": {
+        "tags": [
+          "support"
+        ],
+        "summary": "Get Messages",
+        "operationId": "get_api_support_ticket_ticket_id_messages",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.support.get_messages"
+      }
+    },
+    "/api/support/ticket/{ticket_id}/escalate": {
+      "post": {
+        "tags": [
+          "support"
+        ],
+        "summary": "Escalate Ticket",
+        "description": "Пользователь явно вызывает человека (без ожидания ответа ИИ).",
+        "operationId": "post_api_support_ticket_ticket_id_escalate",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.support.escalate_ticket"
+      }
+    },
+    "/api/support/ticket/{ticket_id}/message": {
+      "post": {
+        "tags": [
+          "support"
+        ],
+        "summary": "Send Message",
+        "operationId": "post_api_support_ticket_ticket_id_message",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "content"
+          ]
+        },
+        "x-handler": "app.routes.support.send_message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "content": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/support/ticket/{ticket_id}/photo": {
+      "post": {
+        "tags": [
+          "support"
+        ],
+        "summary": "Send Photo",
+        "operationId": "post_api_support_ticket_ticket_id_photo",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_send_photo_api_support_ticket__ticket_id__photo_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.support.send_photo"
+      }
+    },
+    "/api/support/ticket/{ticket_id}/close": {
+      "post": {
+        "tags": [
+          "support"
+        ],
+        "summary": "Close Ticket",
+        "operationId": "post_api_support_ticket_ticket_id_close",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.support.close_ticket"
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "Body_send_photo_api_support_ticket__ticket_id__photo_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_send_photo_api_support_ticket__ticket_id__photo_post"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "UserBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API-ключ mmk_… либо пользовательский JWT"
+      },
+      "AdminBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только JWT администратора платформы"
+      },
+      "SessionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только пользовательский JWT после входа; API-ключ не подходит"
+      },
+      "MetricsKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Отдельный служебный METRICS_API_KEY"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "support",
+      "description": "Поддержка"
+    }
+  ]
+}

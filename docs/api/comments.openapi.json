@@ -1,0 +1,618 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MAX Marketing REST API",
+    "version": "1.0.0",
+    "description": "API всех существующих разделов MAX Marketing. Пути /api сохраняются как в интерфейсе. Для пользовательских методов: Authorization: Bearer mmk_… (или JWT). Административные методы требуют отдельный admin JWT; вебхуки и публичные методы имеют свой протокол. API-ключи не дают дополнительных прав или бесплатных генераций. x-source-fields — подсказки из legacy-кода, НЕ полная типизированная схема. Публикации/рассылки/оплаты выполняют реальные действия: не повторяйте POST автоматически."
+  },
+  "paths": {
+    "/api/comments/{tc}": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "List Comments",
+        "operationId": "get_api_comments_tc",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "post_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Post Type"
+            }
+          },
+          {
+            "name": "post_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "title": "Post Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.comments.list_comments"
+      }
+    },
+    "/api/comments/{tc}/{comment_id}": {
+      "delete": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Delete Comment",
+        "operationId": "delete_api_comments_tc_comment_id",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.comments.delete_comment"
+      }
+    },
+    "/api/comments/{tc}/{comment_id}/reply": {
+      "post": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Reply Comment",
+        "description": "Reply to a comment from dashboard (as channel owner).\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_comments_tc_comment_id_reply",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "text"
+          ]
+        },
+        "x-handler": "app.routes.comments.reply_comment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "text": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/comments/{tc}/settings": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Get Comment Settings",
+        "operationId": "get_api_comments_tc_settings",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.comments.get_comment_settings"
+      },
+      "put": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Update Comment Settings",
+        "operationId": "put_api_comments_tc_settings",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": []
+        },
+        "x-handler": "app.routes.comments.update_comment_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {}
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/comments/{tc}/settings/upload-bg": {
+      "post": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Upload Comment Bg",
+        "description": "Upload background image for comments appearance.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_comments_tc_settings_upload_bg",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "multipart/form-data": [
+            "file",
+            "target"
+          ]
+        },
+        "x-handler": "app.routes.comments.upload_comment_bg",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "target": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/comments/public/{post_type}/{post_id}": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Public Get Comments",
+        "description": "Get comments for a post + channel appearance settings.",
+        "operationId": "get_api_comments_public_post_type_post_id",
+        "parameters": [
+          {
+            "name": "post_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Type"
+            }
+          },
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Post Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {},
+        "x-handler": "app.routes.comments.public_get_comments"
+      },
+      "post": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Public Add Comment",
+        "description": "Add a comment from miniapp user.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_comments_public_post_type_post_id",
+        "parameters": [
+          {
+            "name": "post_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Type"
+            }
+          },
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Post Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {
+          "application/json": [
+            "comment_text",
+            "max_user_id",
+            "parent_id",
+            "user_avatar",
+            "user_name"
+          ]
+        },
+        "x-handler": "app.routes.comments.public_add_comment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "comment_text": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "max_user_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "parent_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "user_avatar": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "user_name": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "UserBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API-ключ mmk_… либо пользовательский JWT"
+      },
+      "AdminBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только JWT администратора платформы"
+      },
+      "SessionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только пользовательский JWT после входа; API-ключ не подходит"
+      },
+      "MetricsKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Отдельный служебный METRICS_API_KEY"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "comments",
+      "description": "Комментарии"
+    }
+  ]
+}

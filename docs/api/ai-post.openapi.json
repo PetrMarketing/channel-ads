@@ -1,0 +1,268 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MAX Marketing REST API",
+    "version": "1.0.0",
+    "description": "API всех существующих разделов MAX Marketing. Пути /api сохраняются как в интерфейсе. Для пользовательских методов: Authorization: Bearer mmk_… (или JWT). Административные методы требуют отдельный admin JWT; вебхуки и публичные методы имеют свой протокол. API-ключи не дают дополнительных прав или бесплатных генераций. x-source-fields — подсказки из legacy-кода, НЕ полная типизированная схема. Публикации/рассылки/оплаты выполняют реальные действия: не повторяйте POST автоматически."
+  },
+  "paths": {
+    "/api/ai-post/{tc}/generate-text": {
+      "post": {
+        "tags": [
+          "ai-post"
+        ],
+        "summary": "Generate Post Text",
+        "description": "Сгенерировать текст поста по промту. Опц. файл-контекст (до 20 МБ),\nопц. описание, опц. в стиле канала (берёт последние 20 опубликованных постов).",
+        "operationId": "post_api_ai_post_tc_generate_text",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_generate_post_text_api_ai_post__tc__generate_text_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_post.generate_post_text"
+      }
+    },
+    "/api/ai-post/{tc}/generate-image": {
+      "post": {
+        "tags": [
+          "ai-post"
+        ],
+        "summary": "Generate Post Image",
+        "description": "Сгенерировать картинку для поста. Опционально до 4 референс-фото\n(multipart, поле `refs` повторяется). Возвращает URL в /uploads.\n\nПринимаем поля вручную из form() — FastAPI 422 на Optional[List[UploadFile]]\nпри пустом значении бывает капризен.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_ai_post_tc_generate_image",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "multipart/form-data": [
+            "format",
+            "prompt",
+            "refs"
+          ]
+        },
+        "x-handler": "app.routes.ai_post.generate_post_image",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "format": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "prompt": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "refs": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_generate_post_text_api_ai_post__tc__generate_text_post": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "use_channel_style": {
+            "type": "string",
+            "title": "Use Channel Style",
+            "default": "false"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "Body_generate_post_text_api_ai_post__tc__generate_text_post"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "UserBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API-ключ mmk_… либо пользовательский JWT"
+      },
+      "AdminBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только JWT администратора платформы"
+      },
+      "SessionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только пользовательский JWT после входа; API-ключ не подходит"
+      },
+      "MetricsKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Отдельный служебный METRICS_API_KEY"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "ai-post",
+      "description": "ИИ-посты"
+    }
+  ]
+}

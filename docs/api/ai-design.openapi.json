@@ -1,0 +1,1109 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MAX Marketing REST API",
+    "version": "1.0.0",
+    "description": "API всех существующих разделов MAX Marketing. Пути /api сохраняются как в интерфейсе. Для пользовательских методов: Authorization: Bearer mmk_… (или JWT). Административные методы требуют отдельный admin JWT; вебхуки и публичные методы имеют свой протокол. API-ключи не дают дополнительных прав или бесплатных генераций. x-source-fields — подсказки из legacy-кода, НЕ полная типизированная схема. Публикации/рассылки/оплаты выполняют реальные действия: не повторяйте POST автоматически."
+  },
+  "paths": {
+    "/api/ai-design/{tc}/sessions": {
+      "get": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "List Sessions",
+        "description": "Возвращает список прошлых сессий оформления для канала.",
+        "operationId": "get_api_ai_design_tc_sessions",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_design.list_sessions"
+      }
+    },
+    "/api/ai-design/{tc}/session": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Create Session",
+        "description": "Создаёт новую сессию оформления и списывает ИИ токены.",
+        "operationId": "post_api_ai_design_tc_session",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_design.create_session"
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/survey": {
+      "put": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Save Survey",
+        "description": "Сохраняет ответы пользователя из опроса.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "put_api_ai_design_tc_session_session_id_survey",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "colors",
+            "contact_link",
+            "description",
+            "niche",
+            "style"
+          ]
+        },
+        "x-handler": "app.routes.ai_design.save_survey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "colors": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "contact_link": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "description": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "niche": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  },
+                  "style": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/photo": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Upload Photo",
+        "description": "Загрузка фото пользователя для генерации аватарок.",
+        "operationId": "post_api_ai_design_tc_session_session_id_photo",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_photo_api_ai_design__tc__session__session_id__photo_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_design.upload_photo"
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/generate-avatars": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Generate Avatars",
+        "description": "Генерирует сетку 3x3 аватарок и разрезает на 9 частей.",
+        "operationId": "post_api_ai_design_tc_session_session_id_generate_avatars",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_design.generate_avatars"
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/generate-descriptions": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Generate Descriptions",
+        "description": "Генерирует 3 варианта описания канала.",
+        "operationId": "post_api_ai_design_tc_session_session_id_generate_descriptions",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_design.generate_descriptions"
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/choose-avatar": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Choose Avatar",
+        "description": "Сохраняет выбранную аватарку.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_ai_design_tc_session_session_id_choose_avatar",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "index"
+          ]
+        },
+        "x-handler": "app.routes.ai_design.choose_avatar",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "index": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/choose-description": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Choose Description",
+        "description": "Сохраняет выбранное описание.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_ai_design_tc_session_session_id_choose_description",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "index"
+          ]
+        },
+        "x-handler": "app.routes.ai_design.choose_description",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "index": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/apply": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Apply To Channel",
+        "description": "Устанавливает аватар канала через MAX Bot API PATCH /chats/{chatId}.",
+        "operationId": "post_api_ai_design_tc_session_session_id_apply",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_design.apply_to_channel"
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}": {
+      "get": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Get Session",
+        "description": "Возвращает полные данные сессии оформления.",
+        "operationId": "get_api_ai_design_tc_session_session_id",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_design.get_session"
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/lm-pdf": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Upload Lm Pdf",
+        "description": "Загрузка PDF с контентом пользователя как референса для лид-магнита.",
+        "operationId": "post_api_ai_design_tc_session_session_id_lm_pdf",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_lm_pdf_api_ai_design__tc__session__session_id__lm_pdf_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_design_lm.upload_lm_pdf"
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/generate-lm-ideas": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Generate Lm Ideas",
+        "description": "Генерирует 3 варианта лид-магнита на основе ниши, пожеланий и PDF.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_ai_design_tc_session_session_id_generate_lm_ideas",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "wishes"
+          ]
+        },
+        "x-handler": "app.routes.ai_design_lm.generate_lm_ideas",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "wishes": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/choose-lm-idea": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Choose Lm Idea",
+        "description": "Сохраняет выбранную идею лид-магнита.\n\nLegacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary.",
+        "operationId": "post_api_ai_design_tc_session_session_id_choose_lm_idea",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "index"
+          ]
+        },
+        "x-handler": "app.routes.ai_design_lm.choose_lm_idea",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "index": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/generate-lm-content": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Generate Lm Content",
+        "description": "Генерирует текст лид-магнита, пост-закреп и баннер 16:9.",
+        "operationId": "post_api_ai_design_tc_session_session_id_generate_lm_content",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_design_lm.generate_lm_content"
+      }
+    },
+    "/api/ai-design/{tc}/session/{session_id}/install-lm": {
+      "post": {
+        "tags": [
+          "ai-design"
+        ],
+        "summary": "Install Lead Magnet",
+        "description": "Создаёт лид-магнит, пост-закреп и публикует в канал.",
+        "operationId": "post_api_ai_design_tc_session_session_id_install_lm",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tc"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.ai_design_lm.install_lead_magnet"
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "Body_upload_photo_api_ai_design__tc__session__session_id__photo_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_photo_api_ai_design__tc__session__session_id__photo_post"
+      },
+      "Body_upload_lm_pdf_api_ai_design__tc__session__session_id__lm_pdf_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_lm_pdf_api_ai_design__tc__session__session_id__lm_pdf_post"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "UserBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API-ключ mmk_… либо пользовательский JWT"
+      },
+      "AdminBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только JWT администратора платформы"
+      },
+      "SessionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только пользовательский JWT после входа; API-ключ не подходит"
+      },
+      "MetricsKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Отдельный служебный METRICS_API_KEY"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "ai-design",
+      "description": "ИИ-оформление и лид-магниты"
+    }
+  ]
+}

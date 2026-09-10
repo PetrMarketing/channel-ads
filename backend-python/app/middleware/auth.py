@@ -15,6 +15,7 @@ security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Dict[str, Any]:
     """Verify JWT token and return user dict. Raises 401 if invalid."""
@@ -22,6 +23,9 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Требуется авторизация")
 
     token = credentials.credentials
+    if token.startswith("mmk_"):
+        from ..services.integration_keys import authenticate_key
+        return await authenticate_key(token, request)
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
     except JWTError:
@@ -39,13 +43,14 @@ async def get_current_user(
 
 
 async def optional_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Optional[Dict[str, Any]]:
     """Try to verify JWT; return user or None (no error)."""
     if not credentials:
         return None
     try:
-        return await get_current_user(credentials)
+        return await get_current_user(request, credentials)
     except HTTPException:
         return None
 

@@ -213,7 +213,6 @@ async def delete_broadcast(tc: str, bc_id: int, user: Dict[str, Any] = Depends(g
     return {"success": True}
 
 
-@router.post("/{tc}/{bc_id}/send")
 async def _count_recipients(channel_id: int, bc: dict) -> int:
     """Count how many recipients a broadcast will reach."""
     target_type = bc.get("target_type", "all_leads")

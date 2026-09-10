@@ -1,0 +1,229 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MAX Marketing REST API",
+    "version": "1.0.0",
+    "description": "API всех существующих разделов MAX Marketing. Пути /api сохраняются как в интерфейсе. Для пользовательских методов: Authorization: Bearer mmk_… (или JWT). Административные методы требуют отдельный admin JWT; вебхуки и публичные методы имеют свой протокол. API-ключи не дают дополнительных прав или бесплатных генераций. x-source-fields — подсказки из legacy-кода, НЕ полная типизированная схема. Публикации/рассылки/оплаты выполняют реальные действия: не повторяйте POST автоматически."
+  },
+  "paths": {
+    "/api/onboarding/text-overrides": {
+      "get": {
+        "tags": [
+          "onboarding"
+        ],
+        "summary": "Get Text Overrides",
+        "description": "Публичный эндпоинт — фронт онбординга мерджит с дефолтами в коде.",
+        "operationId": "get_api_onboarding_text_overrides",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-access": "custom-or-public",
+        "x-source-fields": {},
+        "x-handler": "app.routes.onboarding.get_text_overrides"
+      }
+    },
+    "/api/onboarding/state": {
+      "get": {
+        "tags": [
+          "onboarding"
+        ],
+        "summary": "Get State",
+        "operationId": "get_api_onboarding_state",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.onboarding.get_state"
+      }
+    },
+    "/api/onboarding/complete-step": {
+      "post": {
+        "tags": [
+          "onboarding"
+        ],
+        "summary": "Complete Step",
+        "operationId": "post_api_onboarding_complete_step",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "x-access": "user",
+        "x-source-fields": {
+          "application/json": [
+            "step_id"
+          ]
+        },
+        "x-handler": "app.routes.onboarding.complete_step",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "step_id": {
+                    "description": "Поле legacy-обработчика; тип и обязательность проверяет сервер."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Legacy-body: перечислены непосредственно читаемые поля. Вложенные структуры, условная обязательность и динамические поля могут требовать сверки с обработчиком. В multipart объекты и массивы передаются JSON-строками, файлы — binary."
+      }
+    },
+    "/api/onboarding/skip": {
+      "post": {
+        "tags": [
+          "onboarding"
+        ],
+        "summary": "Skip Onboarding",
+        "operationId": "post_api_onboarding_skip",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.onboarding.skip_onboarding"
+      }
+    },
+    "/api/onboarding/finish": {
+      "post": {
+        "tags": [
+          "onboarding"
+        ],
+        "summary": "Finish Onboarding",
+        "operationId": "post_api_onboarding_finish",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.onboarding.finish_onboarding"
+      }
+    },
+    "/api/onboarding/reset": {
+      "post": {
+        "tags": [
+          "onboarding"
+        ],
+        "summary": "Reset Onboarding",
+        "operationId": "post_api_onboarding_reset",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "x-access": "user",
+        "x-source-fields": {},
+        "x-handler": "app.routes.onboarding.reset_onboarding"
+      }
+    }
+  },
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "UserBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API-ключ mmk_… либо пользовательский JWT"
+      },
+      "AdminBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только JWT администратора платформы"
+      },
+      "SessionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Только пользовательский JWT после входа; API-ключ не подходит"
+      },
+      "MetricsKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Отдельный служебный METRICS_API_KEY"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "onboarding",
+      "description": "Онбординг"
+    }
+  ]
+}
