@@ -109,6 +109,10 @@ class KeyTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await client.get("/api/integration/catalog")).status_code, 200)
             self.assertEqual((await client.get("/api/integration/openapi/shop.json")).status_code, 200)
             self.assertEqual((await client.get("/api/integration/openapi/missing.json")).status_code, 404)
+            docs = (await client.get("/api/integration/docs")).text
+            self.assertNotIn("cdn.jsdelivr.net", docs)
+            self.assertIn("/api/integration/assets/swagger-ui-bundle.js", docs)
+            self.assertEqual((await client.get("/api/integration/assets/secret.env")).status_code, 404)
 
     async def test_http_key_reaches_existing_channel_permission_checks(self):
         headers = {"Authorization": "Bearer " + new_key()[0]}

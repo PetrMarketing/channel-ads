@@ -1,10 +1,11 @@
 """Integration onboarding and machine-readable API discovery."""
 from datetime import datetime, timedelta, timezone
 from typing import List
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 
 from ..database import fetch_all, execute_returning_row
@@ -103,4 +104,20 @@ async def get_postman(request: Request):
 
 @router.get("/docs", include_in_schema=False)
 async def docs():
-    return get_swagger_ui_html(openapi_url="/api/integration/openapi.json", title="MAX Marketing — REST API")
+    return get_swagger_ui_html(
+        openapi_url="/api/integration/openapi.json", title="MAX Marketing — REST API",
+        swagger_js_url="/api/integration/assets/swagger-ui-bundle.js",
+        swagger_css_url="/api/integration/assets/swagger-ui.css",
+        swagger_favicon_url="/favicon.ico",
+        swagger_ui_parameters={"docExpansion": "none", "filter": True, "validatorUrl": None},
+    )
+
+
+@router.get("/assets/{filename}", include_in_schema=False)
+async def docs_asset(filename: str):
+    if filename not in {"swagger-ui-bundle.js", "swagger-ui.css", "LICENSE"}:
+        raise HTTPException(404, "Файл не найден")
+    path = Path(__file__).resolve().parents[3] / "frontend-react/dist/swagger-ui" / filename
+    if not path.is_file():
+        raise HTTPException(404, "Сначала соберите frontend")
+    return FileResponse(path)
