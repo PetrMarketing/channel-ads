@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 
 from ..middleware.auth import get_current_user
 from ..config import settings
+from ..services import ai_gateway
 
 
 def _extract_poll_id(inline_buttons):
@@ -524,7 +525,7 @@ async def generate_plan(tc: str, request: Request, user: Dict[str, Any] = Depend
         raise HTTPException(status_code=404, detail="Канал не найден")
 
     api_key = settings.OPENROUTER_API_KEY
-    if not api_key:
+    if not api_key and not ai_gateway.primary_key():
         raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
 
     prompt = f"""Составь контент-план для Telegram-канала.
@@ -546,7 +547,7 @@ async def generate_plan(tc: str, request: Request, user: Dict[str, Any] = Depend
     }
 
     async with aiohttp.ClientSession() as session:
-        async with session.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers) as resp:
+        async with ai_gateway.post(session, "https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers) as resp:
             result = await resp.json()
 
     content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -570,7 +571,7 @@ async def generate_posts(tc: str, request: Request, user: Dict[str, Any] = Depen
         raise HTTPException(status_code=404, detail="Канал не найден")
 
     api_key = settings.OPENROUTER_API_KEY
-    if not api_key:
+    if not api_key and not ai_gateway.primary_key():
         raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
 
     topics = body.get("topics", [])
@@ -592,7 +593,7 @@ async def generate_posts(tc: str, request: Request, user: Dict[str, Any] = Depen
         }
 
         async with aiohttp.ClientSession() as session:
-            async with session.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers) as resp:
+            async with ai_gateway.post(session, "https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers) as resp:
                 result = await resp.json()
 
         text = result.get("choices", [{}])[0].get("message", {}).get("content", "")

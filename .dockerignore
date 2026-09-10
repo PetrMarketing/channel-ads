@@ -2,6 +2,7 @@ frontend-react/node_modules
 frontend-react/dist
 backend-python/__pycache__
 backend-python/.env
+backend-python/.env.api429
 **/__pycache__
 *.pyc
 .git

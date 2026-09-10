@@ -41,6 +41,7 @@ services:
       - "127.0.0.1:8010:8000"
     env_file:
       - ./backend-python/.env
+      - ./backend-python/.env.api429
     environment:
       - NODE_ENV=production
       - PORT=8000

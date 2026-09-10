@@ -22,6 +22,7 @@ import os
 import aiohttp
 
 from ..config import settings
+from . import ai_gateway
 from ..database import fetch_one, fetch_all, execute
 
 
@@ -254,7 +255,7 @@ async def parse_query_with_llm(query: str, user_context: dict) -> dict:
     }
     """
     api_key = settings.OPENROUTER_API_KEY
-    if not api_key:
+    if not api_key and not ai_gateway.primary_key():
         raise RuntimeError("OPENROUTER_API_KEY не задан")
 
     today_msk = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%d %B %Y, %H:%M")
@@ -278,7 +279,7 @@ async def parse_query_with_llm(query: str, user_context: dict) -> dict:
     async def _call(model):
         async with aiohttp.ClientSession(timeout=_TIMEOUT) as session:
             payload["model"] = model
-            async with session.post(_OPENROUTER_URL, json=payload, headers=headers, proxy=_OPENROUTER_PROXY) as resp:
+            async with ai_gateway.post(session, _OPENROUTER_URL, json=payload, headers=headers, proxy=_OPENROUTER_PROXY) as resp:
                 return resp.status, await resp.json()
 
     status, data = await _call(_MODEL)
@@ -646,7 +647,7 @@ async def execute_step(user_id: int, step: dict) -> dict:
 async def _quick_generate_post(topic: str) -> Optional[str]:
     """Быстрая генерация одного поста через OpenRouter."""
     api_key = settings.OPENROUTER_API_KEY
-    if not api_key:
+    if not api_key and not ai_gateway.primary_key():
         return None
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
@@ -665,7 +666,7 @@ async def _quick_generate_post(topic: str) -> Optional[str]:
     }
     try:
         async with aiohttp.ClientSession(timeout=_TIMEOUT) as session:
-            async with session.post(_OPENROUTER_URL, json=payload, headers=headers, proxy=_OPENROUTER_PROXY) as resp:
+            async with ai_gateway.post(session, _OPENROUTER_URL, json=payload, headers=headers, proxy=_OPENROUTER_PROXY) as resp:
                 data = await resp.json()
                 if "choices" in data:
                     return data["choices"][0]["message"]["content"].strip()

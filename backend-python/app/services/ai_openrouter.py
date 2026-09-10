@@ -5,6 +5,7 @@ import aiohttp
 from fastapi import HTTPException
 
 from ..config import settings
+from . import ai_gateway
 
 # Опциональный HTTP/HTTPS/SOCKS5 прокси для OpenRouter — задаётся в .env
 # как OPENROUTER_PROXY. Нужен когда Cloudflare банит IP сервера
@@ -57,7 +58,7 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
     """
     model = model or TEXT_MODEL
     api_key = settings.OPENROUTER_API_KEY
-    if not api_key:
+    if not api_key and not ai_gateway.primary_key():
         raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
@@ -69,7 +70,7 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
             "max_tokens": 4096,
         }
         async with aiohttp.ClientSession() as session:
-            async with session.post(OPENROUTER_URL, json=payload, headers=headers, proxy=OPENROUTER_PROXY) as resp:
+            async with ai_gateway.post(session, OPENROUTER_URL, json=payload, headers=headers, proxy=OPENROUTER_PROXY) as resp:
                 status = resp.status
                 raw = await resp.text()
                 try:
@@ -132,7 +133,7 @@ async def openrouter_chat(prompt: str, model: str = None) -> str:
                             "max_tokens": 4096,
                         }
                         async with aiohttp.ClientSession() as s:
-                            async with s.post(OPENROUTER_URL, json=p2, headers=headers, proxy=OPENROUTER_PROXY) as resp:
+                            async with ai_gateway.post(s, OPENROUTER_URL, json=p2, headers=headers, proxy=OPENROUTER_PROXY) as resp:
                                 rw = await resp.text()
                                 try:
                                     return resp.status, json.loads(rw), rw
@@ -207,14 +208,14 @@ async def openrouter_chat_messages(messages: list, model: str = None) -> str:
     """Chat completions с полной историей сообщений."""
     model = model or TEXT_MODEL
     api_key = settings.OPENROUTER_API_KEY
-    if not api_key:
+    if not api_key and not ai_gateway.primary_key():
         raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     async def _call(m):
         payload = {"model": m, "messages": messages, "temperature": 0.4, "max_tokens": 4096}
         async with aiohttp.ClientSession() as session:
-            async with session.post(OPENROUTER_URL, json=payload, headers=headers, proxy=OPENROUTER_PROXY) as resp:
+            async with ai_gateway.post(session, OPENROUTER_URL, json=payload, headers=headers, proxy=OPENROUTER_PROXY) as resp:
                 return await resp.json()
 
     chain = [model] + [m for m in FALLBACK_TEXT_MODELS if m != model]
@@ -265,7 +266,7 @@ async def openrouter_image_gen(prompt: str, photo_base64=None) -> str:
     photo_base64 может быть строкой (одно фото-референс) или списком строк
     (до нескольких референсов). Большие фото автоматически даунскейлятся."""
     api_key = settings.OPENROUTER_API_KEY
-    if not api_key:
+    if not api_key and not ai_gateway.primary_key():
         raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
@@ -302,7 +303,7 @@ async def openrouter_image_gen(prompt: str, photo_base64=None) -> str:
         p = dict(payload)
         p["model"] = mdl
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(OPENROUTER_URL, json=p, headers=headers, proxy=OPENROUTER_PROXY) as resp:
+            async with ai_gateway.post(session, OPENROUTER_URL, json=p, headers=headers, proxy=OPENROUTER_PROXY) as resp:
                 return resp.status, await resp.json()
 
     try:
@@ -358,7 +359,7 @@ async def openrouter_image_gen(prompt: str, photo_base64=None) -> str:
                 retry_payload["messages"] = [{"role": "user", "content": retry_content}]
                 try:
                     async with aiohttp.ClientSession(timeout=timeout) as session:
-                        async with session.post(OPENROUTER_URL, json=retry_payload, headers=headers, proxy=OPENROUTER_PROXY) as resp:
+                        async with ai_gateway.post(session, OPENROUTER_URL, json=retry_payload, headers=headers, proxy=OPENROUTER_PROXY) as resp:
                             result = await resp.json()
                 except aiohttp.ClientError as e:
                     print(f"[AI Image] retry {stage_name} network error: {e}")
