@@ -4,9 +4,9 @@ services:
     runtime: python
     region: frankfurt
     buildCommand: |
-      cd channel-ads/backend-python && pip install -r requirements.txt &&
-      cd ../frontend-react && npm install && npx vite build
-    startCommand: cd channel-ads/backend-python && python run.py
+      cd backend-python && pip install -r requirements.txt &&
+      cd ../frontend-react && npm install && npm run build
+    startCommand: cd backend-python && python run.py
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.3"
