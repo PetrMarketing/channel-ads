@@ -370,6 +370,16 @@ if os.path.isdir(frontend_dist):
     if os.path.isdir(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+    # Generated pixel-art used by the AI Agent office. Keep it on a separate
+    # static prefix so the SPA route /ai-agent-office is not shadowed.
+    office_assets_dir = os.path.join(frontend_dist, "ai-agent-office")
+    if os.path.isdir(office_assets_dir):
+        app.mount(
+            "/office-assets",
+            StaticFiles(directory=office_assets_dir),
+            name="office-assets",
+        )
+
 # ========================
 # API Routes — Protected
 # ========================
@@ -3076,7 +3086,7 @@ async def _inject_blog_meta(html: str, full_path: str) -> str:
 async def serve_spa(full_path: str):
     """Serve React SPA for all non-API routes."""
     # Backend paths: redirect to add trailing slash or return 404
-    backend_prefixes = ("api", "uploads", "assets", "webhook", "health", "go")
+    backend_prefixes = ("api", "uploads", "assets", "office-assets", "webhook", "health", "go")
     for prefix in backend_prefixes:
         if full_path == prefix or full_path.startswith(prefix + "/"):
             # Already has proper path structure but no matching route → 404
