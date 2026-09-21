@@ -386,6 +386,7 @@ if os.path.isdir(frontend_dist):
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 from .routes import integration
 app.include_router(integration.router, prefix="/api/integration", tags=["integration"])
+app.include_router(integration.admin_router, prefix="/api/admin/integration", tags=["admin-integration"])
 app.include_router(channels.router, prefix="/api/channels", tags=["channels"])
 app.include_router(links.router, prefix="/api/links", tags=["links"])
 app.include_router(pins.router, prefix="/api/pins", tags=["pins"])

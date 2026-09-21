@@ -65,9 +65,9 @@ import PollsPage from './pages/PollsPage';
 import StreamsPage from './pages/StreamsPage';
 import AiAssistantPage from './pages/AiAssistantPage';
 import AiAgentOfficePage from './pages/AiAgentOfficePage';
-import IntegrationsPage from './pages/IntegrationsPage';
 import AdminBlogPage from './pages/admin/AdminBlogPage';
 import AdminPromoCodesPage from './pages/admin/AdminPromoCodesPage';
+import AdminIntegrationsPage from './pages/admin/AdminIntegrationsPage';
 import AdminGenerationsPage from './pages/admin/AdminGenerationsPage';
 import AdminSupportPage from './pages/admin/AdminSupportPage';
 
@@ -278,6 +278,7 @@ export default function App() {
         <Route path="visibility" element={<AdminVisibilityPage />} />
         <Route path="blog" element={<AdminBlogPage />} />
         <Route path="promocodes" element={<AdminPromoCodesPage />} />
+        <Route path="integrations" element={<AdminIntegrationsPage />} />
       </Route>
 
       {/* Dashboard (protected) */}
@@ -299,7 +300,7 @@ export default function App() {
         <Route path="ai-tokens" element={<FeatureGate featureKey="ai_tokens" title="ИИ Токены" icon="🪙"><AiTokensPage /></FeatureGate>} />
         <Route path="referrals" element={<FeatureGate featureKey="referrals" title="Реферальная система" icon="🤝"><ReferralPage /></FeatureGate>} />
         <Route path="staff" element={<FeatureGate featureKey="staff" title="Сотрудники" icon="👥"><StaffPage /></FeatureGate>} />
-        <Route path="integrations" element={<IntegrationsPage />} />
+        <Route path="integrations" element={<Navigate to="/" replace />} />
         <Route path="trash" element={<FeatureGate featureKey="trash" title="Корзина" icon="🗑"><TrashPage /></FeatureGate>} />
         <Route path="paid-chats" element={<FeatureGate featureKey="paid_chats" title="Платные чаты" icon="💬"><PaidChatsPage /></FeatureGate>} />
         <Route path="services" element={<FeatureGate featureKey="services" title="Услуги и запись" icon="📅"><ServicesPage /></FeatureGate>} />

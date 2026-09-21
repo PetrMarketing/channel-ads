@@ -12,7 +12,6 @@ from starlette.routing import Match
 from app.main import app
 from app.services.api_catalog import api_routes, build_schema, catalog, module_schema, postman_collection
 from app.services.integration_keys import new_key, authenticate_key
-from app.routes.integration import session_user
 
 
 def request(path="/api/shop/demo/products", method="GET"):
@@ -95,17 +94,11 @@ class KeyTests(unittest.IsolatedAsyncioTestCase):
                     await authenticate_key(new_key()[0], request(path))
                 self.assertEqual(err.exception.status_code, 403)
 
-    async def test_cannot_manage_keys_using_another_key(self):
-        req = request("/api/integration/keys")
-        req.state.integration_key_id = 1
-        with self.assertRaises(HTTPException) as err:
-            await session_user(req, {"id": 20})
-        self.assertEqual(err.exception.status_code, 403)
-
     async def test_http_unauthorized_and_documentation(self):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            for url in ["/api/integration/keys", "/api/channels/"]:
-                self.assertEqual((await client.get(url)).status_code, 401)
+            self.assertEqual((await client.get("/api/integration/keys")).status_code, 404)
+            self.assertEqual((await client.get("/api/admin/integration/keys")).status_code, 401)
+            self.assertEqual((await client.get("/api/channels/")).status_code, 401)
             self.assertEqual((await client.get("/api/integration/catalog")).status_code, 200)
             self.assertEqual((await client.get("/api/integration/openapi/shop.json")).status_code, 200)
             self.assertEqual((await client.get("/api/integration/openapi/missing.json")).status_code, 404)

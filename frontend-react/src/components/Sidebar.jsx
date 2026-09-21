@@ -170,7 +170,6 @@ const menuItems = [
     ],
   },
   { path: '/staff', featureKey: 'staff', label: 'Сотрудники', icon: icons.staff, standalone: true, tour: 'staff' },
-  { path: '/integrations', label: 'API и интеграции', icon: icons.links, standalone: true },
   { path: '/trash', featureKey: 'trash', label: 'Корзина', icon: icons.trash, standalone: true },
   {
     category: 'billing', label: 'Подписка', icon: icons.billing,
