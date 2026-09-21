@@ -75,22 +75,15 @@
 .scene-ui{pointer-events:none}
 .agent-avatar{--agent-scale:1;position:absolute;z-index:4;width:150px;height:220px;padding:0;border:0;background:none;cursor:pointer;transform:translate(-50%,-100%) scale(var(--agent-scale));transform-origin:50% 100%;transition:left .9s linear,top .9s linear,transform .18s ease;filter:none}
 .agent-avatar:focus-visible{outline:3px solid #6366f1;outline-offset:5px;border-radius:14px}
-.agent-avatar.is-moving{animation:agent-step .28s steps(2) infinite}
-.agent-avatar.is-reacting{animation:agent-reaction .55s ease-in-out 2}
-.agent-avatar .agent-sprite{display:block;position:relative;inset:auto;width:100%;height:100%;transform:none;background-size:400% 100%;background-position:0 50%;filter:drop-shadow(0 10px 12px rgba(79,70,229,.22));animation:none}
-.agent-avatar .agent-sprite.walking-left{background-position:33.333% 50%}
-.agent-avatar .agent-sprite.walking-right{background-position:66.666% 50%}
-.agent-avatar .agent-sprite.working{background-position:100% 50%;animation:work-pulse .65s steps(2) infinite}
-.agent-avatar .agent-sprite.finished{background-position:0 50%;filter:drop-shadow(0 0 12px rgba(99,102,241,.45))}
+.agent-avatar .agent-sprite{display:block;position:relative;inset:auto;width:100%;height:100%;transform:none;background-image:url('/office-assets/agent-animation-atlas-v2.png');background-size:800% 400%;background-position:var(--sprite-column) var(--sprite-row);background-repeat:no-repeat;filter:drop-shadow(0 10px 12px rgba(79,70,229,.22));animation:none;will-change:background-position}
+.agent-avatar .agent-sprite.facing-left{transform:scaleX(-1)}
+.agent-avatar .agent-sprite.finished{filter:drop-shadow(0 0 12px rgba(99,102,241,.45))}
 .agent-avatar .speech{left:50%;bottom:auto;top:-42px;max-width:250px;overflow:hidden;text-overflow:ellipsis}
 .walk-target{position:absolute;z-index:3;width:28px;height:14px;border:2px solid #6366f1;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 0 5px rgba(99,102,241,.14);animation:target-pulse .55s ease-in-out infinite alternate;pointer-events:none}
 .movement-hint{position:absolute;left:50%;bottom:72px;z-index:2;transform:translateX(-50%);padding:6px 10px;border:1px solid rgba(99,102,241,.22);border-radius:7px;background:rgba(255,255,255,.86);color:#6366f1;font:700 9px "Courier New",monospace;white-space:nowrap}
 .skill-list{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 14px}
 .skill-list span{position:relative;padding:7px 7px 7px 21px;border:1px solid #e5e7eb;border-radius:7px;background:#f7f8fa;color:#4b5563;font-size:9px;line-height:1.25}
 .skill-list span::before{content:'\2713';position:absolute;left:7px;color:#6366f1;font-weight:800}
-@keyframes agent-step{50%{transform:translate(-50%,-100%) scale(var(--agent-scale)) translateY(-7px)}}
-@keyframes agent-reaction{0%,100%{transform:translate(-50%,-100%) scale(var(--agent-scale)) rotate(0)}35%{transform:translate(-50%,-100%) scale(var(--agent-scale)) translateY(-20px) rotate(-4deg)}65%{transform:translate(-50%,-100%) scale(var(--agent-scale)) translateY(-8px) rotate(4deg)}}
-@keyframes work-pulse{50%{transform:translateY(-5px)}}
 @keyframes target-pulse{to{transform:translate(-50%,-50%) scale(1.3);opacity:.45}}
 
 @media(max-width:560px){.agent-avatar{width:104px;height:154px}.agent-avatar .speech{top:-34px;max-width:180px}.movement-hint{bottom:66px;font-size:7px}.skill-list{grid-template-columns:1fr}.floor-hit-area{top:53%}}

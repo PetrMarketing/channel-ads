@@ -20,6 +20,13 @@ const skills = [
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+const animationTimings = {
+  idle: 210,
+  walk: 105,
+  work: 130,
+  reaction: 115,
+};
+
 export default function AiAgentOfficePage() {
   const [running, setRunning] = useState(false);
   const [step, setStep] = useState(-1);
@@ -29,6 +36,7 @@ export default function AiAgentOfficePage() {
   const [moving, setMoving] = useState(false);
   const [direction, setDirection] = useState('right');
   const [reacting, setReacting] = useState(false);
+  const [animationFrame, setAnimationFrame] = useState(0);
   const [agentMessage, setAgentMessage] = useState('> КЛИКНИТЕ НА ПОЛ — Я ПОДОЙДУ');
   const movementTimer = useRef(null);
   const reactionTimer = useRef(null);
@@ -56,6 +64,18 @@ export default function AiAgentOfficePage() {
   useEffect(() => {
     if (running && step >= 0) setAgentMessage(`> ${steps[step][1].toUpperCase()}...`);
   }, [running, step]);
+
+  const animationState = reacting ? 'reaction' : moving ? 'walk' : running ? 'work' : 'idle';
+
+  useEffect(() => {
+    setAnimationFrame(0);
+    const timer = setInterval(() => {
+      setAnimationFrame(current => animationState === 'reaction'
+        ? Math.min(current + 1, 7)
+        : (current + 1) % 8);
+    }, animationTimings[animationState]);
+    return () => clearInterval(timer);
+  }, [animationState]);
 
   const progress = step < 0 ? 0 : Math.round(((step + 1) / steps.length) * 100);
   const status = moving ? 'ИДЁТ' : running ? 'РАБОТАЕТ' : done ? 'ГОТОВО' : 'ОЖИДАЕТ ЗАДАЧУ';
@@ -99,10 +119,14 @@ export default function AiAgentOfficePage() {
     reactionTimer.current = setTimeout(() => {
       setReacting(false);
       setAgentMessage(running ? '> ВОЗВРАЩАЮСЬ К ЗАДАЧЕ' : '> ГОТОВ К РАБОТЕ');
-    }, 1200);
+    }, animationTimings.reaction * 8);
   };
 
-  const spriteState = moving ? `walking-${direction}` : running ? 'working' : done ? 'finished' : '';
+  const spriteStyle = {
+    '--sprite-column': `${(animationFrame / 7) * 100}%`,
+    '--sprite-row': `${({ idle: 0, walk: 1, work: 2, reaction: 3 }[animationState] / 3) * 100}%`,
+  };
+  const spriteState = `${animationState} ${animationState === 'walk' ? `facing-${direction}` : ''} ${done ? 'finished' : ''}`;
 
   return <div className="agent-game">
     <div className="game-topbar"><div><span className="game-logo">MAX</span><span className="game-title">MARKETING OFFICE</span></div><div className="top-meta">СМЕНА 01 / 1994 &nbsp; ● СИСТЕМА ОНЛАЙН</div></div>
@@ -111,8 +135,8 @@ export default function AiAgentOfficePage() {
         <div className="scene-bg" /><div className="floor-hit-area" /><div className="scanlines" />
         <div className="scene-caption scene-ui"><span>ОФИС №01</span><span>{status}</span></div>
         {target && <span className="walk-target" style={{ left: `${target.x}%`, top: `${target.y}%` }} aria-hidden="true" />}
-        <button type="button" className={`agent-avatar ${moving ? 'is-moving' : ''} ${reacting ? 'is-reacting' : ''}`} style={{ left: `${position.x}%`, top: `${position.y}%`, '--agent-scale': 0.84 + ((position.y - 58) / 26) * 0.16 }} onClick={reactToClick} aria-label="SMM-специалист. Нажмите, чтобы поздороваться">
-          <span className={`agent-sprite ${spriteState}`} /><span className="speech">{agentMessage}</span>
+        <button type="button" className="agent-avatar" style={{ left: `${position.x}%`, top: `${position.y}%`, '--agent-scale': 0.84 + ((position.y - 58) / 26) * 0.16 }} onClick={reactToClick} aria-label="SMM-специалист. Нажмите, чтобы поздороваться">
+          <span className={`agent-sprite ${spriteState}`} style={spriteStyle} /><span className="speech">{agentMessage}</span>
         </button>
         <div className="movement-hint scene-ui">◎ НАЖМИТЕ НА ПОЛ, ЧТОБЫ ПЕРЕМЕСТИТЬСЯ</div>
         <div className="room-tag tag-archive scene-ui">АРХИВ</div><div className="room-tag tag-board scene-ui">КОНТЕНТ-ПЛАН</div><div className="room-tag tag-pc scene-ui">SMM_DESK</div>
