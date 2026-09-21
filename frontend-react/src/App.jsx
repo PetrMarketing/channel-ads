@@ -64,6 +64,7 @@ import FeatureGate from './components/FeatureGate';
 import PollsPage from './pages/PollsPage';
 import StreamsPage from './pages/StreamsPage';
 import AiAssistantPage from './pages/AiAssistantPage';
+import AiAgentOfficePage from './pages/AiAgentOfficePage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import AdminBlogPage from './pages/admin/AdminBlogPage';
 import AdminPromoCodesPage from './pages/admin/AdminPromoCodesPage';
@@ -283,6 +284,7 @@ export default function App() {
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<DashboardPage />} />
         <Route path="ai-assistant" element={<FeatureGate featureKey="ai_assistant" title="ИИ Агент" icon="🤖"><AiAssistantPage /></FeatureGate>} />
+        <Route path="ai-agent-office" element={<AiAgentOfficePage />} />
         <Route path="ai-design" element={<FeatureGate featureKey="ai_design" title="ИИ Оформление" icon="🎨"><AiDesignPage /></FeatureGate>} />
         <Route path="ai-landing" element={<AiLandingPage />} />
         <Route path="links" element={<FeatureGate featureKey="links" title="Ссылки" icon="🔗"><LinksPage /></FeatureGate>} />

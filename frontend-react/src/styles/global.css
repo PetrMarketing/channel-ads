@@ -40,6 +40,11 @@
     --transition-spring: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
 /* ===== Gradient hover animation ===== */
 @keyframes gradientShift {
     0% { background-position: 0% 50%; }
