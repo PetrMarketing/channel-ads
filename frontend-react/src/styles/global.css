@@ -75,7 +75,7 @@
 .scene-ui{pointer-events:none}
 .agent-avatar{--agent-scale:1;position:absolute;z-index:4;width:150px;height:220px;padding:0;border:0;background:none;cursor:pointer;transform:translate(-50%,-100%) scale(var(--agent-scale));transform-origin:50% 100%;transition:left .9s linear,top .9s linear,transform .18s ease;filter:none}
 .agent-avatar:focus-visible{outline:3px solid #6366f1;outline-offset:5px;border-radius:14px}
-.agent-avatar .agent-sprite{display:block;position:relative;inset:auto;width:100%;height:100%;transform:none;background-image:url('/office-assets/agent-animation-atlas-v2.png');background-size:800% 400%;background-position:var(--sprite-column) var(--sprite-row);background-repeat:no-repeat;filter:drop-shadow(0 10px 12px rgba(79,70,229,.22));animation:none;will-change:background-position}
+.agent-avatar .agent-sprite{display:block;position:relative;inset:auto;width:100%;height:100%;transform:none;background-image:url('/office-assets/agent-animation-atlas-v3.png');background-size:800% 400%;background-position:var(--sprite-column) var(--sprite-row);background-repeat:no-repeat;filter:drop-shadow(0 10px 12px rgba(79,70,229,.22));animation:none;will-change:background-position}
 .agent-avatar .agent-sprite.facing-left{transform:scaleX(-1)}
 .agent-avatar .agent-sprite.finished{filter:drop-shadow(0 0 12px rgba(99,102,241,.45))}
 .agent-avatar .speech{left:50%;bottom:auto;top:-42px;max-width:250px;overflow:hidden;text-overflow:ellipsis}
