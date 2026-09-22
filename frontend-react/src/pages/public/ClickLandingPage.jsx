@@ -51,22 +51,19 @@ export default function ClickLandingPage() {
         return;
       }
       setInfo(data.link);
-      // Ждём MAX WebApp SDK (см. SubscribePage) — без user_id из
-      // initDataUnsafe visit создаётся анонимным и конверсия не
-      // выстрелит в YM/VK когда бот получит событие подписки.
+      // Не блокируем регистрацию визита ожиданием MAX SDK. Раньше здесь
+      // был цикл до 4 секунд; пользователь успевал закрыть страницу, и
+      // клик не попадал в статистику. SDK-данные — полезное дополнение,
+      // но не условие фиксации клика.
       let maxUserId = null, mUsername = null, mFirstName = null;
-      for (let i = 0; i < 20; i++) {
-        try {
-          const u = window.WebApp?.initDataUnsafe?.user;
-          if (u && (u.id || u.user_id)) {
-            maxUserId = String(u.user_id || u.id);
-            mUsername = u.username || null;
-            mFirstName = u.first_name || u.name || null;
-            break;
-          }
-        } catch {}
-        await new Promise(r => setTimeout(r, 200));
-      }
+      try {
+        const u = window.WebApp?.initDataUnsafe?.user;
+        if (u && (u.id || u.user_id)) {
+          maxUserId = String(u.user_id || u.id);
+          mUsername = u.username || null;
+          mFirstName = u.first_name || u.name || null;
+        }
+      } catch {}
       try {
         const visitData = await api.post('/track/visit', {
           short_code: shortCode,
