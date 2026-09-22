@@ -70,6 +70,11 @@ async def lifespan(app: FastAPI):
     from .services.admin_broadcast_runner import start_admin_broadcast_runner
     start_admin_broadcast_runner()
 
+    # Resume persistent AI Office jobs that were queued or running when the
+    # process restarted. Idempotency keys prevent duplicate external actions.
+    from .routes.ai_office import resume_pending_tasks
+    await resume_pending_tasks()
+
     # Start bot polling
     from .routes.telegram_bot import start_telegram_polling
     from .routes.max_webhook import start_max_polling
@@ -439,6 +444,8 @@ from .routes import ai_assistant
 app.include_router(ai_assistant.router, prefix="/api/ai-assistant", tags=["ai-assistant"])
 from .routes import ai_agent
 app.include_router(ai_agent.router, prefix="/api/ai-agent", tags=["ai-agent"])
+from .routes import ai_office
+app.include_router(ai_office.router, prefix="/api/ai-office", tags=["ai-office"])
 from .routes import streams
 app.include_router(streams.public_router, prefix="/api/streams/public", tags=["streams-public"])
 app.include_router(streams.rtmp_router, prefix="/rtmp", tags=["rtmp"])  # без auth, для nginx-rtmp хуков

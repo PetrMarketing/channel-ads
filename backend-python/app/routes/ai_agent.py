@@ -24,7 +24,7 @@ from ..middleware.auth import get_current_user
 
 router = APIRouter()
 AGENT_PRICE = 3990
-MAX_FILE_SIZE = 25 * 1024 * 1024
+MAX_FILE_SIZE = 20 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".csv", ".xml", ".txt", ".md", ".json", ".pdf"}
 
 
@@ -187,7 +187,7 @@ async def upload_source(tc: str, project_id: int, request: Request, user: Dict[s
         raise HTTPException(status_code=400, detail="Поддерживаются CSV, XML, JSON, TXT, MD и PDF")
     content = await upload.read()
     if not content or len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="Файл пустой или больше 25 МБ")
+        raise HTTPException(status_code=400, detail="Файл пустой или больше 20 МБ")
     try:
         extracted, parsed = _extract_file(original, content)
     except Exception as exc:

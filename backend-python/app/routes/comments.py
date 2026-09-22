@@ -267,4 +267,12 @@ async def public_add_comment(post_type: str, post_id: int, request: Request):
     from ..services.post_button_refresh import refresh_post_buttons
     asyncio.create_task(refresh_post_buttons(post_type, post_id))
 
+    # Persistent AI Office automation. It is safe to enqueue from the public
+    # handler: the worker re-checks plan, limits, permissions and idempotency.
+    try:
+        from .ai_office import enqueue_comment_reply
+        asyncio.create_task(enqueue_comment_reply(post["channel_id"], cid))
+    except Exception as e:
+        print(f"[Comments] AI office enqueue error: {e}")
+
     return {"success": True, "id": cid}

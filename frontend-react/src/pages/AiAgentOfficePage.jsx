@@ -1,153 +1,110 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '../services/api';
+import './AiAgentOfficePage.css';
 
-const steps = [
-  ['post', 'Посты', 'пишет пост для канала', '✎'],
-  ['image', 'Изображения', 'генерирует изображение', '▣'],
-  ['schedule', 'Планирование', 'ставит публикацию в план', '◷'],
-  ['topics', 'Темы видео', 'подбирает темы для видео', '◉'],
-  ['scripts', 'Сценарии', 'готовит сценарий ролика', '▶'],
-  ['comments', 'Комментарии', 'настраивает автоответы', '☵'],
-];
-
-const skills = [
-  'Писать посты',
-  'Генерировать картинки',
-  'Планировать публикации',
-  'Придумывать темы для видео',
-  'Писать сценарии видео и Shorts',
-  'Отвечать на новые комментарии',
-];
-
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-const animationTimings = {
-  idle: 210,
-  walk: 105,
-  work: 130,
-  reaction: 115,
+const AGENTS = {
+  smm: { name: 'SMM-специалист', short: 'SMM', color: '#6759e8', sprite: '/office-assets/agent-animation-atlas-v3.png', skills: ['Посты и картинки', 'Контент-план', 'Темы и сценарии видео', 'Автоответы на комментарии'] },
+  marketer: { name: 'Маркетолог', short: 'ADS', color: '#dc4f9b', sprite: '/office-assets/agent-marketer-atlas.png', skills: ['Креативы под площадки', 'VK Реклама', 'Яндекс Директ', 'Аналитика кампаний'] },
+  sales: { name: 'Продажник', short: 'CRM', color: '#1aa79b', sprite: '/office-assets/agent-sales-atlas.png', skills: ['Квалификация заявок', 'amoCRM и Битрикс24', 'Скрипты продаж', 'Контроль сделок'] },
+  tech: { name: 'Технический специалист', short: 'DEV', color: '#3385df', sprite: '/office-assets/agent-tech-atlas.png', skills: ['MAX-боты', 'Интеграции и webhooks', 'Сценарии автоматизации', 'Контроль ошибок'] },
 };
+const TASKS = {
+  smm: [['post', 'Написать пост', 5], ['image', 'Создать изображение', 10], ['post_image', 'Пост с изображением', 17], ['content_plan', 'Контент-план', 20], ['video_script', 'Сценарий видео', 8]],
+  marketer: [['ad_copy', 'Рекламные тексты', 8], ['ad_creatives', 'Пакет креативов', 30], ['ad_campaign', 'Подготовить кампанию', 25]],
+  sales: [['leads_batch', 'Разобрать заявки', 3], ['general', 'Скрипт продаж', 1]],
+  tech: [['bot_scenario', 'Сценарий MAX-бота', 30], ['general', 'Настроить интеграцию', 1]],
+};
+const PLAN_ORDER = ['start', 'business', 'office'];
+const START_POSITIONS = [{ x: 19, y: 75 }, { x: 40, y: 68 }, { x: 61, y: 75 }, { x: 81, y: 68 }];
+const STATUS = { queued: 'В очереди', running: 'Работает', done: 'Готово', failed: 'Ошибка', requires_input: 'Нужна проверка' };
+
+function Modal({ children, onClose, wide = false }) {
+  return <div className="aio-modal-backdrop" onMouseDown={onClose}><section className={`aio-modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>{onClose && <button className="aio-close" onClick={onClose} aria-label="Закрыть">×</button>}{children}</section></div>;
+}
+
+function Sprite({ type, state = 'idle', position, onClick, locked = false }) {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => { if (locked) return undefined; const timer = setInterval(() => setFrame(v => (v + 1) % 8), state === 'walk' ? 105 : 150); return () => clearInterval(timer); }, [state, locked]);
+  const row = { idle: 0, walk: 1, work: 2, reaction: 3 }[state] || 0;
+  return <button className={`aio-agent ${locked ? 'locked' : ''} ${state}`} style={{ left: `${position.x}%`, top: `${position.y}%`, '--agent-color': AGENTS[type].color }} onClick={onClick} aria-label={AGENTS[type].name}>
+    <span className="aio-sprite" style={{ backgroundImage: `url(${AGENTS[type].sprite})`, backgroundPosition: `${frame * 100 / 7}% ${row * 100 / 3}%` }} />
+    <span className="aio-agent-label"><b>{AGENTS[type].short}</b>{locked ? '🔒' : state === 'work' ? 'работает' : AGENTS[type].name}</span>
+  </button>;
+}
+
+function Plans({ plans, onBuy, busy }) {
+  return <><div className="aio-plans">{PLAN_ORDER.map((code, index) => { const p = plans?.[code]; if (!p) return null; return <article className={`aio-plan ${index === 1 ? 'featured' : ''}`} key={code}>
+    {index === 1 && <span className="aio-ribbon">ОПТИМАЛЬНЫЙ</span>}<h3>{p.name}</h3><div className="aio-price">{p.price.toLocaleString('ru-RU')} ₽<small>/ 30 дней</small></div><b>{p.tokens} лимит-токенов</b><p>{p.tasks}</p><p className="aio-example">Например: {p.example}.</p><ul><li>{p.agents.length} {p.agents.length === 1 ? 'агент' : 'агента'}</li><li>до {p.daily} токенов в день</li><li>до {p.weekly} в неделю</li><li>{p.automations} фоновых автоматизаций</li></ul><button disabled={busy} onClick={() => onBuy(code)}>Выбрать тариф</button>
+  </article>; })}</div><p className="aio-plan-note">Количество приблизительное: расход зависит от сложности, изображений и площадок. Рекламный бюджет и тарифы сторонних сервисов оплачиваются отдельно.</p></>;
+}
+
+function Onboarding({ state, onReload, onBuy }) {
+  const [stage, setStage] = useState(state.access?.demo_used ? 'plans' : 'welcome'); const [brief, setBrief] = useState({ business: '', audience: '', goal: '', source_url: '' }); const [fileInfo, setFileInfo] = useState(null); const [progress, setProgress] = useState(0); const [task, setTask] = useState(null); const [error, setError] = useState(''); const pollRef = useRef(null);
+  useEffect(() => () => clearInterval(pollRef.current), []);
+  const uploadFile = async event => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 20 * 1024 * 1024) { setError('Файл превышает 20 МБ'); return; } setError(''); setProgress(1); try { const form = new FormData(); form.append('file', file); setFileInfo(await api.upload('/ai-office/context-file', form, 'POST', setProgress)); } catch (e) { setError(e.message); setProgress(0); } };
+  const generate = async () => { if (!brief.business.trim() || !brief.audience.trim() || !brief.goal.trim()) { setError('Заполните три поля'); return; } setError(''); setStage('generation'); try { await api.put('/ai-office/context', { answers: { ...brief, source: fileInfo?.excerpt || '' } }); const started = await api.post('/ai-office/demo', { context: brief, instruction: `Напиши знакомственный пост для бизнеса «${brief.business}», аудитория: ${brief.audience}, цель: ${brief.goal}` }); pollRef.current = setInterval(async () => { try { const current = await api.get(`/ai-office/tasks/${started.task_id}`); setTask(current.task); if (['done', 'failed', 'requires_input'].includes(current.task.status)) { clearInterval(pollRef.current); setStage('result'); await onReload(); } } catch { /* retry */ } }, 1600); } catch (e) { setError(e.message); setStage('brief'); } };
+  return <Modal wide><div className="aio-onboarding"><div className="aio-tutorial-scene"><img src="/office-assets/office-team-desktop.png" alt="Офис ИИ-Агентов" /><Sprite type="smm" state={stage === 'generation' ? 'work' : 'reaction'} position={{ x: 50, y: 73 }} /><div className="aio-tutorial-bubble">{stage === 'welcome' ? 'Привет! Я покажу, как работает ваш ИИ-офис.' : stage === 'generation' ? `Готовлю пост и изображение… ${task?.progress || 10}%` : 'Сначала мне нужно понять ваш бизнес.'}</div></div>
+    {stage === 'welcome' && <div className="aio-step"><span className="aio-kicker">БЕСПЛАТНОЕ ОБУЧЕНИЕ · 1 ЗАДАЧА</span><h2>Познакомьтесь с SMM-специалистом</h2><p>Ответьте на три вопроса — агент бесплатно подготовит первый пост с изображением. После результата откроются тарифы полного офиса.</p><button onClick={() => setStage('brief')}>Начать обучение</button></div>}
+    {stage === 'brief' && <div className="aio-step"><span className="aio-kicker">ШАГ 1 ИЗ 2 · КОНТЕКСТ</span><h2>Расскажите агенту о проекте</h2>{[['business', 'Что за бизнес или проект?'], ['audience', 'Кто ваша аудитория?'], ['goal', 'Какой результат нужен?']].map(([key, title]) => <label key={key}>{title}<textarea value={brief[key]} onChange={e => setBrief({ ...brief, [key]: e.target.value })} maxLength={2000} /></label>)}<label>Сайт или соцсеть<input className="aio-input" type="url" placeholder="https://" value={brief.source_url} onChange={e => setBrief({ ...brief, source_url: e.target.value })} maxLength={2000} /></label><label className="aio-upload">Или прикрепить один источник <small>PDF, CSV, XML, JSON, TXT, MD · до 20 МБ</small><input type="file" accept=".pdf,.csv,.xml,.json,.txt,.md" onChange={uploadFile} /></label>{progress > 0 && <div className="aio-upload-progress"><span style={{ width: `${progress}%` }} />{fileInfo ? `✓ ${fileInfo.file_name}` : `${progress}%`}</div>}{error && <p className="aio-error">{error}</p>}<button onClick={generate}>Поставить первую задачу</button></div>}
+    {stage === 'generation' && <div className="aio-step aio-center"><span className="aio-kicker">АГЕНТ РАБОТАЕТ В ФОНЕ</span><h2>Можно закрыть страницу</h2><p>Задача продолжит выполняться. Когда она будет готова, мы уведомим вас в подключённом MAX-боте.</p><div className="aio-big-progress"><span style={{ width: `${task?.progress || 10}%` }} /></div></div>}
+    {stage === 'result' && <div className="aio-step"><span className="aio-kicker">ОБУЧЕНИЕ ЗАВЕРШЕНО</span><h2>{task?.status === 'done' ? 'Первый результат готов' : 'Задача требует внимания'}</h2>{task?.result_file_url && <img className="aio-demo-image" src={task.result_file_url} alt="Результат агента" />}<div className="aio-result-text">{task?.result_text || task?.error_message}</div><h2>Откройте полный ИИ-офис</h2><Plans plans={state.plans} onBuy={onBuy} /></div>}
+    {stage === 'plans' && <div className="aio-step"><span className="aio-kicker">ОБУЧЕНИЕ ПРОЙДЕНО</span><h2>Откройте полный ИИ-офис</h2><p>Вы уже использовали бесплатную задачу. Выберите команду и месячный лимит.</p><Plans plans={state.plans} onBuy={onBuy} /></div>}
+  </div></Modal>;
+}
+
+function ContextForm({ initial, onSave, onClose }) {
+  const [answers, setAnswers] = useState(initial || { business: '', audience: '', offer: '', tone: '', restrictions: '' }); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const save = async () => { if (!answers.business?.trim() || !answers.audience?.trim()) { setError('Заполните бизнес и аудиторию'); return; } setBusy(true); try { await onSave(answers); onClose(); } catch (e) { setError(e.message); } finally { setBusy(false); } };
+  return <Modal onClose={onClose}><div className="aio-step"><span className="aio-kicker">БРИФ ПРОЕКТА</span><h2>Контекст для всех агентов</h2><p>Агенты используют эти данные во всех задачах выбранного канала.</p>{[['business', 'Бизнес и продукт'], ['audience', 'Целевая аудитория'], ['offer', 'Предложение и преимущества'], ['tone', 'Тон общения'], ['restrictions', 'Ограничения и запретные темы']].map(([key, title]) => <label key={key}>{title}<textarea value={answers[key] || ''} onChange={e => setAnswers({ ...answers, [key]: e.target.value })} maxLength={5000} /></label>)}{error && <p className="aio-error">{error}</p>}<button disabled={busy} onClick={save}>{busy ? 'Сохраняю…' : 'Подтвердить контекст'}</button></div></Modal>;
+}
+
+function ConnectionForm({ types, channelId, onSaved, onClose }) {
+  const [provider, setProvider] = useState('vk');
+  const [credentials, setCredentials] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const labels = { access_token: 'API / OAuth токен', client_login: 'Логин клиента', account_domain: 'Домен аккаунта', webhook_url: 'Входящий webhook URL', bot_token: 'Токен MAX-бота' };
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await api.post('/ai-office/connections', { provider, channel_id: channelId ? Number(channelId) : null, credentials });
+      setCredentials({}); await onSaved(); onClose();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+  return <Modal onClose={onClose}><div className="aio-step"><span className="aio-kicker">БЕЗОПАСНОЕ ПОДКЛЮЧЕНИЕ</span><h2>Подключить внешний сервис</h2><p>Доступ проверяется и хранится зашифрованным. После сохранения токен нельзя посмотреть — только заменить или удалить.</p><label>Сервис<select value={provider} onChange={e => { setProvider(e.target.value); setCredentials({}); }}>{Object.entries(types).map(([key, value]) => <option key={key} value={key}>{value.name} · {AGENTS[value.agent].name}</option>)}</select></label>{types[provider].fields.map(field => <label key={field}>{labels[field] || field}<input className="aio-input" type={field.includes('token') || field.includes('webhook') ? 'password' : 'text'} value={credentials[field] || ''} onChange={e => setCredentials({ ...credentials, [field]: e.target.value })} autoComplete="off" /></label>)}{error && <p className="aio-error">{error}</p>}<button disabled={busy} onClick={save}>{busy ? 'Проверяю доступ…' : 'Проверить и подключить'}</button></div></Modal>;
+}
 
 export default function AiAgentOfficePage() {
-  const [running, setRunning] = useState(false);
-  const [step, setStep] = useState(-1);
-  const [done, setDone] = useState(false);
-  const [position, setPosition] = useState({ x: 51, y: 82 });
-  const [target, setTarget] = useState(null);
-  const [moving, setMoving] = useState(false);
-  const [direction, setDirection] = useState('right');
-  const [reacting, setReacting] = useState(false);
-  const [animationFrame, setAnimationFrame] = useState(0);
-  const [agentMessage, setAgentMessage] = useState('> КЛИКНИТЕ НА ПОЛ — Я ПОДОЙДУ');
-  const movementTimer = useRef(null);
-  const reactionTimer = useRef(null);
-
-  useEffect(() => () => {
-    clearTimeout(movementTimer.current);
-    clearTimeout(reactionTimer.current);
-  }, []);
-
+  const [data, setData] = useState(null); const [error, setError] = useState(''); const [selected, setSelected] = useState('smm'); const [positions, setPositions] = useState(START_POSITIONS); const [states, setStates] = useState({}); const [drawer, setDrawer] = useState('agent'); const [channelId, setChannelId] = useState(''); const [instruction, setInstruction] = useState(''); const [taskType, setTaskType] = useState('post'); const [contextOpen, setContextOpen] = useState(false); const [connectionOpen, setConnectionOpen] = useState(false); const [plansOpen, setPlansOpen] = useState(false); const [taskOpen, setTaskOpen] = useState(null); const [busy, setBusy] = useState(false);
+  const load = async () => { try { const next = await api.get('/ai-office/state'); setData(next); const running = {}; next.tasks.filter(t => ['queued', 'running'].includes(t.status)).forEach(t => { running[t.agent_type] = 'work'; }); setStates(s => ({ ...s, ...running })); } catch (e) { setError(e.message); } };
+  useEffect(() => { load(); const timer = setInterval(load, 5000); return () => clearInterval(timer); }, []);
+  useEffect(() => { setTaskType(TASKS[selected][0][0]); }, [selected]);
   useEffect(() => {
-    if (!running) return undefined;
-    const timer = setInterval(() => setStep(current => {
-      if (current >= steps.length - 1) {
-        clearInterval(timer);
-        setRunning(false);
-        setDone(true);
-        setAgentMessage('> SMM-ЗАДАЧА ВЫПОЛНЕНА');
-        return current;
-      }
-      return current + 1;
-    }), 1350);
-    return () => clearInterval(timer);
-  }, [running]);
-
-  useEffect(() => {
-    if (running && step >= 0) setAgentMessage(`> ${steps[step][1].toUpperCase()}...`);
-  }, [running, step]);
-
-  const animationState = reacting ? 'reaction' : moving ? 'walk' : running ? 'work' : 'idle';
-
-  useEffect(() => {
-    setAnimationFrame(0);
-    const timer = setInterval(() => {
-      setAnimationFrame(current => animationState === 'reaction'
-        ? Math.min(current + 1, 7)
-        : (current + 1) % 8);
-    }, animationTimings[animationState]);
-    return () => clearInterval(timer);
-  }, [animationState]);
-
-  const progress = step < 0 ? 0 : Math.round(((step + 1) / steps.length) * 100);
-  const status = moving ? 'ИДЁТ' : running ? 'РАБОТАЕТ' : done ? 'ГОТОВО' : 'ОЖИДАЕТ ЗАДАЧУ';
-  const log = useMemo(() => step < 0
-    ? ['SMM-специалист на рабочем месте']
-    : steps.slice(0, step + 1).map(([, title, detail]) => `${title}: ${detail}`), [step]);
-
-  const start = () => {
-    setStep(-1);
-    setDone(false);
-    setRunning(true);
-    setAgentMessage('> ПРИНЯЛ SMM-ЗАДАЧУ');
-  };
-
-  const walkTo = event => {
-    if (event.target.closest('.agent-avatar') || event.target.closest('.scene-ui')) return;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const x = clamp(((event.clientX - bounds.left) / bounds.width) * 100, 12, 88);
-    const y = clamp(((event.clientY - bounds.top) / bounds.height) * 100, 58, 84);
-
-    clearTimeout(movementTimer.current);
-    setDirection(x < position.x ? 'left' : 'right');
-    setTarget({ x, y });
-    setMoving(true);
-    setReacting(false);
-    setPosition({ x, y });
-    setAgentMessage('> ИДУ ТУДА');
-    movementTimer.current = setTimeout(() => {
-      setMoving(false);
-      setTarget(null);
-      setAgentMessage(running ? '> ПРОДОЛЖАЮ РАБОТУ' : '> Я НА МЕСТЕ!');
-    }, 950);
-  };
-
-  const reactToClick = event => {
-    event.stopPropagation();
-    clearTimeout(reactionTimer.current);
-    setReacting(false);
-    requestAnimationFrame(() => setReacting(true));
-    setAgentMessage('> ПРИВЕТ! Я ВАШ SMM-СПЕЦИАЛИСТ');
-    reactionTimer.current = setTimeout(() => {
-      setReacting(false);
-      setAgentMessage(running ? '> ВОЗВРАЩАЮСЬ К ЗАДАЧЕ' : '> ГОТОВ К РАБОТЕ');
-    }, animationTimings.reaction * 8);
-  };
-
-  const spriteStyle = {
-    '--sprite-column': `${(animationFrame / 7) * 100}%`,
-    '--sprite-row': `${({ idle: 0, walk: 1, work: 2, reaction: 3 }[animationState] / 3) * 100}%`,
-  };
-  const spriteState = `${animationState} ${animationState === 'walk' ? `facing-${direction}` : ''} ${done ? 'finished' : ''}`;
-
-  return <div className="agent-game">
-    <div className="game-topbar"><div><span className="game-logo">MAX</span><span className="game-title">MARKETING OFFICE</span></div><div className="top-meta">СМЕНА 01 / 1994 &nbsp; ● СИСТЕМА ОНЛАЙН</div></div>
-    <div className="game-layout">
-      <main className="game-stage" onClick={walkTo} aria-label="Офис. Нажмите на пол, чтобы переместить агента">
-        <div className="scene-bg" /><div className="floor-hit-area" /><div className="scanlines" />
-        <div className="scene-caption scene-ui"><span>ОФИС №01</span><span>{status}</span></div>
-        {target && <span className="walk-target" style={{ left: `${target.x}%`, top: `${target.y}%` }} aria-hidden="true" />}
-        <button type="button" className="agent-avatar" style={{ left: `${position.x}%`, top: `${position.y}%`, '--agent-scale': 0.84 + ((position.y - 58) / 26) * 0.16 }} onClick={reactToClick} aria-label="SMM-специалист. Нажмите, чтобы поздороваться">
-          <span className={`agent-sprite ${spriteState}`} style={spriteStyle} /><span className="speech">{agentMessage}</span>
-        </button>
-        <div className="movement-hint scene-ui">◎ НАЖМИТЕ НА ПОЛ, ЧТОБЫ ПЕРЕМЕСТИТЬСЯ</div>
-        <div className="room-tag tag-archive scene-ui">АРХИВ</div><div className="room-tag tag-board scene-ui">КОНТЕНТ-ПЛАН</div><div className="room-tag tag-pc scene-ui">SMM_DESK</div>
-        <div className="desk-readout scene-ui"><span>ЗАДАЧА</span><b>{running ? steps[Math.max(0, step)][2].toUpperCase() : done ? 'ПЕРЕДАНО НА ПРОВЕРКУ' : 'НЕ НАЗНАЧЕНА'}</b><i>{progress}%</i></div>
-      </main>
-      <aside className="game-panel">
-        <section className="panel-section agent-card"><div className="panel-kicker">СОТРУДНИК 01 / ACTIVE</div><div className="agent-name"><span className="mini-face">☺</span><div><h1>SMM-специалист</h1><small>контент и коммуникации</small></div></div><p>Ведёт контент от идеи до публикации и общается с аудиторией.</p><div className="skill-list">{skills.map(skill => <span key={skill}>{skill}</span>)}</div><button onClick={start} disabled={running}>{running ? 'АГЕНТ РАБОТАЕТ...' : done ? 'ЗАПУСТИТЬ СНОВА' : 'ДАТЬ SMM-ЗАДАЧУ  ▶'}</button></section>
-        <section className="panel-section"><div className="panel-line"><span>ПРОТОКОЛ ВЫПОЛНЕНИЯ</span><b>{progress}%</b></div><div className="pixel-progress"><span style={{ width: `${progress}%` }} /></div><div className="quest-list">{steps.map(([key, title, detail, icon], i) => <div className={`quest ${i <= step ? 'active' : ''}`} key={key}><span>{i <= step ? '✓' : icon}</span><div><b>{title}</b><small>{i <= step ? detail : 'ожидание'}</small></div></div>)}</div></section>
-        <section className="panel-section log-panel"><div className="panel-kicker">ЖУРНАЛ СИСТЕМЫ</div>{log.map((item, i) => <div className="log-row" key={`${item}-${i}`}><span>{String(i + 1).padStart(2, '0')}</span>{item}<em>{i === log.length - 1 && running ? '...' : 'OK'}</em></div>)}</section>
-      </aside>
-    </div>
-    <div className="future-strip"><div className="strip-title">ОСТАЛЬНЫЕ МЕСТА <small>РАЗБЛОКИРУЮТСЯ ПОСЛЕ ПОДКЛЮЧЕНИЯ АГЕНТОВ</small></div>{['ИССЛЕДОВАТЕЛЬ', 'ДИЗАЙНЕР', 'КОНТРОЛЬ'].map((name, i) => <div className="future-agent" key={name}><span>A0{i + 2}</span><b>{name}</b><em>LOCKED</em></div>)}</div>
+    if (!data) return;
+    const requested = Number(new URLSearchParams(window.location.search).get('task'));
+    const fresh = data.tasks.find(t => t.id === (taskOpen?.id || requested));
+    if (fresh) setTaskOpen(fresh);
+  }, [data]);
+  const activeAgents = data?.access?.agents || ['smm']; const selectedContext = data?.contexts?.find(c => String(c.channel_id || '') === String(channelId || ''));
+  const runTask = async () => { if (!selectedContext) { setContextOpen(true); return; } if (instruction.trim().length < 5) { setError('Опишите задачу'); return; } setBusy(true); setError(''); try { const result = await api.post('/ai-office/tasks', { agent_type: selected, task_type: taskType, instruction, title: instruction.slice(0, 80), channel_id: channelId ? Number(channelId) : null }); setInstruction(''); setStates(s => ({ ...s, [selected]: 'work' })); setTaskOpen({ id: result.task_id, status: 'queued', title: 'Задача поставлена' }); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } };
+  const saveContext = async answers => { await api.put('/ai-office/context', { channel_id: channelId ? Number(channelId) : null, answers }); await load(); };
+  const buy = async code => { setBusy(true); try { const result = await api.post('/ai-office/checkout', { plan_code: code }); window.location.href = result.payment_url; } catch (e) { setError(e.message); setBusy(false); } };
+  const walk = event => { if (event.target.closest('button,.aio-room-ui')) return; const box = event.currentTarget.getBoundingClientRect(); const x = Math.max(10, Math.min(90, (event.clientX - box.left) / box.width * 100)); const y = Math.max(58, Math.min(86, (event.clientY - box.top) / box.height * 100)); const index = Object.keys(AGENTS).indexOf(selected); setStates(s => ({ ...s, [selected]: 'walk' })); setPositions(p => p.map((v, i) => i === index ? { x, y } : v)); setTimeout(() => setStates(s => ({ ...s, [selected]: 'idle' })), 900); };
+  const selectAgent = type => { setSelected(type); setDrawer('agent'); if (!activeAgents.includes(type)) { setPlansOpen(true); return; } setStates(s => ({ ...s, [type]: 'reaction' })); setTimeout(() => setStates(s => ({ ...s, [type]: 'idle' })), 1200); };
+  const toggleAutomation = async enabled => { if (!channelId) { setError('Сначала выберите канал'); return; } setBusy(true); try { await api.put('/ai-office/automations/comment-replies', { channel_id: Number(channelId), is_enabled: enabled, auto_publish: false, daily_action_limit: 20 }); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } };
+  const removeConnection = async id => { setBusy(true); try { await api.delete(`/ai-office/connections/${id}`); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } };
+  const currentAutomation = data?.automations?.find(a => a.automation_type === 'comment_replies' && String(a.channel_id) === String(channelId)); const currentTasks = useMemo(() => data?.tasks?.filter(t => t.agent_type === selected) || [], [data, selected]);
+  if (!data) return <div className="aio-loading">ЗАГРУЖАЕМ ИИ-ОФИС…{error && <small>{error}</small>}</div>;
+  const needsOnboarding = data.access?.status !== 'active'; const balance = data.access?.tokens_remaining || 0; const monthly = data.access?.monthly_limit || 0;
+  return <div className="aio-page"><header className="aio-header"><div><span className="aio-logo">MAX</span><div><b>ИИ-АГЕНТЫ</b><small>единый офис автоматизации</small></div></div><div className="aio-header-actions"><button onClick={() => setContextOpen(true)}>Контекст</button><button onClick={() => setPlansOpen(true)}>{data.access?.status === 'active' ? `${balance} / ${monthly} токенов` : 'Выбрать тариф'}</button></div></header>
+    <div className="aio-workspace"><main className="aio-room" onClick={walk}><picture><source media="(max-width: 700px)" srcSet="/office-assets/office-team-mobile.png" /><img className="aio-room-bg" src="/office-assets/office-team-desktop.png" alt="Общая комната с четырьмя рабочими местами" /></picture><div className="aio-room-status aio-room-ui"><span>ОФИС · {data.access?.status === 'active' ? 'ОНЛАЙН' : 'ДЕМО'}</span><b>{AGENTS[selected].name}</b></div>{Object.keys(AGENTS).map((type, i) => <Sprite key={type} type={type} position={positions[i]} state={states[type] || 'idle'} locked={!activeAgents.includes(type)} onClick={e => { e.stopPropagation(); selectAgent(type); }} />)}<div className="aio-floor-tip aio-room-ui">Нажмите на пол — выбранный агент подойдёт</div></main>
+      <aside className="aio-console"><nav className="four"><button className={drawer === 'agent' ? 'active' : ''} onClick={() => setDrawer('agent')}>Агент</button><button className={drawer === 'tasks' ? 'active' : ''} onClick={() => setDrawer('tasks')}>Задачи <i>{data.tasks.filter(t => ['queued', 'running'].includes(t.status)).length}</i></button><button className={drawer === 'automation' ? 'active' : ''} onClick={() => setDrawer('automation')}>Фон</button><button className={drawer === 'connections' ? 'active' : ''} onClick={() => setDrawer('connections')}>API</button></nav>
+        {drawer === 'agent' && <div className="aio-console-body"><span className="aio-kicker">{AGENTS[selected].short} · РАБОЧЕЕ МЕСТО</span><h1>{AGENTS[selected].name}</h1><div className="aio-skill-grid">{AGENTS[selected].skills.map(x => <span key={x}>✓ {x}</span>)}</div>{activeAgents.includes(selected) ? <><label>Канал<select value={channelId} onChange={e => setChannelId(e.target.value)}><option value="">Без привязки к каналу</option>{data.channels.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</select></label><label>Тип задачи<select value={taskType} onChange={e => setTaskType(e.target.value)}>{TASKS[selected].map(([value, label, cost]) => <option key={value} value={value}>{label} · {cost} ток.</option>)}</select></label><label>Задание<textarea value={instruction} onChange={e => setInstruction(e.target.value)} placeholder="Что нужно сделать?" maxLength={20000} /></label>{!selectedContext && <button className="aio-secondary" onClick={() => setContextOpen(true)}>Сначала заполнить контекст</button>}<button disabled={busy} onClick={runTask}>{busy ? 'Запускаю…' : 'Поставить задачу →'}</button></> : <><p>Этот специалист доступен на старшем тарифе.</p><button onClick={() => setPlansOpen(true)}>Разблокировать агента</button></>}</div>}
+        {drawer === 'tasks' && <div className="aio-console-body"><span className="aio-kicker">ПОСЛЕДНИЕ ЗАДАЧИ</span>{currentTasks.length ? currentTasks.map(t => <button className="aio-task-row" key={t.id} onClick={() => setTaskOpen(t)}><span className={`aio-dot ${t.status}`} /><div><b>{t.title}</b><small>{STATUS[t.status] || t.status} · {t.progress}%</small></div><em>{t.charged_tokens || t.estimated_tokens} ток.</em></button>) : <p className="aio-muted">У этого агента пока нет задач.</p>}</div>}
+        {drawer === 'automation' && <div className="aio-console-body"><span className="aio-kicker">ФОНОВАЯ РАБОТА</span><h2>Ответы на комментарии</h2><p>Агент продолжает следить за новыми комментариями, даже когда вкладка закрыта. Сложные и рискованные ответы отправляет на проверку.</p><label>Канал<select value={channelId} onChange={e => setChannelId(e.target.value)}><option value="">Выберите канал</option>{data.channels.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</select></label><button disabled={busy || !channelId} className={currentAutomation?.is_enabled ? 'aio-danger' : ''} onClick={() => toggleAutomation(!currentAutomation?.is_enabled)}>{currentAutomation?.is_enabled ? 'Остановить автоответы' : 'Включить автоответы'}</button><small className="aio-safe-note">Автопубликация по умолчанию выключена. Возвраты, жалобы, юридические и конфликтные темы всегда требуют проверки.</small></div>}
+        {drawer === 'connections' && <div className="aio-console-body"><span className="aio-kicker">ВНЕШНИЕ СЕРВИСЫ</span><h2>Подключения агентов</h2><p>VK и MAX — публикации, Директ — реклама, amoCRM и Битрикс24 — заявки и сделки.</p><button onClick={() => setConnectionOpen(true)}>+ Подключить API</button><div className="aio-connections">{data.connections.length ? data.connections.map(c => <div className="aio-connection" key={c.id}><span className={`aio-dot ${c.status === 'active' ? 'done' : 'failed'}`} /><div><b>{data.connection_types[c.provider]?.name || c.provider}</b><small>{c.account_name || c.label} · токен скрыт</small></div><button disabled={busy} onClick={() => removeConnection(c.id)} aria-label="Удалить подключение">×</button></div>) : <p className="aio-muted">Подключений пока нет.</p>}</div><small className="aio-safe-note">Внешние публикации и рекламные расходы запускаются только после отдельного подтверждения. Удаление подключения немедленно лишает агента доступа.</small></div>}
+        {error && <div className="aio-toast" onClick={() => setError('')}>{error} ×</div>}</aside>
+    </div><footer className="aio-footer"><span>4 агента · 1 комната · все задачи в одном окне</span><span>MAX-уведомления · фоновые задания · безопасные лимиты</span></footer>
+    {needsOnboarding && <Onboarding state={data} onReload={load} onBuy={buy} />}{contextOpen && <ContextForm initial={selectedContext?.answers} onSave={saveContext} onClose={() => setContextOpen(false)} />}{connectionOpen && <ConnectionForm types={data.connection_types} channelId={channelId} onSaved={load} onClose={() => setConnectionOpen(false)} />}{plansOpen && <Modal wide onClose={() => setPlansOpen(false)}><div className="aio-step"><span className="aio-kicker">ТАРИФЫ ИИ-ОФИСА</span><h2>Выберите объём работы на 30 дней</h2><p>Лимиты обновляются каждый месяц. Неиспользованный остаток переносится до 25% нового пакета.</p><Plans plans={data.plans} onBuy={buy} busy={busy} /></div></Modal>}{taskOpen && <Modal onClose={() => setTaskOpen(null)}><div className="aio-step"><span className="aio-kicker">ЗАДАЧА #{taskOpen.id}</span><h2>{taskOpen.title}</h2><p>{STATUS[taskOpen.status] || taskOpen.status} · {taskOpen.progress || 0}%</p>{taskOpen.result_file_url && <img className="aio-demo-image" src={taskOpen.result_file_url} alt="Результат" />}<div className="aio-result-text">{taskOpen.result_text || taskOpen.error_message || 'Агент выполняет задачу в фоне. При завершении придёт уведомление в боте.'}</div></div></Modal>}
   </div>;
 }
