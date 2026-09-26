@@ -129,4 +129,10 @@ def test_source_carries_visit_token_and_has_no_channel_fifo():
     assert "attribution_status" in user_added
     assert "attribution_key TEXT" in migration
     assert "ON CONFLICT (attribution_key)" in (ROOT / "app/routes/tracking.py").read_text()
+    assert "'visit:' || ($3::bigint)::text" in (ROOT / "app/routes/tracking.py").read_text()
     assert "UPDATE visits SET" not in migration  # no historical attribution backfill
+
+
+def test_visit_token_deep_link_opens_max_miniapp_page():
+    app = (ROOT.parent / "frontend-react/src/App.jsx").read_text()
+    assert "startParam.startsWith('go_') || startParam.startsWith('v_')" in app

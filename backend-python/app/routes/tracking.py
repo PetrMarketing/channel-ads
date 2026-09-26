@@ -382,7 +382,8 @@ async def await_subscription(visit_id: int, request: Request):
             """INSERT INTO pending_conversions
                (link_id, channel_id, visit_id, ym_client_id, page_url, user_agent,
                 expires_at, attribution_key)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, 'visit:' || $3::text)
+               VALUES ($1, $2, $3::bigint, $4, $5, $6, $7,
+                       'visit:' || ($3::bigint)::text)
                ON CONFLICT (attribution_key) WHERE attribution_key IS NOT NULL DO UPDATE
                  SET ym_client_id = COALESCE(NULLIF(EXCLUDED.ym_client_id, ''), pending_conversions.ym_client_id),
                      page_url = COALESCE(NULLIF(EXCLUDED.page_url, ''), pending_conversions.page_url),

@@ -208,7 +208,7 @@ export default function App() {
 
   // Top-level miniapp deep-link short-circuit — render channel card before
   // touching React Router (avoids the unauth /login redirect flicker).
-  if (startParam && startParam.startsWith('go_')) {
+  if (startParam && (startParam.startsWith('go_') || startParam.startsWith('v_'))) {
     return <GoMiniAppPage />;
   }
 
