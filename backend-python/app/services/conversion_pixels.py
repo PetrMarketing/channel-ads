@@ -1,561 +1,475 @@
-"""Server-side firing of Yandex Metrika and VK Pixel conversion goals.
+"""Durable delivery of confirmed subscription conversion goals.
 
-Hybrid backup for the SubscribePage client-side firing: when the user closes the
-tab before the polling loop detects subscription, the bot/webhook still triggers
-the goal via these out-of-band measurement-protocol HTTP calls.
+Yandex goals are delivered only by the documented browser ``reachGoal`` API.
+The server coordinates attempts but never manufactures ``/watch`` requests.
+VK keeps its existing server transport. Confirmation of a subscription,
+queueing, an attempt, transport acceptance and accounting by the destination
+are separate facts.
 
-Exactly-once is enforced via the `subscriptions.goal_fired_at` column. Whichever
-side (client poll fires `reachGoal`, server fires here) wins the race, the
-other backs off:
-  - Server flow: SELECT ... FOR UPDATE, check NULL, fire, set NOW().
-  - Client flow: /track/check-subscription-by-visit returns server_fired=true
-    if goal_fired_at IS NOT NULL, and the SubscribePage skips fireGoals() then.
+An expired lease has an unknown outcome. Retrying it may duplicate a goal;
+neither transport supports an idempotency key, so exactly-once is not claimed.
 """
 from __future__ import annotations
 
 import asyncio
+import secrets
+from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote_plus
 
 import aiohttp
 
-from ..database import fetch_one, execute
-from ..config import settings
+from ..database import fetch_one, get_pool
 
 
 _HTTP_TIMEOUT = aiohttp.ClientTimeout(total=5)
 _DEFAULT_GOAL = "subscribe_channel"
-
-
-def _build_ym_url(counter_id: str, goal_name: str, page_url: str,
-                   ym_client_id: Optional[str]) -> str:
-    """Build a Yandex Metrika measurement-protocol URL.
-
-    Uses the documented image-pixel form:
-      https://mc.yandex.ru/watch/{counter}?page-url=...&browser-info=...&ut=noindex
-    The goal is encoded inside browser-info as `goal:{name}`. ym_client_id is
-    threaded via `cid:` for attribution if available; missing cid still records
-    the goal (just less precise attribution)."""
-    bi_parts = ["ifr:0"]
-    if ym_client_id:
-        bi_parts.append(f"cid:{ym_client_id}")
-    bi_parts.append("ti:0")
-    bi_parts.append(f"goal:{goal_name}")
-    browser_info = ":".join(bi_parts)
-    return (
-        f"https://mc.yandex.ru/watch/{quote_plus(str(counter_id))}"
-        f"?page-url={quote_plus(page_url)}"
-        f"&page-ref="
-        f"&browser-info={quote_plus(browser_info)}"
-        f"&ut=noindex"
-    )
+_MAX_ATTEMPTS = 3
+_LEASE_SECONDS = 20
+_RETRY_SECONDS = (5, 30, 120)
+_worker_task: Optional[asyncio.Task] = None
 
 
 def _build_vk_url(pixel_id: str, goal_name: str) -> str:
-    """Build a VK Pixel (top-fwz1.mail.ru) reachGoal URL."""
     return (
-        f"https://top-fwz1.mail.ru/counter"
+        "https://top-fwz1.mail.ru/counter"
         f"?id={quote_plus(str(pixel_id))}"
-        f"&type=reachGoal"
+        "&type=reachGoal"
         f"&goal={quote_plus(goal_name)}"
-        f"&js=na"
+        "&js=na"
     )
 
 
-async def _http_get(url: str, user_agent: Optional[str]) -> None:
-    """Fire-and-forget GET. Errors swallowed; logged with [track] prefix."""
-    headers = {}
-    if user_agent:
-        headers["User-Agent"] = user_agent
-    try:
-        async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
-            async with session.get(url, headers=headers, allow_redirects=False) as resp:
-                # Drain a small amount so the connection cleanly closes.
-                await resp.read()
-                if resp.status >= 400:
-                    print(f"[track] server-fire HTTP {resp.status} url={url[:200]}")
-    except Exception as e:
-        print(f"[track] server-fire HTTP error: {e} url={url[:200]}")
-
-
 async def _http_get_status(url: str, user_agent: Optional[str]) -> tuple[Optional[int], Optional[str]]:
-    """GET that returns (status_code, error_message). Used by the per-pending
-    pixel-firing flow so we can persist outcome to DB. status is None on
-    network failure; error is None on success."""
-    headers = {}
-    if user_agent:
-        headers["User-Agent"] = user_agent
+    headers = {"User-Agent": user_agent} if user_agent else {}
     try:
         async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
-            async with session.get(url, headers=headers, allow_redirects=False) as resp:
-                await resp.read()
-                return resp.status, None
-    except Exception as e:
-        return None, f"{type(e).__name__}: {e}"[:500]
+            async with session.get(url, headers=headers, allow_redirects=False) as response:
+                await response.read()
+                return response.status, None
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"[:500]
+
+
+def _retry_delay(attempt_no: int) -> int:
+    return _RETRY_SECONDS[min(max(attempt_no - 1, 0), len(_RETRY_SECONDS) - 1)]
+
+
+async def _ensure_delivery_for_subscription(subscription_id: int) -> Optional[dict]:
+    """Persist confirmation and queue configured destinations idempotently."""
+    source = await fetch_one(
+        """
+        SELECT s.id AS subscription_id, s.channel_id, s.visit_id,
+               v.tracking_link_id AS link_id, v.ym_client_id, v.landing_url,
+               v.user_agent, tl.ym_counter_id, tl.vk_pixel_id
+          FROM subscriptions s
+          JOIN visits v ON v.id = s.visit_id
+          JOIN tracking_links tl ON tl.id = v.tracking_link_id
+         WHERE s.id = $1
+        """,
+        subscription_id,
+    )
+    if not source:
+        print(f"[conversion] subscription={subscription_id} has no attributed visit")
+        return None
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO pending_conversions
+                (link_id, channel_id, visit_id, ym_client_id, page_url, user_agent,
+                 expires_at, attribution_key, subscription_id, subscribed_at, confirmed_at,
+                 ym_delivery_status, ym_next_attempt_at,
+                 vk_delivery_status, vk_next_attempt_at)
+            VALUES ($1,$2,$3::bigint,$4,$5,$6,NOW() + INTERVAL '7 days',
+                    'visit:' || ($3::bigint)::text,$7,NOW(),NOW(),
+                    CASE WHEN $8::text IS NULL OR BTRIM($8::text) = '' THEN 'not_configured' ELSE 'queued' END,
+                    CASE WHEN $8::text IS NULL OR BTRIM($8::text) = '' THEN NULL ELSE NOW() END,
+                    CASE WHEN $9::text IS NULL OR BTRIM($9::text) = '' THEN 'not_configured' ELSE 'queued' END,
+                    CASE WHEN $9::text IS NULL OR BTRIM($9::text) = '' THEN NULL ELSE NOW() END)
+            ON CONFLICT (attribution_key) WHERE attribution_key IS NOT NULL DO UPDATE
+               SET subscription_id = COALESCE(pending_conversions.subscription_id, EXCLUDED.subscription_id),
+                   subscribed_at = COALESCE(pending_conversions.subscribed_at, EXCLUDED.subscribed_at),
+                   confirmed_at = COALESCE(pending_conversions.confirmed_at, EXCLUDED.confirmed_at),
+                   ym_client_id = COALESCE(NULLIF(pending_conversions.ym_client_id, ''), EXCLUDED.ym_client_id),
+                   ym_delivery_status = CASE
+                       WHEN pending_conversions.ym_delivery_status = 'not_queued'
+                            AND EXCLUDED.ym_delivery_status = 'queued' THEN 'queued'
+                       ELSE pending_conversions.ym_delivery_status END,
+                   ym_next_attempt_at = CASE
+                       WHEN pending_conversions.ym_delivery_status = 'not_queued'
+                            AND EXCLUDED.ym_delivery_status = 'queued' THEN NOW()
+                       ELSE pending_conversions.ym_next_attempt_at END,
+                   vk_delivery_status = CASE
+                       WHEN pending_conversions.vk_delivery_status = 'not_queued'
+                            AND EXCLUDED.vk_delivery_status = 'queued' THEN 'queued'
+                       ELSE pending_conversions.vk_delivery_status END,
+                   vk_next_attempt_at = CASE
+                       WHEN pending_conversions.vk_delivery_status = 'not_queued'
+                            AND EXCLUDED.vk_delivery_status = 'queued' THEN NOW()
+                       ELSE pending_conversions.vk_next_attempt_at END
+            RETURNING *
+            """,
+            source["link_id"], source["channel_id"], source["visit_id"],
+            source.get("ym_client_id"), source.get("landing_url"), source.get("user_agent"),
+            subscription_id, source.get("ym_counter_id"), source.get("vk_pixel_id"),
+        )
+    return dict(row) if row else None
+
+
+async def _claim_vk(pending_id: Optional[int] = None) -> Optional[dict]:
+    token = secrets.token_urlsafe(24)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                UPDATE pending_conversions pc
+                   SET vk_delivery_status = 'attempting',
+                       vk_attempt_count = vk_attempt_count + 1,
+                       vk_attempt_token = $1,
+                       vk_attempt_started_at = NOW(),
+                       vk_lease_expires_at = NOW() + ($2 * INTERVAL '1 second'),
+                       vk_last_error = NULL
+                 WHERE pc.id = (
+                    SELECT p.id FROM pending_conversions p
+                    JOIN tracking_links tl ON tl.id = p.link_id
+                    WHERE ($3::bigint IS NULL OR p.id = $3)
+                      AND p.subscription_id IS NOT NULL
+                      AND NULLIF(BTRIM(tl.vk_pixel_id::text), '') IS NOT NULL
+                      AND p.vk_attempt_count < $4
+                      AND p.vk_delivery_status IN ('queued','retry_scheduled')
+                      AND COALESCE(p.vk_next_attempt_at, NOW()) <= NOW()
+                    ORDER BY p.confirmed_at NULLS LAST, p.id
+                    LIMIT 1 FOR UPDATE OF p SKIP LOCKED
+                 )
+                RETURNING pc.id, pc.link_id, pc.user_agent, pc.vk_attempt_count
+                """,
+                token, _LEASE_SECONDS, pending_id, _MAX_ATTEMPTS,
+            )
+            if not row:
+                return None
+            link = await conn.fetchrow(
+                "SELECT vk_pixel_id, vk_goal_name FROM tracking_links WHERE id = $1",
+                row["link_id"],
+            )
+            await conn.execute(
+                """INSERT INTO conversion_delivery_attempts
+                       (pending_conversion_id,destination,attempt_no,attempt_token,delivery_mode)
+                     VALUES ($1,'vk',$2,$3,'server_http')""",
+                row["id"], row["vk_attempt_count"], token,
+            )
+    return {
+        "pending_id": row["id"], "attempt_no": row["vk_attempt_count"],
+        "attempt_token": token, "user_agent": row.get("user_agent"),
+        "pixel_id": str(link["vk_pixel_id"]),
+        "goal_name": link.get("vk_goal_name") or _DEFAULT_GOAL,
+    }
+
+
+async def _finish_vk(claim: dict, response_code: Optional[int], error: Optional[str]) -> None:
+    accepted = response_code is not None and 200 <= response_code < 300 and not error
+    exhausted = claim["attempt_no"] >= _MAX_ATTEMPTS
+    status = "transport_accepted" if accepted else ("failed_exhausted" if exhausted else "retry_scheduled")
+    transport_status = "accepted" if accepted else ("network_error" if response_code is None else "http_error")
+    message = error or (None if accepted else f"HTTP {response_code}")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """UPDATE conversion_delivery_attempts
+                      SET finished_at=NOW(),transport_status=$2,response_code=$3,error=$4
+                    WHERE attempt_token=$1""",
+                claim["attempt_token"], transport_status, response_code, message,
+            )
+            await conn.execute(
+                """UPDATE pending_conversions
+                      SET vk_delivery_status=$2,vk_response_code=$3,vk_last_error=$4,vk_error=$4,
+                          vk_transport_accepted_at=CASE WHEN $5 THEN NOW() ELSE vk_transport_accepted_at END,
+                          vk_fired_at=CASE WHEN $5 THEN NOW() ELSE vk_fired_at END,
+                          vk_next_attempt_at=CASE WHEN $2='retry_scheduled'
+                              THEN NOW() + ($6 * INTERVAL '1 second') ELSE NULL END,
+                          vk_lease_expires_at=NULL
+                    WHERE id=$1 AND vk_attempt_token=$7""",
+                claim["pending_id"], status, response_code, message, accepted,
+                _retry_delay(claim["attempt_no"]), claim["attempt_token"],
+            )
+
+
+async def _deliver_one_vk(pending_id: Optional[int] = None) -> bool:
+    claim = await _claim_vk(pending_id)
+    if not claim:
+        return False
+    code, error = await _http_get_status(
+        _build_vk_url(claim["pixel_id"], claim["goal_name"]), claim.get("user_agent"),
+    )
+    await _finish_vk(claim, code, error)
+    return True
 
 
 async def fire_server_goals(subscription_id: int) -> None:
-    """Idempotently fire YM + VK conversion goals for a subscription.
-
-    Safe to call multiple times — the FOR UPDATE + goal_fired_at NULL check
-    ensures a single firing. Skips if subscription has no visit_id.
-    """
+    """Queue confirmed delivery and try VK once; never fire Yandex server-side."""
     if not subscription_id:
         return
-
-    pool_conn = None
-    try:
-        from ..database import get_pool
-        pool = await get_pool()
-
-        # Lock the subscription row, atomically check goal_fired_at.
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                sub = await conn.fetchrow(
-                    """
-                    SELECT id, channel_id, visit_id, goal_fired_at
-                    FROM subscriptions
-                    WHERE id = $1
-                    FOR UPDATE
-                    """,
-                    subscription_id,
-                )
-                if not sub:
-                    print(f"[track] server-fire skipped subscription={subscription_id} reason=not_found")
-                    return
-                if sub["goal_fired_at"] is not None:
-                    print(f"[track] server-fire skipped subscription={subscription_id} reason=already_fired")
-                    return
-                if not sub["visit_id"]:
-                    print(f"[track] server-fire skipped subscription={subscription_id} reason=no_visit_id")
-                    return
-
-                # Mark fired immediately so concurrent claims back off,
-                # even if the HTTP calls below fail (we don't want infinite retries).
-                await conn.execute(
-                    "UPDATE subscriptions SET goal_fired_at = NOW() WHERE id = $1",
-                    subscription_id,
-                )
-
-                visit_id = sub["visit_id"]
-
-        # Пиксели настраиваются ТОЛЬКО на уровне tracking_link — на
-        # уровне канала пиксель больше не берём (fallback снят). Так юзер
-        # управляет конверсиями точечно по каждой рекламной ссылке.
-        cfg = await fetch_one(
-            """
-            SELECT
-                v.id           AS visit_id,
-                v.user_agent   AS user_agent,
-                v.ym_client_id AS ym_client_id,
-                tl.short_code    AS short_code,
-                tl.ym_counter_id AS link_ym_counter,
-                tl.ym_goal_name  AS link_ym_goal,
-                tl.vk_pixel_id   AS link_vk_pixel,
-                tl.vk_goal_name  AS link_vk_goal
-            FROM visits v
-            LEFT JOIN tracking_links tl ON tl.id = v.tracking_link_id
-            WHERE v.id = $1
-            """,
-            visit_id,
-        )
-        if not cfg:
-            print(f"[track] server-fire skipped subscription={subscription_id} reason=no_visit_row")
-            return
-
-        ym_counter = cfg.get("link_ym_counter")
-        ym_goal = cfg.get("link_ym_goal") or _DEFAULT_GOAL
-        vk_pixel = cfg.get("link_vk_pixel")
-        vk_goal = cfg.get("link_vk_goal") or _DEFAULT_GOAL
-
-        if not ym_counter and not vk_pixel:
-            print(f"[track] server-fire skipped subscription={subscription_id} reason=no_pixel_configured")
-            return
-
-        # Landing URL — best-effort reconstruction so YM has a sane page-url.
-        short_code = cfg.get("short_code") or ""
-        landing_url = f"{settings.APP_URL.rstrip('/')}/subscribe/{short_code}" if short_code else settings.APP_URL
-
-        ym_client_id = cfg.get("ym_client_id")
-        user_agent = cfg.get("user_agent")
-
-        tasks = []
-        if ym_counter:
-            tasks.append(_http_get(
-                _build_ym_url(ym_counter, ym_goal, landing_url, ym_client_id),
-                user_agent,
-            ))
-        if vk_pixel:
-            tasks.append(_http_get(_build_vk_url(vk_pixel, vk_goal), user_agent))
-
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-        print(
-            f"[track] server-fired goals subscription={subscription_id} "
-            f"ym={ym_counter or '-'} vk={vk_pixel or '-'} "
-            f"goal_ym={ym_goal} goal_vk={vk_goal} cid={'y' if ym_client_id else 'n'}"
-        )
-    except Exception as e:
-        print(f"[track] fire_server_goals fatal error subscription={subscription_id}: {e}")
+    pending = await _ensure_delivery_for_subscription(subscription_id)
+    if pending:
+        await _deliver_one_vk(pending["id"])
 
 
 async def fire_server_goals_safe(subscription_id: Optional[int]) -> None:
-    """Wrapper that swallows None / errors — convenient for INSERT call sites."""
     if not subscription_id:
         return
     try:
         await fire_server_goals(subscription_id)
-    except Exception as e:
-        print(f"[track] fire_server_goals_safe error sub={subscription_id}: {e}")
+    except Exception as exc:
+        print(f"[conversion] queue failed subscription={subscription_id}: {type(exc).__name__}: {exc}")
 
 
-async def _fire_goals_for_link(
-    link_id: int,
-    ym_client_id: Optional[str],
-    page_url_stored: Optional[str],
-    user_agent: Optional[str],
-    log_prefix: str,
+async def claim_yandex_browser_delivery(visit_id: int, visit_token: str) -> dict:
+    """Lease one documented browser reachGoal attempt for this exact visit."""
+    token = secrets.token_urlsafe(24)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            current = await conn.fetchrow(
+                """SELECT p.*,tl.ym_counter_id,tl.ym_goal_name
+                     FROM pending_conversions p
+                     JOIN visits v ON v.id=p.visit_id
+                     JOIN tracking_links tl ON tl.id=p.link_id
+                    WHERE p.visit_id=$1 AND v.visit_token=$2 FOR UPDATE OF p""",
+                visit_id, visit_token,
+            )
+            if not current:
+                return {"claimed": False, "status": "not_found"}
+            now = datetime.now(timezone.utc)
+            status = current["ym_delivery_status"]
+            eligible = (
+                current["subscription_id"] is not None
+                and current.get("ym_counter_id")
+                and current["ym_attempt_count"] < _MAX_ATTEMPTS
+                and (
+                    status == "queued"
+                    or (status == "retry_scheduled" and (
+                        current["ym_next_attempt_at"] is None or current["ym_next_attempt_at"] <= now
+                    ))
+                    or (status == "attempting" and current["ym_lease_expires_at"] is not None
+                        and current["ym_lease_expires_at"] <= now)
+                )
+            )
+            if not eligible:
+                return {"claimed": False, "status": status,
+                        "attempt_count": current["ym_attempt_count"],
+                        "accounting_confirmed": current["ym_accounting_confirmed_at"] is not None}
+            if status == "attempting" and current.get("ym_attempt_token"):
+                await conn.execute(
+                    """UPDATE conversion_delivery_attempts
+                          SET finished_at=COALESCE(finished_at,NOW()),
+                              transport_status=COALESCE(transport_status,'outcome_unknown'),
+                              error=COALESCE(error,'browser lease expired before acknowledgement')
+                        WHERE attempt_token=$1""",
+                    current["ym_attempt_token"],
+                )
+            attempt_no = current["ym_attempt_count"] + 1
+            await conn.execute(
+                """UPDATE pending_conversions
+                      SET ym_delivery_status='attempting',ym_attempt_count=$2,
+                          ym_attempt_token=$3,ym_attempt_started_at=NOW(),
+                          ym_lease_expires_at=NOW() + ($4 * INTERVAL '1 second'),ym_last_error=NULL
+                    WHERE id=$1""",
+                current["id"], attempt_no, token, _LEASE_SECONDS,
+            )
+            await conn.execute(
+                """INSERT INTO conversion_delivery_attempts
+                       (pending_conversion_id,destination,attempt_no,attempt_token,delivery_mode)
+                     VALUES ($1,'yandex',$2,$3,'browser_reach_goal')""",
+                current["id"], attempt_no, token,
+            )
+            return {"claimed": True, "attempt_token": token, "attempt_no": attempt_no,
+                    "counter_id": str(current["ym_counter_id"]),
+                    "goal_name": current.get("ym_goal_name") or _DEFAULT_GOAL,
+                    "lease_seconds": _LEASE_SECONDS}
+
+
+async def finish_yandex_browser_delivery(
+    visit_id: int, visit_token: str, attempt_token: str,
+    outcome: str, error: Optional[str] = None,
 ) -> dict:
-    """Resolve YM/VK config for a link (link-level overrides channel-level)
-    and fire reachGoal via the measurement protocol.
+    """Persist callback/timeout. A callback is transport, not accounting proof."""
+    accepted = outcome == "transport_accepted"
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """SELECT p.id,p.ym_attempt_count,p.ym_attempt_token
+                     FROM pending_conversions p JOIN visits v ON v.id=p.visit_id
+                    WHERE p.visit_id=$1 AND v.visit_token=$2 FOR UPDATE OF p""",
+                visit_id, visit_token,
+            )
+            if not row:
+                return {"success": False, "status": "not_found"}
+            await conn.execute(
+                """UPDATE conversion_delivery_attempts
+                      SET finished_at=NOW(),transport_status=$2,error=$3
+                    WHERE attempt_token=$1""",
+                attempt_token, "accepted" if accepted else "outcome_unknown",
+                (error or None)[:500] if error else None,
+            )
+            if row["ym_attempt_token"] != attempt_token:
+                return {"success": False, "status": "stale_attempt"}
+            exhausted = row["ym_attempt_count"] >= _MAX_ATTEMPTS
+            status = "transport_accepted" if accepted else (
+                "outcome_unknown_exhausted" if exhausted else "retry_scheduled"
+            )
+            await conn.execute(
+                """UPDATE pending_conversions
+                      SET ym_delivery_status=$2,
+                          ym_transport_accepted_at=CASE WHEN $3 THEN NOW() ELSE ym_transport_accepted_at END,
+                          ym_fired_at=CASE WHEN $3 THEN NOW() ELSE ym_fired_at END,
+                          ym_last_error=CASE WHEN $3 THEN NULL ELSE $4 END,
+                          ym_error=CASE WHEN $3 THEN NULL ELSE $4 END,
+                          ym_next_attempt_at=CASE WHEN $2='retry_scheduled'
+                              THEN NOW() + ($5 * INTERVAL '1 second') ELSE NULL END,
+                          ym_lease_expires_at=NULL
+                    WHERE id=$1 AND ym_attempt_token=$6""",
+                row["id"], status, accepted, (error or "browser callback timeout")[:500],
+                _retry_delay(row["ym_attempt_count"]), attempt_token,
+            )
+            return {"success": True, "status": status, "accounting_confirmed": False}
 
-    Returns a dict with per-pixel outcome:
-      {
-        "ym_fired": bool, "ym_code": int|None, "ym_error": str|None,
-        "vk_fired": bool, "vk_code": int|None, "vk_error": str|None,
-      }
-    Used by both pending-claim and orphan-claim flows so they can persist the
-    per-pixel HTTP outcome on the pending_conversions row."""
-    out = {
-        "ym_fired": False, "ym_code": None, "ym_error": None,
-        "vk_fired": False, "vk_code": None, "vk_error": None,
-    }
-    link = await fetch_one(
-        """
-        SELECT tl.short_code,
-               tl.ym_counter_id, tl.ym_goal_name,
-               tl.vk_pixel_id,   tl.vk_goal_name
-        FROM tracking_links tl
-        WHERE tl.id = $1
-        """,
-        link_id,
+
+async def get_delivery_state_for_visit(visit_id: int) -> Optional[dict]:
+    return await fetch_one(
+        """SELECT confirmed_at,subscription_id,
+                  ym_delivery_status,ym_attempt_count,ym_transport_accepted_at,
+                  ym_accounting_confirmed_at,ym_last_error,
+                  vk_delivery_status,vk_attempt_count,vk_transport_accepted_at,
+                  vk_accounting_confirmed_at,vk_last_error
+             FROM pending_conversions WHERE visit_id=$1""",
+        visit_id,
     )
-    if not link:
-        print(f"[track] {log_prefix} link {link_id} missing — skipping fire")
-        return out
-
-    # Пиксели теперь ТОЛЬКО на уровне ссылки — канальный fallback снят
-    counter_id = str(link.get("ym_counter_id") or "").strip()
-    pixel_id = str(link.get("vk_pixel_id") or "").strip()
-    ym_goal = link.get("ym_goal_name") or _DEFAULT_GOAL
-    vk_goal = link.get("vk_goal_name") or _DEFAULT_GOAL
-
-    short_code = link.get("short_code") or ""
-    page_url = page_url_stored or (
-        f"{settings.APP_URL.rstrip('/')}/subscribe/{short_code}"
-        if short_code else settings.APP_URL
-    )
-
-    if not counter_id and not pixel_id:
-        print(f"[track] {log_prefix} no pixel configured for link {link_id}")
-        return out
-
-    # Fire concurrently and collect per-pixel outcomes.
-    ym_task = None
-    vk_task = None
-    if counter_id:
-        ym_task = asyncio.create_task(_http_get_status(
-            _build_ym_url(counter_id, ym_goal, page_url, ym_client_id),
-            user_agent,
-        ))
-    if pixel_id:
-        vk_task = asyncio.create_task(_http_get_status(
-            _build_vk_url(pixel_id, vk_goal), user_agent,
-        ))
-
-    if ym_task is not None:
-        try:
-            out["ym_code"], out["ym_error"] = await ym_task
-            out["ym_fired"] = True
-        except Exception as e:
-            out["ym_error"] = f"{type(e).__name__}: {e}"[:500]
-            out["ym_fired"] = True
-    if vk_task is not None:
-        try:
-            out["vk_code"], out["vk_error"] = await vk_task
-            out["vk_fired"] = True
-        except Exception as e:
-            out["vk_error"] = f"{type(e).__name__}: {e}"[:500]
-            out["vk_fired"] = True
-
-    print(
-        f"[track] {log_prefix} fired ym={counter_id or '-'}({out['ym_code']}) "
-        f"vk={pixel_id or '-'}({out['vk_code']}) cid={'y' if ym_client_id else 'n'}"
-    )
-    return out
 
 
-async def _record_offline_conversion_for_subscription(
-    subscription_id: int, channel_id: int, link_id: Optional[int],
-    ym_client_id: Optional[str], visit_id: Optional[int] = None,
-) -> None:
-    """Записывает offline_conversion для подписки чтобы потом залить в YM API.
-    Server-side fire через measurement-protocol фильтруется YM по IP датацентра,
-    а offline conversions API принимает ClientId + Target + DateTime без
-    привязки к IP — это РАБОТАЕТ. Уникальность по subscription_id защищает
-    от дублей.
-    """
-    if not subscription_id or not channel_id or not ym_client_id or not link_id:
-        return
-    try:
-        # Резолвим goal_name + ym_counter_id — ТОЛЬКО из ссылки
-        link = await fetch_one(
-            """SELECT tl.ym_counter_id AS tl_counter, tl.ym_goal_name AS tl_goal
-               FROM tracking_links tl WHERE tl.id = $1""",
-            link_id,
-        )
-        if not link:
-            return
-        counter_id = str(link.get("tl_counter") or "").strip()
-        if not counter_id:
-            return  # нет YM-счётчика на ссылке — некуда заливать
-        goal_name = link.get("tl_goal") or _DEFAULT_GOAL
-        await execute(
-            """INSERT INTO offline_conversions
-                 (subscription_id, channel_id, visit_id, ym_client_id, ym_counter_id, goal_name, conversion_time)
-               VALUES ($1, $2, $3, $4, $5, $6, NOW())
-               ON CONFLICT (subscription_id) DO NOTHING""",
-            subscription_id, channel_id, visit_id,
-            str(ym_client_id), counter_id, goal_name,
-        )
-        print(f"[track] offline conversion recorded sub={subscription_id} cid={ym_client_id} counter={counter_id} goal={goal_name}")
-    except Exception as e:
-        print(f"[track] offline conversion insert failed sub={subscription_id}: {e}")
+async def _reconcile_expired_yandex_leases() -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            expired = await conn.fetch(
+                """SELECT id,ym_attempt_token,ym_attempt_count FROM pending_conversions
+                     WHERE ym_delivery_status='attempting' AND ym_lease_expires_at < NOW()
+                     FOR UPDATE SKIP LOCKED"""
+            )
+            for row in expired:
+                await conn.execute(
+                    """UPDATE conversion_delivery_attempts
+                          SET finished_at=COALESCE(finished_at,NOW()),
+                              transport_status=COALESCE(transport_status,'outcome_unknown'),
+                              error=COALESCE(error,'browser closed or callback timed out')
+                        WHERE attempt_token=$1""",
+                    row["ym_attempt_token"],
+                )
+                exhausted = row["ym_attempt_count"] >= _MAX_ATTEMPTS
+                await conn.execute(
+                    """UPDATE pending_conversions
+                          SET ym_delivery_status=$2,ym_lease_expires_at=NULL,
+                              ym_next_attempt_at=CASE WHEN $2='retry_scheduled' THEN NOW() ELSE NULL END,
+                              ym_last_error='browser closed or callback timed out'
+                        WHERE id=$1""",
+                    row["id"], "outcome_unknown_exhausted" if exhausted else "retry_scheduled",
+                )
 
 
-async def _persist_pending_pixel_status(pending_id: int, outcome: dict) -> None:
-    """Write per-pixel HTTP outcome onto the pending_conversions row so the
-    user can audit every step (subscribed_at | ym_fired_at/code/error |
-    vk_fired_at/code/error). Best-effort; logs but never raises."""
-    if not pending_id:
-        return
-    try:
-        await execute(
+async def _reconcile_expired_vk_leases() -> None:
+    """Turn process-crash leases into an explicit unknown outcome."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            expired = await conn.fetch(
+                """SELECT id,vk_attempt_token,vk_attempt_count FROM pending_conversions
+                     WHERE vk_delivery_status='attempting' AND vk_lease_expires_at < NOW()
+                     FOR UPDATE SKIP LOCKED"""
+            )
+            for row in expired:
+                await conn.execute(
+                    """UPDATE conversion_delivery_attempts
+                          SET finished_at=COALESCE(finished_at,NOW()),
+                              transport_status=COALESCE(transport_status,'outcome_unknown'),
+                              error=COALESCE(error,'server stopped before result was persisted')
+                        WHERE attempt_token=$1""",
+                    row["vk_attempt_token"],
+                )
+                exhausted = row["vk_attempt_count"] >= _MAX_ATTEMPTS
+                await conn.execute(
+                    """UPDATE pending_conversions
+                          SET vk_delivery_status=$2,vk_lease_expires_at=NULL,
+                              vk_next_attempt_at=CASE WHEN $2='retry_scheduled' THEN NOW() ELSE NULL END,
+                              vk_last_error='server stopped before result was persisted'
+                        WHERE id=$1""",
+                    row["id"], "outcome_unknown_exhausted" if exhausted else "retry_scheduled",
+                )
+
+
+async def _reconcile_confirmed_subscriptions() -> None:
+    """Recover a webhook committed immediately before queueing/process crash."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
             """
-            UPDATE pending_conversions
-               SET ym_fired_at      = CASE WHEN $2::bool THEN NOW() ELSE ym_fired_at END,
-                   ym_response_code = COALESCE($3, ym_response_code),
-                   ym_error         = COALESCE($4, ym_error),
-                   vk_fired_at      = CASE WHEN $5::bool THEN NOW() ELSE vk_fired_at END,
-                   vk_response_code = COALESCE($6, vk_response_code),
-                   vk_error         = COALESCE($7, vk_error)
-             WHERE id = $1
-            """,
-            pending_id,
-            bool(outcome.get("ym_fired")), outcome.get("ym_code"), outcome.get("ym_error"),
-            bool(outcome.get("vk_fired")), outcome.get("vk_code"), outcome.get("vk_error"),
+            SELECT s.id
+              FROM subscriptions s
+              JOIN visits v ON v.id=s.visit_id
+              LEFT JOIN pending_conversions p ON p.visit_id=s.visit_id
+             WHERE s.visit_id IS NOT NULL
+               AND s.subscribed_at >= COALESCE(
+                   (SELECT applied_at AT TIME ZONE 'UTC'
+                      FROM _migrations
+                     WHERE filename = '096_conversion_delivery_state.sql'),
+                   NOW()
+               )
+               AND (p.id IS NULL OR p.confirmed_at IS NULL)
+             ORDER BY s.id
+             LIMIT 100
+            """
         )
-    except Exception as e:
-        print(f"[track] persist pixel status failed pending={pending_id}: {e}")
+    for row in rows:
+        await _ensure_delivery_for_subscription(row["id"])
 
 
-async def _record_orphan_subscription(
-    channel_id: int, subscription_id: int
-) -> None:
-    """Insert an orphan_subscription with a 60s window. Called when a subscription
-    arrives but no pending_conversion is waiting (race where sub came before click)."""
-    from datetime import datetime, timedelta, timezone
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=60)
-    try:
-        await execute(
-            """INSERT INTO orphan_subscriptions
-               (channel_id, subscription_id, expires_at)
-               VALUES ($1, $2, $3)""",
-            channel_id, subscription_id, expires_at,
-        )
-        print(
-            f"[track] orphan recorded sub={subscription_id} channel={channel_id} "
-            f"expires=60s"
-        )
-    except Exception as e:
-        print(f"[track] orphan insert failed channel={channel_id} sub={subscription_id}: {e}")
+async def _delivery_worker() -> None:
+    while True:
+        try:
+            await _reconcile_confirmed_subscriptions()
+            await _reconcile_expired_yandex_leases()
+            await _reconcile_expired_vk_leases()
+            for _ in range(20):
+                if not await _deliver_one_vk():
+                    break
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[conversion] worker error: {type(exc).__name__}: {exc}")
+        await asyncio.sleep(5)
 
 
-async def claim_and_fire_pending_for_channel(
-    channel_id: int, subscription_id: int
-) -> None:
-    """Atomically claim the OLDEST unfired pending_conversion in this channel
-    (within its 60s window) and fire YM/VK reachGoals via the measurement API.
-
-    Guarantees:
-      - 1 subscription = at most 1 fire (via FOR UPDATE SKIP LOCKED)
-      - If no pending in window → records orphan_subscription (60s window) so a
-        click that arrives shortly after can still attribute this subscription.
-      - Excess clicks (more clicks than subs in window) → expire silently
-    """
-    if not channel_id or not subscription_id:
-        return
-
-    try:
-        from ..database import get_pool
-        pool = await get_pool()
-
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                claimed = await conn.fetchrow(
-                    """
-                    UPDATE pending_conversions
-                    SET fired_at = NOW(),
-                        subscribed_at = NOW(),
-                        subscription_id = $1
-                    WHERE id = (
-                        SELECT id FROM pending_conversions
-                        WHERE channel_id = $2
-                          AND fired_at IS NULL
-                          AND expires_at > NOW()
-                        ORDER BY created_at ASC
-                        LIMIT 1
-                        FOR UPDATE SKIP LOCKED
-                    )
-                    RETURNING id, link_id, ym_client_id, page_url, user_agent
-                    """,
-                    subscription_id, channel_id,
-                )
-    except Exception as e:
-        print(f"[track] claim pending failed channel={channel_id}: {type(e).__name__}: {e}")
-        return
-
-    if not claimed:
-        # Symmetric pending: record orphan_subscription so a future click within
-        # 60s can claim and fire goals retroactively.
-        print(f"[track] no pending in channel {channel_id} — recording orphan (sub={subscription_id})")
-        await _record_orphan_subscription(channel_id, subscription_id)
-        return
-
-    pending_id = claimed["id"]
-    link_id = claimed["link_id"]
-    ym_client_id = claimed.get("ym_client_id")
-    page_url_stored = claimed.get("page_url") or ""
-    user_agent = claimed.get("user_agent") or None
-
-    outcome = await _fire_goals_for_link(
-        link_id, ym_client_id, page_url_stored, user_agent,
-        log_prefix=f"pending {pending_id} → (sub={subscription_id})",
-    )
-    await _persist_pending_pixel_status(pending_id, outcome)
-    # Запасной канал атрибуции: оффлайн-конверсия в YM (через OAuth API).
-    # Этот путь не фильтруется по IP, в отличие от mc.yandex.ru/watch fire.
-    await _record_offline_conversion_for_subscription(
-        subscription_id, channel_id, link_id, ym_client_id,
-        visit_id=None,
-    )
+def start_conversion_delivery_worker() -> None:
+    global _worker_task
+    if _worker_task is None or _worker_task.done():
+        _worker_task = asyncio.create_task(_delivery_worker())
 
 
-async def claim_orphan_for_pending(
-    pending_id: int, channel_id: int, link_id: int,
-    ym_client_id: Optional[str] = None,
-    page_url: Optional[str] = None,
-    user_agent: Optional[str] = None,
-) -> None:
-    """Reverse-flow claim: a click just created pending_id; check if any
-    orphan_subscription is waiting in this channel and, if so, atomically claim
-    the oldest unfired one and fire YM/VK goals attributed to this link.
-
-    Guarantees:
-      - 1 orphan = 1 fire (via FOR UPDATE SKIP LOCKED)
-      - Marks both orphan.fired_at and pending.fired_at to keep them paired and
-        prevent the bot's later sub-arrival from double-firing this pending.
-    """
-    if not pending_id or not channel_id or not link_id:
-        return
-
-    try:
-        from ..database import get_pool
-        pool = await get_pool()
-
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                claimed = await conn.fetchrow(
-                    """
-                    UPDATE orphan_subscriptions
-                    SET fired_at = NOW(), pending_id = $1
-                    WHERE id = (
-                        SELECT id FROM orphan_subscriptions
-                        WHERE channel_id = $2
-                          AND fired_at IS NULL
-                          AND expires_at > NOW()
-                        ORDER BY created_at ASC
-                        LIMIT 1
-                        FOR UPDATE SKIP LOCKED
-                    )
-                    RETURNING id, subscription_id
-                    """,
-                    pending_id, channel_id,
-                )
-                if claimed:
-                    # Mark the pending as fired too — we just attributed it to this orphan.
-                    await conn.execute(
-                        """UPDATE pending_conversions
-                           SET fired_at = NOW(),
-                               subscribed_at = NOW(),
-                               subscription_id = $1
-                           WHERE id = $2 AND fired_at IS NULL""",
-                        claimed["subscription_id"], pending_id,
-                    )
-    except Exception as e:
-        print(f"[track] claim orphan failed channel={channel_id} pending={pending_id}: {type(e).__name__}: {e}")
-        return
-
-    if not claimed:
-        return  # No orphan waiting — normal case, pending stays open for sub.
-
-    orphan_id = claimed["id"]
-    sub_id = claimed["subscription_id"]
-
-    outcome = await _fire_goals_for_link(
-        link_id, ym_client_id, page_url, user_agent,
-        log_prefix=f"orphan {orphan_id} → (sub={sub_id}, pending={pending_id})",
-    )
-    await _persist_pending_pixel_status(pending_id, outcome)
-    # Запасной канал — offline conversion в YM
-    await _record_offline_conversion_for_subscription(
-        sub_id, channel_id, link_id, ym_client_id,
-        visit_id=None,
-    )
+def stop_conversion_delivery_worker() -> None:
+    global _worker_task
+    if _worker_task and not _worker_task.done():
+        _worker_task.cancel()
+    _worker_task = None
 
 
-async def claim_orphan_for_pending_safe(
-    pending_id: Optional[int], channel_id: Optional[int], link_id: Optional[int],
-    ym_client_id: Optional[str] = None,
-    page_url: Optional[str] = None,
-    user_agent: Optional[str] = None,
-) -> None:
-    """Wrapper that swallows None / errors — convenient for click-flow call sites."""
-    if not pending_id or not channel_id or not link_id:
-        return
-    try:
-        await claim_orphan_for_pending(
-            pending_id, channel_id, link_id,
-            ym_client_id=ym_client_id, page_url=page_url, user_agent=user_agent,
-        )
-    except Exception as e:
-        print(
-            f"[track] claim_orphan_for_pending_safe error "
-            f"channel={channel_id} pending={pending_id}: {e}"
-        )
+# Compatibility for legacy Telegram call sites. Unsafe channel FIFO/orphan
+# attribution is intentionally gone; delivery follows the subscription visit.
+async def claim_pending_and_fire_safe(channel_id: Optional[int], subscription_id: Optional[int]) -> None:
+    del channel_id
+    await fire_server_goals_safe(subscription_id)
 
 
-async def claim_pending_and_fire_safe(
-    channel_id: Optional[int], subscription_id: Optional[int]
-) -> None:
-    """Wrapper that swallows None / errors — convenient for bot INSERT call sites."""
-    if not channel_id or not subscription_id:
-        return
-    try:
-        await claim_and_fire_pending_for_channel(channel_id, subscription_id)
-    except Exception as e:
-        print(
-            f"[track] claim_pending_and_fire_safe error "
-            f"channel={channel_id} sub={subscription_id}: {e}"
-        )
+async def claim_orphan_for_pending_safe(*args, **kwargs) -> None:
+    del args, kwargs

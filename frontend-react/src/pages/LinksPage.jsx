@@ -134,6 +134,28 @@ const infoBanner = (tint, border) => ({
   background: tint, border: `1px solid ${border}`,
 });
 
+const validateYmForm = (form) => {
+  const counter = (form.ym_counter_id || '').trim();
+  const goal = (form.ym_goal_name || '').trim();
+  const errors = [];
+  if (!/^[1-9][0-9]{0,19}$/.test(counter)) errors.push('Номер счётчика должен состоять из цифр и не начинаться с нуля.');
+  if (!goal) errors.push('Укажите идентификатор цели.');
+  else if (goal.length > 255) errors.push('Идентификатор цели не должен превышать 255 символов.');
+  else if (/[\/\\&#?="+]/.test(goal)) errors.push('Идентификатор цели содержит запрещённый символ: / \\ & # ? = " или +.');
+  return errors;
+};
+
+const deliveryLabel = (link) => {
+  if (!link.ym_counter_id) return { color: MUTED, text: 'Метрика не настроена' };
+  if (!link.ym_config_valid) return { color: DANGER, text: 'Ошибка настройки' };
+  if (Number(link.ym_accounting_confirmed_count) > 0) return { color: SUCCESS, text: `Учёт подтверждён: ${link.ym_accounting_confirmed_count}` };
+  if (Number(link.ym_problem_count) > 0) return { color: DANGER, text: `Проблема доставки: ${link.ym_problem_count}` };
+  if (Number(link.ym_undelivered_count) > 0) return { color: WARNING, text: `Подтверждены, но не доставлены: ${link.ym_undelivered_count}` };
+  if (Number(link.ym_pending_count) > 0) return { color: WARNING, text: `Ожидают отправки: ${link.ym_pending_count}` };
+  if (Number(link.ym_transport_accepted_count) > 0) return { color: ACCENT, text: `Передано браузером, учёт не подтверждён: ${link.ym_transport_accepted_count}` };
+  return { color: MUTED, text: 'Подтверждённых отправок пока нет' };
+};
+
 export default function LinksPage() {
   const navigate = useNavigate();
   const { currentChannel } = useChannels();
@@ -152,6 +174,9 @@ export default function LinksPage() {
   const [aiLandings, setAiLandings] = useState([]);
   const [expandedStats, setExpandedStats] = useState({});
   const [dailyStats, setDailyStats] = useState({});
+  const [conversionSummary, setConversionSummary] = useState({ unattributed_subscriptions: 0 });
+  const [metrikaCheck, setMetrikaCheck] = useState(null);
+  const [checkingMetrika, setCheckingMetrika] = useState(false);
 
   const tc = currentChannel?.tracking_code;
 
@@ -164,7 +189,10 @@ export default function LinksPage() {
     setLoading(true);
     try {
       const data = await api.get(`/links/${tc}`);
-      if (data.success) setLinks(data.links || []);
+      if (data.success) {
+        setLinks(data.links || []);
+        setConversionSummary(data.conversion_summary || { unattributed_subscriptions: 0 });
+      }
     } catch {
       showToast('Ошибка загрузки ссылок', 'error');
     } finally {
@@ -213,6 +241,7 @@ export default function LinksPage() {
       vk_pixel_id: link.vk_pixel_id || '',
       vk_goal_name: link.vk_goal_name || 'subscribe_channel',
     });
+    setMetrikaCheck(null);
     setShowMetrikaModal(true);
   };
 
@@ -254,6 +283,12 @@ export default function LinksPage() {
 
   const handleSaveMetrika = async () => {
     if (!metrikaLink) return;
+    const errors = validateYmForm(metrikaForm);
+    const yandexPartiallyFilled = metrikaForm.ym_counter_id.trim() || metrikaForm.ym_goal_name.trim();
+    if (yandexPartiallyFilled && errors.length) {
+      setMetrikaCheck({ valid: false, errors });
+      return;
+    }
     setSaving(true);
     try {
       const data = await api.put(`/links/${tc}/${metrikaLink.id}/metrika`, metrikaForm);
@@ -262,10 +297,33 @@ export default function LinksPage() {
         setShowMetrikaModal(false);
         loadLinks();
       }
-    } catch {
-      showToast('Ошибка сохранения метрики', 'error');
+    } catch (error) {
+      showToast(error.message || 'Ошибка сохранения метрики', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCheckMetrika = async () => {
+    if (!metrikaLink) return;
+    const localErrors = validateYmForm(metrikaForm);
+    if (localErrors.length) {
+      setMetrikaCheck({ valid: false, errors: localErrors });
+      return;
+    }
+    setCheckingMetrika(true);
+    try {
+      const data = await api.post(`/links/${tc}/${metrikaLink.id}/metrika/check`, metrikaForm);
+      setMetrikaCheck({
+        valid: !!data.check?.valid,
+        errors: (data.check?.errors || []).map(e => e.message),
+        steps: data.manual_steps || [],
+        note: data.note,
+      });
+    } catch (error) {
+      setMetrikaCheck({ valid: false, errors: [error.message || 'Не удалось проверить настройку'] });
+    } finally {
+      setCheckingMetrika(false);
     }
   };
 
@@ -411,6 +469,16 @@ export default function LinksPage() {
                     <p style={sectionSubStyle}>Всего: {links.length}</p>
                   </div>
                 </div>
+                {Number(conversionSummary.unattributed_subscriptions) > 0 && (
+                  <div style={{ ...infoBanner('rgba(245,158,11,0.07)', 'rgba(245,158,11,0.25)'), marginBottom: 12 }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: DARK }}>
+                      Подтверждены без рекламной привязки: {Number(conversionSummary.unattributed_subscriptions).toLocaleString('ru-RU')}
+                    </div>
+                    <div style={{ ...hintStyle, marginTop: 3 }}>
+                      Эти подписки реальны, но у сервиса нет проверенного визита этого пользователя. Они не приписываются ни одной рекламной ссылке и не отправляются как её конверсии.
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {links.map((link, i) => {
                     const meta = TYPE_META[link.link_type] || TYPE_META.landing;
@@ -423,6 +491,7 @@ export default function LinksPage() {
                     // the /go/ URL (used by /subscribe and /lm flows).
                     const url = isDirectMax ? startappUrl : goUrl;
                     const isExpanded = !!expandedStats[link.id];
+                    const ymDelivery = deliveryLabel(link);
                     return (
                       <div
                         key={link.id}
@@ -513,7 +582,11 @@ export default function LinksPage() {
                               </span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: SUCCESS, boxShadow: `0 0 6px ${SUCCESS}80` }} />
-                                Подписки <b style={{ color: DARK, fontWeight: 700, marginLeft: 2 }}>{(link.sub_count ?? 0).toLocaleString('ru-RU')}</b>
+                                Подтверждены <b style={{ color: DARK, fontWeight: 700, marginLeft: 2 }}>{Number(link.confirmed_subscription_count ?? 0).toLocaleString('ru-RU')}</b>
+                              </span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ width: 7, height: 7, borderRadius: '50%', background: ACCENT, boxShadow: `0 0 6px ${ACCENT}80` }} />
+                                Привязаны к рекламе <b style={{ color: DARK, fontWeight: 700, marginLeft: 2 }}>{Number(link.attributed_subscription_count ?? 0).toLocaleString('ru-RU')}</b>
                               </span>
                               {link.utm_source && (
                                 <span style={pill(SOFT_BG, MUTED)}>UTM · {link.utm_source}</span>
@@ -537,6 +610,16 @@ export default function LinksPage() {
                               </button>
                             </div>
 
+                            <div style={{
+                              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                              gap: 8, marginTop: 12, padding: 10, borderRadius: 10,
+                              background: SOFT_BG, border: `1px solid ${BORDER}`, fontSize: '0.73rem',
+                            }}>
+                              <div><b style={{ color: DARK }}>1. Подписка</b><br /><span style={{ color: SUCCESS }}>подтверждено: {Number(link.confirmed_subscription_count ?? 0).toLocaleString('ru-RU')}</span></div>
+                              <div><b style={{ color: DARK }}>2. Рекламный визит</b><br /><span style={{ color: Number(link.attributed_subscription_count) ? ACCENT : MUTED }}>связан: {Number(link.attributed_subscription_count ?? 0).toLocaleString('ru-RU')}</span></div>
+                              <div><b style={{ color: DARK }}>3. Цель Метрики</b><br /><span style={{ color: ymDelivery.color }}>{ymDelivery.text}</span></div>
+                            </div>
+
                             {isExpanded && (
                               <div style={{
                                 marginTop: 14, padding: 14,
@@ -554,9 +637,7 @@ export default function LinksPage() {
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                             <button className="lp-ghost" style={iconGhostBtn} onClick={() => copyLink(link.short_code)} title="Копировать">⧉</button>
                             <button className="lp-ghost" style={iconGhostBtn} onClick={() => openEdit(link)} title="Редактировать">✎</button>
-                            {(link.link_type === 'landing' || link.link_type === 'lm_landing') && (
-                              <button className="lp-ghost" style={iconGhostBtn} onClick={() => openMetrika(link)} title="Пиксели">📊</button>
-                            )}
+                            <button className="lp-ghost" style={iconGhostBtn} onClick={() => openMetrika(link)} title="Метрика и диагностика">📊</button>
                             <button className="lp-ghost" style={iconGhostBtn} onClick={() => handleTogglePause(link)} title={link.is_paused ? 'Включить' : 'Пауза'}>
                               {link.is_paused ? '▶' : '⏸'}
                             </button>
@@ -840,7 +921,7 @@ export default function LinksPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div style={infoBanner('rgba(67,97,238,0.04)', `${ACCENT}25`)}>
               <p style={{ fontSize: '0.82rem', color: DARK, margin: 0, lineHeight: 1.55 }}>
-                Счётчики автоматически устанавливаются на страницу подписки. При подписке отправляется событие (цель).
+                Цель отправляется через официальный браузерный <code>reachGoal</code> только после подтверждённой подписки. Если пользователь закрыл страницу раньше подтверждения, событие останется недоставленным: без API-токена сервер не может отправить его позже.
               </p>
             </div>
 
@@ -859,14 +940,42 @@ export default function LinksPage() {
             </div>
             <div>
               <label style={labelStyle}>ID счётчика</label>
-              <input className="lp-input" style={inputStyle} placeholder="12345678" value={metrikaForm.ym_counter_id}
-                onChange={e => setMetrikaForm(p => ({ ...p, ym_counter_id: e.target.value }))} />
+              <input className="lp-input" style={inputStyle} inputMode="numeric" placeholder="12345678" value={metrikaForm.ym_counter_id}
+                onChange={e => { setMetrikaForm(p => ({ ...p, ym_counter_id: e.target.value })); setMetrikaCheck(null); }} />
+              <div style={hintStyle}>Только номер счётчика из адреса или настроек Метрики.</div>
             </div>
             <div>
-              <label style={labelStyle}>Название цели</label>
+              <label style={labelStyle}>Идентификатор цели</label>
               <input className="lp-input" style={inputStyle} placeholder="subscribe_channel" value={metrikaForm.ym_goal_name}
-                onChange={e => setMetrikaForm(p => ({ ...p, ym_goal_name: e.target.value }))} />
+                onChange={e => { setMetrikaForm(p => ({ ...p, ym_goal_name: e.target.value })); setMetrikaCheck(null); }} />
+              <div style={hintStyle}>Должен точно совпадать с идентификатором цели типа «Целевое событие» в кабинете.</div>
             </div>
+
+            <button className="lp-ghost" style={{ ...ghostBtn, alignSelf: 'flex-start' }} onClick={handleCheckMetrika} disabled={checkingMetrika}>
+              {checkingMetrika ? 'Проверка...' : 'Проверить настройку без отправки цели'}
+            </button>
+
+            {metrikaCheck && (
+              <div style={infoBanner(
+                metrikaCheck.valid ? 'rgba(16,185,129,0.07)' : 'rgba(230,57,70,0.06)',
+                metrikaCheck.valid ? 'rgba(16,185,129,0.28)' : 'rgba(230,57,70,0.24)',
+              )}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: metrikaCheck.valid ? SUCCESS : DANGER }}>
+                  {metrikaCheck.valid ? 'Формат корректен — цель не отправлялась' : 'Настройка заполнена с ошибкой'}
+                </div>
+                {!!metrikaCheck.errors?.length && (
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: '0.78rem', color: DARK, lineHeight: 1.5 }}>
+                    {metrikaCheck.errors.map((error, index) => <li key={index}>{error}</li>)}
+                  </ul>
+                )}
+                {!!metrikaCheck.steps?.length && (
+                  <ol style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: '0.78rem', color: DARK, lineHeight: 1.5 }}>
+                    {metrikaCheck.steps.map((step, index) => <li key={index}>{step}</li>)}
+                  </ol>
+                )}
+                {metrikaCheck.note && <div style={{ ...hintStyle, marginTop: 8 }}>{metrikaCheck.note}</div>}
+              </div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
               <div style={{

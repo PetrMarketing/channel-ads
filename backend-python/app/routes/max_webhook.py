@@ -567,25 +567,23 @@ async def _handle_visit_link(max_api, chat_id: str, max_user_id: str, first_name
         await _send_to_chat(max_api, chat_id, "Ссылка не найдена или устарела.")
         return
 
-    # Stamp the user's MAX id onto the visit (idempotent — only if missing).
+    # The sender id comes from the verified MAX webhook, so it is valid
+    # attribution evidence. Refuse token reuse by a different account.
     try:
+        if visit.get("max_user_id") and str(visit["max_user_id"]) != str(max_user_id):
+            await _send_to_chat(max_api, chat_id, "Эта ссылка уже привязана к другому пользователю.")
+            return
         await execute(
-            "UPDATE visits SET max_user_id = COALESCE(max_user_id, $1) WHERE id = $2",
+            """UPDATE visits
+                  SET max_user_id = $1,
+                      identity_verified_at = COALESCE(identity_verified_at, NOW()),
+                      identity_source = COALESCE(identity_source, 'max_webhook')
+                WHERE id = $2""",
             str(max_user_id), visit["id"],
         )
         print(f"[track] visit {visit['id']} linked to user {max_user_id}")
     except Exception as e:
         print(f"[MAX Bot] visit link stamp failed: {e}")
-
-    # Record an additional click (matches _handle_go_link's bookkeeping).
-    if visit.get("tracking_link_id"):
-        try:
-            await execute(
-                "INSERT INTO clicks (link_id, ip_address, user_agent) VALUES ($1, $2, $3)",
-                visit["tracking_link_id"], "max-bot", f"max-user:{max_user_id}",
-            )
-        except Exception:
-            pass
 
     channel_url = _build_channel_url_for_link({
         "join_link": visit.get("join_link"),
@@ -623,8 +621,9 @@ async def _handle_go_link(max_api, chat_id: str, max_user_id: str, first_name: s
     # Record visit
     visit_id = await execute_returning_id(
         """INSERT INTO visits (tracking_link_id, channel_id, max_user_id, platform,
-            utm_source, utm_medium, utm_campaign, utm_content, utm_term)
-           VALUES ($1,$2,$3,'max',$4,$5,$6,$7,$8) RETURNING id""",
+            utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+            identity_verified_at, identity_source)
+           VALUES ($1,$2,$3,'max',$4,$5,$6,$7,$8,NOW(),'max_webhook') RETURNING id""",
         link["id"], link["channel_id"], max_user_id,
         link.get("utm_source"), link.get("utm_medium"), link.get("utm_campaign"),
         link.get("utm_content"), link.get("utm_term"),
@@ -2644,29 +2643,52 @@ async def process_max_update(body: dict):
                 print(f"[MAX Bot] user_added: NO channel for max_chat_id={max_chat_id} — skipping")
                 return
             print(f"[MAX Bot] user_added: matched channel id={channel['id']}")
+            if not user_id:
+                print(f"[MAX Bot] user_added: missing user id for channel={channel['id']} — skipping")
+                return
 
-            # Attribute only to a visit that carries this exact MAX user id.
-            # Username and "latest visit in channel" fallbacks used to attach an
-            # organic subscriber to an unrelated ad click (empty usernames were
-            # especially dangerous), inflating per-link conversions.
+            # Last-touch attribution is allowed only among visits whose MAX
+            # identity was verified. Unverified and already-converted visits
+            # cannot receive a subscription.
             visit = None
             if user_id:
                 visit = await fetch_one("""
-                    SELECT id FROM visits WHERE channel_id = $1 AND max_user_id = $2
-                    AND visited_at > NOW() - INTERVAL '7 days' ORDER BY visited_at DESC LIMIT 1
+                    SELECT v.id FROM visits v
+                    WHERE v.channel_id = $1
+                      AND v.max_user_id = $2
+                      AND v.identity_verified_at IS NOT NULL
+                      AND v.visited_at > NOW() - INTERVAL '7 days'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM subscriptions s WHERE s.visit_id = v.id
+                      )
+                    ORDER BY v.visited_at DESC LIMIT 1
                 """, channel["id"], user_id)
 
             sub_id = None
             try:
                 sub_id = await execute_returning_id("""
-                    INSERT INTO subscriptions (channel_id, telegram_id, max_user_id, username, first_name, visit_id, platform)
-                    VALUES ($1, NULL, $2, $3, $4, $5, 'max')
+                    INSERT INTO subscriptions
+                        (channel_id, telegram_id, max_user_id, username, first_name,
+                         visit_id, platform, attribution_status,
+                         attribution_verified_at, attribution_reason)
+                    VALUES ($1, NULL, $2, $3, $4, $5, 'max', $6,
+                            CASE WHEN $5::bigint IS NULL THEN NULL ELSE NOW() END,
+                            CASE WHEN $5::bigint IS NULL THEN 'no_verified_visit'
+                                 ELSE 'verified_max_identity' END)
                     ON CONFLICT DO NOTHING
                     RETURNING id
-                """, channel["id"], user_id, username, first_name, visit["id"] if visit else None)
+                """, channel["id"], user_id, username, first_name,
+                    visit["id"] if visit else None,
+                    "verified" if visit else "unattributed")
                 print(f"[MAX Bot] Subscription: user={username or user_id}, channel={channel['id']}, sub_id={sub_id}")
                 if sub_id and visit:
                     print(f"[track] subscription {sub_id} linked to visit {visit['id']}")
+                    await execute(
+                        """UPDATE pending_conversions
+                              SET subscription_id = $1, subscribed_at = COALESCE(subscribed_at, NOW())
+                            WHERE visit_id = $2 AND subscription_id IS NULL""",
+                        sub_id, visit["id"],
+                    )
                     try:
                         from ..services.conversion_pixels import fire_server_goals_safe
                         await fire_server_goals_safe(sub_id)
@@ -2676,19 +2698,6 @@ async def process_max_update(body: dict):
                     print(f"[MAX Bot] Subscription duplicate ignored: user={user_id}, channel={channel['id']}")
             except Exception as e:
                 print(f"[MAX Bot] Subscription error: {e}")
-
-            # Atomic FIFO claim of oldest unfired pending_conversion in this
-            # channel (60s window). 1 sub = 1 fire (or 0 if no pending).
-            if sub_id and channel.get("id"):
-                try:
-                    import asyncio as _asyncio
-                    from ..services.conversion_pixels import claim_pending_and_fire_safe
-                    _asyncio.create_task(
-                        claim_pending_and_fire_safe(channel["id"], sub_id)
-                    )
-                    print(f"[track] dispatched claim_pending channel={channel['id']} sub={sub_id}")
-                except Exception as claim_err:
-                    print(f"[track] pending claim dispatch failed: {claim_err}")
 
             # Notify owner
             try:

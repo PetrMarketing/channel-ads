@@ -1,37 +1,17 @@
 /**
- * Yandex Metrika + VK Pixel — двойная отправка для надёжности:
- *   1. JS API (`ym(id,'reachGoal',name)` / `_tmr.push(...)`) — сработает когда
- *      tag.js загрузится; до загрузки хранится в очереди window.ym.a.
- *   2. Image beacon — прямой GET к `mc.yandex.ru/watch/...` и
- *      `top-fwz1.mail.ru/counter?...`. Работает даже если tag.js упал
- *      (SSL error, MAX in-app browser, AdBlock).
- *
- * Метрика дедуплицирует события по ClientID — двойного счёта обычно нет,
- * но если есть — лучше дубль чем тишина.
+ * Yandex Metrika + VK Pixel initialization and browser delivery.
+ * Yandex goals use only the documented tag.js reachGoal API. A callback proves
+ * that the browser transport completed, not that the goal was accounted for.
  */
 import { useEffect, useCallback, useMemo, useRef } from 'react';
 
-// Stable per-browser pseudo-cid stored in our own cookie. Used in MAX in-app
-// browser where mc.yandex.ru is unreachable (SSL error) and `_ym_uid` cookie
-// never gets set. The same value is sent to YM via the proxy beacon — YM treats
-// each unique cid as one synthetic visitor and attributes goals to it.
-function getOrCreateCid() {
+function getExistingYmCid() {
   if (typeof document === 'undefined') return null;
   try {
     const m = document.cookie.match(/(?:^|;\s*)_ym_uid=([^;]+)/);
     if (m && m[1]) return decodeURIComponent(m[1]);
   } catch {}
-  try {
-    const m = document.cookie.match(/(?:^|;\s*)pk_cid=([^;]+)/);
-    if (m && m[1]) return decodeURIComponent(m[1]);
-  } catch {}
-  // 19-char numeric cid in the same shape YM uses ({timestamp}{6 random digits}).
-  const cid = `${Date.now()}${Math.floor(100000 + Math.random() * 899999)}`;
-  try {
-    const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString();
-    document.cookie = `pk_cid=${cid}; expires=${expires}; path=/; SameSite=Lax`;
-  } catch {}
-  return cid;
+  return null;
 }
 
 export function useTrackingPixels(info) {
@@ -95,27 +75,6 @@ export function useTrackingPixels(info) {
       console.info('[track] YM tag.js injected');
     }
 
-    // Image-beacon visit registration via our /_ymp proxy — works around
-    // MAX in-app browser SSL incompatibility with mc.yandex.ru. The browser
-    // hits us (valid SSL), we forward server-to-server with X-Forwarded-For.
-    // We attach our own UUID-style cid so YM consistently attributes the
-    // visit and any future goal hit to the same synthetic visitor.
-    try {
-      const cid = getOrCreateCid();
-      const cidPart = cid ? `:cid:${encodeURIComponent(cid)}` : '';
-      const url = `/_ymp/watch/${encodeURIComponent(counterId)}` +
-        `?page-url=${encodeURIComponent(window.location.href)}` +
-        `&page-ref=${encodeURIComponent(document.referrer || '')}` +
-        `&browser-info=ifr:0${cidPart}:ti:0` +
-        `&ut=noindex&t=${Date.now()}`;
-      const img = new Image(1, 1);
-      img.referrerPolicy = 'no-referrer-when-downgrade';
-      img.src = url;
-      console.info('[track] YM init beacon fired (proxy)', counterId, 'cid=', cid);
-    } catch (e) {
-      console.info('[track] YM init beacon failed', e);
-    }
-
     return () => clearTimeout(timeoutId);
   }, [counterId, info, ymClientIdPromise]);
 
@@ -157,10 +116,7 @@ export function useTrackingPixels(info) {
     }
   }, [pixelId, info]);
 
-  // Get YM ClientID — three-tier fallback:
-  //   1. tag.js global (best — real ClientID)
-  //   2. _ym_uid cookie (set by tag.js if it loaded once before)
-  //   3. our pk_cid cookie (synthetic UUID for MAX in-app browser case)
+  // Only a ClientID actually issued by tag.js/cookie is valid attribution.
   const getYmClientIdSync = useCallback(() => {
     if (!counterId) return null;
     try {
@@ -170,13 +126,12 @@ export function useTrackingPixels(info) {
         if (v) return v;
       }
     } catch {}
-    return getOrCreateCid();
+    return getExistingYmCid();
   }, [counterId]);
 
-  // Fire YM goal via BOTH JS API and image beacon.
+  // Legacy synchronous helper used by non-MAX confirmed-subscription pages.
   const reachYmGoal = useCallback((goal) => {
     if (!counterId || !goal) return;
-    // 1. JS API — works when tag.js loaded; otherwise queues in window.ym.a
     window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
     try {
       window.ym(Number(counterId), 'reachGoal', goal);
@@ -184,22 +139,34 @@ export function useTrackingPixels(info) {
     } catch (e) {
       console.info('[track] YM reachGoal (js) failed', e);
     }
-    // 2. Image beacon via /_ymp proxy — works in MAX in-app browser too.
-    try {
-      const cid = getYmClientIdSync();
-      const cidPart = cid ? `:cid:${encodeURIComponent(cid)}` : '';
-      const url = `/_ymp/watch/${encodeURIComponent(counterId)}` +
-        `?browser-info=ifr:0${cidPart}:ti:0:goal:${encodeURIComponent(goal)}` +
-        `&page-url=${encodeURIComponent(window.location.href)}` +
-        `&ut=noindex&t=${Date.now()}`;
-      const img = new Image(1, 1);
-      img.referrerPolicy = 'no-referrer-when-downgrade';
-      img.src = url;
-      console.info('[track] YM reachGoal (proxy beacon)', counterId, goal);
-    } catch (e) {
-      console.info('[track] YM reachGoal (beacon) failed', e);
-    }
-  }, [counterId, getYmClientIdSync]);
+  }, [counterId]);
+
+  const deliverConfirmedYmGoal = useCallback((claimedCounterId, goal, timeoutMs = 8000) => (
+    new Promise((resolve) => {
+      if (!claimedCounterId || !goal || typeof window === 'undefined') {
+        resolve({ accepted: false, error: 'Yandex counter unavailable in browser' });
+        return;
+      }
+      let settled = false;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      };
+      const timer = setTimeout(() => {
+        finish({ accepted: false, error: 'Yandex reachGoal callback timeout' });
+      }, timeoutMs);
+      try {
+        window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
+        window.ym(Number(claimedCounterId), 'reachGoal', goal, {}, () => {
+          finish({ accepted: true });
+        });
+      } catch (e) {
+        finish({ accepted: false, error: String(e?.message || e) });
+      }
+    })
+  ), []);
 
   // Fire VK Pixel goal via BOTH _tmr.push and image beacon.
   const reachVkGoal = useCallback((goal) => {
@@ -243,5 +210,5 @@ export function useTrackingPixels(info) {
     reachVkGoal(vkGoalName);
   }, [reachYmGoal, reachVkGoal, ymGoalName, vkGoalName]);
 
-  return { reachGoals, ymClientIdPromise, getYmClientIdSync };
+  return { reachGoals, deliverConfirmedYmGoal, ymClientIdPromise, getYmClientIdSync };
 }

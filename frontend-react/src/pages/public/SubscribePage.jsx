@@ -21,6 +21,7 @@ export default function SubscribePage() {
   const [subscribed, setSubscribed] = useState(false);
   const [error, setError] = useState(null);
   const [visitId, setVisitId] = useState(null);
+  const [visitToken, setVisitToken] = useState(null);
   const [clicked, setClicked] = useState(false);
 
   const loadInfo = useCallback(async () => {
@@ -35,12 +36,11 @@ export default function SubscribePage() {
         // из initDataUnsafe visit создаётся анонимным, и когда юзер
         // подпишется в канал, бот не сможет привязать visit → subscription
         // → конверсия в YM/VK не выстрелит.
-        let maxUserId = null, mUsername = null, mFirstName = null;
+        let mUsername = null, mFirstName = null;
         for (let i = 0; i < 20; i++) {
           try {
             const u = window.WebApp?.initDataUnsafe?.user;
             if (u && (u.id || u.user_id)) {
-              maxUserId = String(u.user_id || u.id);
               mUsername = u.username || null;
               mFirstName = u.first_name || u.name || null;
               break;
@@ -49,16 +49,25 @@ export default function SubscribePage() {
           await new Promise(r => setTimeout(r, 200));
         }
         try {
+          const query = new URLSearchParams(window.location.search);
           const visitData = await api.post('/track/visit', {
             short_code: shortCode,
             ip_address: '',
             user_agent: navigator.userAgent,
-            max_user_id: maxUserId,
+            init_data: typeof window.WebApp?.initData === 'string' ? window.WebApp.initData : null,
             username: mUsername,
             first_name: mFirstName,
+            yclid: query.get('yclid'),
+            utm_source: query.get('utm_source'),
+            utm_medium: query.get('utm_medium'),
+            utm_campaign: query.get('utm_campaign'),
+            utm_content: query.get('utm_content'),
+            utm_term: query.get('utm_term'),
+            page_url: window.location.href,
           });
           if (visitData.success && visitData.visitId) {
             setVisitId(visitData.visitId);
+            setVisitToken(visitData.visitToken || null);
           }
         } catch {}
       } else {
@@ -73,53 +82,69 @@ export default function SubscribePage() {
 
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  // YM tag.js still loaded so getClientID works — but reachGoals() is no
-  // longer called from here. Server fires goals after atomic claim of the
-  // oldest pending_conversion when the bot detects subscription.
-  const { ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
+  // YM tag.js is loaded only to capture ClientID. A click does not count as a
+  // subscription; the exact visit is completed by the membership webhook.
+  const { ymClientIdPromise, getYmClientIdSync, deliverConfirmedYmGoal } = useTrackingPixels(info);
+
+  const deliverYandexIfQueued = useCallback(async () => {
+    if (!visitId || !visitToken) return;
+    const claim = await api.post(`/track/visit/${visitId}/yandex-delivery/claim`, {
+      visit_token: visitToken,
+    });
+    if (!claim?.claimed) return;
+    const result = await deliverConfirmedYmGoal(claim.counter_id, claim.goal_name);
+    await api.post(`/track/visit/${visitId}/yandex-delivery/result`, {
+      visit_token: visitToken,
+      attempt_token: claim.attempt_token,
+      outcome: result.accepted ? 'transport_accepted' : 'outcome_unknown',
+      error: result.error || null,
+    });
+  }, [visitId, visitToken, deliverConfirmedYmGoal]);
 
   const handleChannelClick = useCallback(() => {
     setClicked(true);
     if (!visitId) return;
     // Capture YM ClientID at click time (if tag.js loaded) and create a
-    // pending_conversion on the server. Server fires the goal via Measurement
-    // API when the bot detects subscription within the 60s window.
+    // visit-scoped pending record on the server.
     const cid = getYmClientIdSync();
     api.post(`/track/visit/${visitId}/await-subscription`, {
       ym_client_id: cid ? String(cid) : null,
+      visit_token: visitToken,
       page_url: typeof window !== 'undefined' ? window.location.href : '',
     }).catch(() => {});
-  }, [visitId, getYmClientIdSync]);
+  }, [visitId, visitToken, getYmClientIdSync]);
 
-  // Surface the YM ClientID to the backend (separate from pending) so the
-  // legacy server-side fire path (fire_server_goals) can also attribute.
+  // Surface a late ClientID to both the visit and its pending record.
   // Fire-and-forget — never block the UI.
   useEffect(() => {
     if (!visitId || !ymClientIdPromise) return;
     let cancelled = false;
     ymClientIdPromise.then((clientId) => {
       if (cancelled || !clientId) return;
-      api.post(`/track/visit/${visitId}/ym-client-id`, { ym_client_id: String(clientId) })
+      api.post(`/track/visit/${visitId}/ym-client-id`, {
+        ym_client_id: String(clientId), visit_token: visitToken,
+      })
         .catch(() => {});
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [visitId, ymClientIdPromise]);
+  }, [visitId, visitToken, ymClientIdPromise]);
 
-  // Polling now ONLY updates UI state. Server handles all goal firing via the
-  // pending_conversions claim path. Stops after first detection.
+  // A confirmed subscription may claim a browser reachGoal attempt while this
+  // page is alive. Atomic server leases prevent concurrent tabs from sharing
+  // an attempt; a callback is recorded as transport acceptance only.
   useEffect(() => {
-    if (!visitId || subscribed) return;
+    if (!visitId) return;
     const interval = setInterval(async () => {
       try {
         const data = await api.get(`/track/check-subscription-by-visit?visit_id=${visitId}`);
         if (data.subscribed) {
           setSubscribed(true);
-          clearInterval(interval);
+          await deliverYandexIfQueued().catch(() => {});
         }
       } catch {}
     }, 5000);
     return () => clearInterval(interval);
-  }, [visitId, subscribed]);
+  }, [visitId, deliverYandexIfQueued]);
 
   const getSubscribeUrl = () => {
     if (!info) return null;

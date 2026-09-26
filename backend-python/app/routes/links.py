@@ -1,5 +1,6 @@
 import secrets
 import string
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Dict, Any
@@ -8,6 +9,37 @@ from ..middleware.auth import get_current_user
 from ..database import fetch_one, fetch_all, execute, execute_returning_id
 
 router = APIRouter()
+
+
+_YM_COUNTER_RE = re.compile(r"^[1-9][0-9]{0,19}$")
+_YM_GOAL_FORBIDDEN = set('/\\&#?="+')
+
+
+def validate_yandex_settings(counter_id: Any, goal_name: Any) -> Dict[str, Any]:
+    """Validate the values used by the documented browser reachGoal call.
+
+    This deliberately does not call reachGoal and does not claim that the goal
+    exists in a counter: checking that requires access to the Metrika account.
+    """
+    counter = str(counter_id or "").strip()
+    goal = str(goal_name or "").strip()
+    errors = []
+    if not counter:
+        errors.append({"field": "ym_counter_id", "code": "required", "message": "Укажите номер счётчика"})
+    elif not _YM_COUNTER_RE.fullmatch(counter):
+        errors.append({"field": "ym_counter_id", "code": "invalid_format", "message": "Номер счётчика должен состоять только из цифр и не начинаться с нуля"})
+    if not goal:
+        errors.append({"field": "ym_goal_name", "code": "required", "message": "Укажите идентификатор цели"})
+    elif len(goal) > 255:
+        errors.append({"field": "ym_goal_name", "code": "too_long", "message": "Идентификатор цели не должен превышать 255 символов"})
+    elif any(char in _YM_GOAL_FORBIDDEN for char in goal):
+        errors.append({"field": "ym_goal_name", "code": "forbidden_character", "message": "Идентификатор цели не должен содержать / \\ & # ? = \" или +"})
+    return {
+        "valid": not errors,
+        "counter_id": counter,
+        "goal_name": goal,
+        "errors": errors,
+    }
 
 
 def generate_short_code(length: int = 10) -> str:
@@ -28,11 +60,51 @@ async def list_links(tracking_code: str, user: Dict[str, Any] = Depends(get_curr
 
     links = await fetch_all("""
         SELECT tl.*,
-            (SELECT COUNT(*) FROM visits WHERE tracking_link_id = tl.id) as visit_count,
-            (SELECT COUNT(*) FROM subscriptions s JOIN visits v ON v.id = s.visit_id WHERE v.tracking_link_id = tl.id) as sub_count
+            (SELECT COUNT(*) FROM visits WHERE tracking_link_id = tl.id) AS visit_count,
+            (SELECT COUNT(*) FROM subscriptions s JOIN visits v ON v.id = s.visit_id
+              WHERE v.tracking_link_id = tl.id) AS confirmed_subscription_count,
+            (SELECT COUNT(*) FROM subscriptions s JOIN visits v ON v.id = s.visit_id
+              WHERE v.tracking_link_id = tl.id AND s.attribution_status = 'verified') AS attributed_subscription_count,
+            (SELECT COUNT(*) FROM pending_conversions pc
+              WHERE pc.link_id = tl.id AND pc.subscription_id IS NOT NULL
+                AND pc.ym_delivery_status IN ('queued','attempting','retry_scheduled')
+                AND pc.confirmed_at >= NOW() - INTERVAL '10 minutes') AS ym_pending_count,
+            (SELECT COUNT(*) FROM pending_conversions pc
+              WHERE pc.link_id = tl.id AND pc.subscription_id IS NOT NULL
+                AND (pc.ym_delivery_status = 'not_configured'
+                  OR (pc.ym_delivery_status IN ('queued','retry_scheduled')
+                      AND pc.confirmed_at < NOW() - INTERVAL '10 minutes'))) AS ym_undelivered_count,
+            (SELECT COUNT(*) FROM pending_conversions pc
+              WHERE pc.link_id = tl.id AND pc.subscription_id IS NOT NULL
+                AND pc.ym_delivery_status IN ('failed_exhausted','outcome_unknown_exhausted')) AS ym_problem_count,
+            (SELECT COUNT(*) FROM pending_conversions pc
+              WHERE pc.link_id = tl.id AND pc.ym_transport_accepted_at IS NOT NULL) AS ym_transport_accepted_count,
+            (SELECT COUNT(*) FROM pending_conversions pc
+              WHERE pc.link_id = tl.id AND pc.ym_accounting_confirmed_at IS NOT NULL) AS ym_accounting_confirmed_count
         FROM tracking_links tl WHERE tl.channel_id = $1 ORDER BY tl.created_at DESC
     """, channel["id"])
-    return {"success": True, "links": links}
+    normalized = []
+    for row in links:
+        link = dict(row)
+        # Backwards-compatible alias; the UI now labels the precise count.
+        link["sub_count"] = link.get("confirmed_subscription_count", 0)
+        check = validate_yandex_settings(link.get("ym_counter_id"), link.get("ym_goal_name"))
+        link["ym_config_valid"] = check["valid"]
+        link["ym_config_errors"] = check["errors"]
+        normalized.append(link)
+
+    unattributed = await fetch_one(
+        """SELECT COUNT(*) AS count FROM subscriptions
+             WHERE channel_id = $1 AND attribution_status = 'unattributed'""",
+        channel["id"],
+    )
+    return {
+        "success": True,
+        "links": normalized,
+        "conversion_summary": {
+            "unattributed_subscriptions": unattributed["count"] if unattributed else 0,
+        },
+    }
 
 
 @router.post("/{tracking_code}")
@@ -126,13 +198,58 @@ async def update_metrika(tracking_code: str, link_id: int, body: dict, user: Dic
     if not channel:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
-    await execute(
-        "UPDATE tracking_links SET ym_counter_id = $1, ym_goal_name = $2, vk_pixel_id = $3, vk_goal_name = $4 WHERE id = $5 AND channel_id = $6",
-        body.get("ym_counter_id"), body.get("ym_goal_name"),
-        body.get("vk_pixel_id"), body.get("vk_goal_name"),
+    link = await fetch_one(
+        "SELECT id FROM tracking_links WHERE id = $1 AND channel_id = $2",
         link_id, channel["id"],
     )
-    return {"success": True}
+    if not link:
+        raise HTTPException(status_code=404, detail="Ссылка не найдена")
+
+    counter = str(body.get("ym_counter_id") or "").strip()
+    goal = str(body.get("ym_goal_name") or "").strip()
+    if counter or goal:
+        check = validate_yandex_settings(counter, goal)
+        if not check["valid"]:
+            raise HTTPException(status_code=422, detail={"message": "Проверьте настройки Яндекс Метрики", "errors": check["errors"]})
+
+    await execute(
+        "UPDATE tracking_links SET ym_counter_id = $1, ym_goal_name = $2, vk_pixel_id = $3, vk_goal_name = $4 WHERE id = $5 AND channel_id = $6",
+        counter or None, goal or None,
+        str(body.get("vk_pixel_id") or "").strip() or None,
+        str(body.get("vk_goal_name") or "").strip() or None,
+        link_id, channel["id"],
+    )
+    return {"success": True, "yandex_check": validate_yandex_settings(counter, goal) if counter or goal else {"valid": False, "configured": False, "errors": []}}
+
+
+@router.post("/{tracking_code}/{link_id}/metrika/check")
+async def check_metrika_settings(tracking_code: str, link_id: int, body: dict, user: Dict[str, Any] = Depends(get_current_user)):
+    """Safe configuration check: validation only, no visit or goal is sent."""
+    channel = await _get_owned_channel(tracking_code, user["id"])
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+    link = await fetch_one(
+        "SELECT id, link_type FROM tracking_links WHERE id = $1 AND channel_id = $2",
+        link_id, channel["id"],
+    )
+    if not link:
+        raise HTTPException(status_code=404, detail="Ссылка не найдена")
+
+    check = validate_yandex_settings(body.get("ym_counter_id"), body.get("ym_goal_name"))
+    return {
+        "success": True,
+        "safe": True,
+        "sent_goal": False,
+        "check": check,
+        "link_supports_browser_delivery": link.get("link_type") in ("landing", "lm_landing", "direct"),
+        "manual_confirmation_required": True,
+        "manual_steps": [
+            "В Метрике откройте нужный счётчик и раздел «Цели».",
+            "Создайте цель типа «Целевое событие» с условием «совпадает».",
+            f"Укажите идентификатор «{check['goal_name']}» и сохраните цель." if check["goal_name"] else "Укажите тот же идентификатор, который сохранён в ссылке.",
+        ],
+        "note": "Проверка не вызывает reachGoal и не создаёт тестовую конверсию. Без доступа к кабинету нельзя подтвердить существование цели или её учёт.",
+    }
 
 
 @router.post("/{tracking_code}/{link_id}/lm-image")

@@ -11,12 +11,10 @@ import { useTrackingPixels } from '../../hooks/useTrackingPixels';
  * The browser-side detour is necessary so we can:
  *   1. Load Yandex Metrika tag.js (sets _ym_uid cookie + captures ClientID).
  *   2. POST /track/visit/{visit_id}/await-subscription with the captured cid
- *      → creates a pending_conversions row (60s window).
- *   3. Redirect into max.ru/{bot}?startapp=v_{visit_token}, which triggers
- *      the existing _handle_visit_link bot DM-flow → user taps "Перейти в
- *      канал" → subscribes → bot's chat_member event atomically claims the
- *      pending and fires YM/VK pixels (server-side, with full per-pixel
- *      response code + error captured on the pending_conversions row).
+ *      → creates one pending_conversions row for this exact visit.
+ *   3. Redirect into max.ru/{bot}?startapp=v_{visit_token}; the Mini App binds
+ *      signed MAX initData to that visit before showing the channel button.
+ *   4. The membership webhook links only that verified visit to subscription.
  *
  * Only minimal UI: avatar circle + channel title + big gradient button.
  */
@@ -55,23 +53,30 @@ export default function ClickLandingPage() {
       // был цикл до 4 секунд; пользователь успевал закрыть страницу, и
       // клик не попадал в статистику. SDK-данные — полезное дополнение,
       // но не условие фиксации клика.
-      let maxUserId = null, mUsername = null, mFirstName = null;
+      let mUsername = null, mFirstName = null;
       try {
         const u = window.WebApp?.initDataUnsafe?.user;
         if (u && (u.id || u.user_id)) {
-          maxUserId = String(u.user_id || u.id);
           mUsername = u.username || null;
           mFirstName = u.first_name || u.name || null;
         }
       } catch {}
       try {
+        const query = new URLSearchParams(window.location.search);
         const visitData = await api.post('/track/visit', {
           short_code: shortCode,
           ip_address: '',
           user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
-          max_user_id: maxUserId,
+          init_data: typeof window.WebApp?.initData === 'string' ? window.WebApp.initData : null,
           username: mUsername,
           first_name: mFirstName,
+          yclid: query.get('yclid'),
+          utm_source: query.get('utm_source'),
+          utm_medium: query.get('utm_medium'),
+          utm_campaign: query.get('utm_campaign'),
+          utm_content: query.get('utm_content'),
+          utm_term: query.get('utm_term'),
+          page_url: window.location.href,
         });
         if (visitData?.success && visitData.visitId) {
           setVisitId(visitData.visitId);
@@ -89,22 +94,16 @@ export default function ClickLandingPage() {
 
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  // Mounts YM tag.js (and VK code.js if configured), generates pk_cid in
-  // cookie, fires init beacon via /_ymp proxy. We ALSO call reachGoals at
-  // click time — server-side fire from our datacenter IP gets filtered by
-  // YM, but the click-time fire goes through the user's browser via the
-  // proxy (real user IP) and counts reliably. Tradeoff: ~5-15% overcount
-  // since some users click but never finish subscribing.
-  const { reachGoals, ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
+  // Mount the configured counters and capture the genuine YM ClientID. A
+  // click never fires a subscription goal.
+  const { ymClientIdPromise, getYmClientIdSync } = useTrackingPixels(info);
 
   const buildBotUrl = useCallback(() => {
-    // ВСЕГДА используем go_ префикс — Mini App URL бота указывает на
-    // /miniapp HTML-handler, который понимает только go_X (не v_TOKEN).
-    // Атрибуция конверсии сохраняется через pending_conversions: при клике
-    // мы создали pending с ym_client_id, бот при подписке найдёт его по
-    // channel_id и стрельнёт цель с правильным cid.
-    return `https://max.ru/${MAX_BOT_USERNAME}?startapp=go_${shortCode}`;
-  }, [shortCode]);
+    // Carry one opaque visit token across the web -> MAX boundary. The short
+    // code fallback keeps old links usable but is intentionally unattributed.
+    const payload = visitToken ? `v_${visitToken}` : `go_${shortCode}`;
+    return `https://max.ru/${MAX_BOT_USERNAME}?startapp=${encodeURIComponent(payload)}`;
+  }, [shortCode, visitToken]);
 
   const handleClick = useCallback(async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -131,6 +130,7 @@ export default function ClickLandingPage() {
       try {
         await api.post(`/track/visit/${visitId}/await-subscription`, {
           ym_client_id: cid ? String(cid) : null,
+          visit_token: visitToken,
           page_url: typeof window !== 'undefined' ? window.location.href : '',
         });
       } catch {
@@ -138,19 +138,16 @@ export default function ClickLandingPage() {
       }
     }
 
-    // ВАЖНО: НЕ fires reachGoals() здесь — это false-positive!
-    // Раньше fires при клике на кнопку → 20 «конверсий» в Директе
-    // при 0 реальных подписок. Цель должна стрелять ТОЛЬКО когда
-    // подписка реально подтверждена ботом (server-side fire через
-    // fire_server_goals_safe в /track/* эндпойнтах). Если pending_conversion
-    // не сработает в окне 60 сек — атрибуция теряется, но это правильнее
-    // чем считать «кликнул=подписался».
+    // ВАЖНО: reachGoal здесь не вызывается — клик не является подпиской.
+    // Webhook сначала подтверждает членство. После этого живой MAX mini app
+    // может получить атомарную попытку документированного browser reachGoal;
+    // если страница закрыта, событие остаётся недоставленным, а не успешным.
 
     // Hard navigate (assign, not href, to preserve back-button history).
     if (typeof window !== 'undefined') {
       window.location.assign(targetUrl);
     }
-  }, [visitId, ymClientIdPromise, getYmClientIdSync, buildBotUrl]);
+  }, [visitId, visitToken, ymClientIdPromise, getYmClientIdSync, buildBotUrl]);
 
   if (loading) return (
     <div style={{

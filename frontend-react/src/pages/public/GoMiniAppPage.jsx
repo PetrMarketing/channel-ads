@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../../services/api';
+import { useTrackingPixels } from '../../hooks/useTrackingPixels';
 
 const ACCENT = '#4361ee';
 const ACCENT2 = '#7b68ee';
@@ -62,28 +63,6 @@ function readStartParam() {
   return null;
 }
 
-/** Try to extract MAX user_id from any available SDK init_data. */
-function readMaxUserId() {
-  if (typeof window === 'undefined') return null;
-  try {
-    const sdks = [
-      window.WebApp, window.webapp,
-      window.maxApp, window.MaxApp,
-      window.Telegram?.WebApp,
-    ];
-    for (const sdk of sdks) {
-      if (!sdk) continue;
-      const init = sdk.initDataUnsafe || sdk.initData || sdk.launchParams;
-      if (!init || typeof init !== 'object') continue;
-      const u = init.user;
-      if (u?.user_id) return String(u.user_id);
-      if (u?.id) return String(u.id);
-      if (init.user_id) return String(init.user_id);
-    }
-  } catch {}
-  return null;
-}
-
 function readRawInitData() {
   if (typeof window === 'undefined') return null;
   try {
@@ -92,13 +71,8 @@ function readRawInitData() {
       if (!sdk) continue;
       const raw = sdk.initData;
       if (typeof raw === 'string') return raw;
-      if (raw && typeof raw === 'object') {
-        try { return JSON.stringify(raw); } catch {}
-      }
-      const u = sdk.initDataUnsafe;
-      if (u) {
-        try { return JSON.stringify(u); } catch {}
-      }
+      // Objects and initDataUnsafe are not signed and must never be used as
+      // attribution evidence.
     }
   } catch {}
   return null;
@@ -116,11 +90,47 @@ function readYmClientIdSync() {
 
 export default function GoMiniAppPage() {
   const [info, setInfo] = useState(null);
-  const [shortCode, setShortCode] = useState(null);
+  const [launchParam, setLaunchParam] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [clicked, setClicked] = useState(false);
   const visitedRef = useRef(false);
+  const deliveryInFlightRef = useRef(false);
+  const { deliverConfirmedYmGoal } = useTrackingPixels(info);
+
+  const deliverYandexIfQueued = useCallback(async () => {
+    if (!info?.visit_id || !info?.visit_token || deliveryInFlightRef.current) return;
+    deliveryInFlightRef.current = true;
+    try {
+      const claim = await api.post(`/track/visit/${info.visit_id}/yandex-delivery/claim`, {
+        visit_token: info.visit_token,
+      });
+      if (!claim?.claimed) return;
+      const result = await deliverConfirmedYmGoal(claim.counter_id, claim.goal_name);
+      await api.post(`/track/visit/${info.visit_id}/yandex-delivery/result`, {
+        visit_token: info.visit_token,
+        attempt_token: claim.attempt_token,
+        outcome: result.accepted ? 'transport_accepted' : 'outcome_unknown',
+        error: result.error || null,
+      });
+    } finally {
+      deliveryInFlightRef.current = false;
+    }
+  }, [info, deliverConfirmedYmGoal]);
+
+  useEffect(() => {
+    if (!clicked || !info?.visit_id) return undefined;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const data = await api.get(`/track/check-subscription-by-visit?visit_id=${info.visit_id}`);
+        if (!cancelled && data?.subscribed) await deliverYandexIfQueued();
+      } catch {}
+    };
+    check();
+    const handle = setInterval(check, 3000);
+    return () => { cancelled = true; clearInterval(handle); };
+  }, [clicked, info?.visit_id, deliverYandexIfQueued]);
 
   // Resolve short code from start_param on mount. App.jsx already waits for
   // SDK ready before rendering us, but listen for `max-sdk-ready` anyway in
@@ -129,8 +139,7 @@ export default function GoMiniAppPage() {
     function tryRead() {
       const sp = readStartParam();
       if (!sp) return false;
-      const code = sp.startsWith('go_') ? sp.slice(3) : sp;
-      setShortCode(code);
+      setLaunchParam(sp);
       return true;
     }
     if (tryRead()) return;
@@ -139,7 +148,7 @@ export default function GoMiniAppPage() {
       attempts += 1;
       if (tryRead() || attempts >= 20) {
         clearInterval(handle);
-        if (attempts >= 20 && !shortCode) {
+        if (attempts >= 20 && !launchParam) {
           setError('Не удалось определить ссылку. Откройте через MAX.');
           setLoading(false);
         }
@@ -156,15 +165,23 @@ export default function GoMiniAppPage() {
 
   // Create the visit (and fetch channel info) once the code is known.
   useEffect(() => {
-    if (!shortCode || visitedRef.current) return;
+    if (!launchParam || visitedRef.current) return;
     visitedRef.current = true;
     let cancelled = false;
     (async () => {
       try {
+        let signedInitData = readRawInitData();
+        if (launchParam.startsWith('v_') && !signedInitData) {
+          for (let attempt = 0; attempt < 20 && !signedInitData; attempt += 1) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            signedInitData = readRawInitData();
+          }
+        }
         const payload = {
-          code: shortCode,
-          max_user_id: readMaxUserId(),
-          init_data: readRawInitData(),
+          code: launchParam.startsWith('go_') ? launchParam.slice(3)
+            : (launchParam.startsWith('v_') ? null : launchParam),
+          visit_token: launchParam.startsWith('v_') ? launchParam.slice(2) : null,
+          init_data: signedInitData,
           ym_client_id: readYmClientIdSync(),
           page_url: typeof window !== 'undefined' ? window.location.href : '',
         };
@@ -182,17 +199,17 @@ export default function GoMiniAppPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [shortCode]);
+  }, [launchParam]);
 
   const openChannel = useCallback(() => {
     if (!info?.channel_url || clicked) return;
     setClicked(true);
-    // Fire pending_conversion before navigating away — gives the server a
-    // 60s window to attribute the resulting subscription back to this visit.
+    // Create the visit-scoped pending record before navigating away.
     if (info.visit_id) {
       try {
         api.post(`/track/visit/${info.visit_id}/await-subscription`, {
           ym_client_id: readYmClientIdSync(),
+          visit_token: info.visit_token,
           page_url: typeof window !== 'undefined' ? window.location.href : '',
         }).catch(() => {});
       } catch {}
@@ -207,14 +224,12 @@ export default function GoMiniAppPage() {
         const isMaxUrl = /(?:^|\/\/)max\.ru\b/i.test(url);
         if (isMaxUrl && typeof wa.openMaxLink === 'function') {
           wa.openMaxLink(url);
-          // Auto-close miniapp shortly after — gives MAX time to process the
-          // openMaxLink before the webview is torn down.
-          setTimeout(() => { try { wa.close && wa.close(); } catch {} }, 800);
+          // Keep the mini app alive: if MAX returns control after membership
+          // confirmation, this same real browser visit can call reachGoal.
           return;
         }
         if (typeof wa.openLink === 'function') {
           wa.openLink(url);
-          setTimeout(() => { try { wa.close && wa.close(); } catch {} }, 800);
           return;
         }
         if (typeof wa.openTelegramLink === 'function') {

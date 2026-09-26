@@ -27,6 +27,7 @@ echo "==> Запуск миграций произойдёт автоматич�
 sleep 5
 
 echo "==> Проверка хелсчека..."
-curl -sI --noproxy '*' http://127.0.0.1:8010/health 2>&1 | head -1
+curl --fail --silent --show-error --noproxy '*' http://127.0.0.1:8010/health
+echo
 
 echo "==> Готово. Логи: docker-compose logs -f --tail=100 app"

@@ -70,6 +70,9 @@ async def lifespan(app: FastAPI):
     from .services.admin_broadcast_runner import start_admin_broadcast_runner
     start_admin_broadcast_runner()
 
+    from .services.conversion_pixels import start_conversion_delivery_worker
+    start_conversion_delivery_worker()
+
     # Resume persistent AI Office jobs that were queued or running when the
     # process restarted. Idempotency keys prevent duplicate external actions.
     from .routes.ai_office import resume_pending_tasks
@@ -92,10 +95,12 @@ async def lifespan(app: FastAPI):
     from .services.funnel_processor import stop_processors
     from .routes.telegram_bot import stop_telegram_polling
     from .routes.max_webhook import stop_max_polling
+    from .services.conversion_pixels import stop_conversion_delivery_worker
     stop_billing_checker()
     stop_processors()
     stop_telegram_polling()
     stop_max_polling()
+    stop_conversion_delivery_worker()
     await close_database()
 
 
@@ -310,12 +315,9 @@ if os.path.isdir(frontend_dist):
         html = html.replace("<!-- BLOG_SECTION_PLACEHOLDER -->", blog_section)
         return HTMLResponse(content=html)
 
-    # Reverse proxies for analytics pixels — MAX in-app browser fails SSL on
-    # mc.yandex.ru and top-fwz1.mail.ru directly. Browser hits us instead and
-    # we forward server-to-server. Real user IP/UA are passed via X-Forwarded-*
-    # so YM/VK can attribute. Cookies aren't relayed (they're set by upstream
-    # on the wrong domain), so the frontend uses its own UUID cid for
-    # attribution.
+    # Reverse proxy retained for the existing VK transport. Yandex goals must
+    # use tag.js reachGoal in the real browser visit; proxying /watch would
+    # manufacture a server-side visit and is intentionally unsupported.
     import aiohttp as _aiohttp
     _PROXY_TIMEOUT = _aiohttp.ClientTimeout(total=5)
 
@@ -345,10 +347,6 @@ if os.path.isdir(frontend_dist):
             # Return a 1x1 gif so the <img> doesn't error in console.
             gif = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
             return Response(content=gif, status_code=200, media_type="image/gif")
-
-    @app.get("/_ymp/{path:path}", include_in_schema=False)
-    async def yandex_metrika_proxy(path: str, request: Request):
-        return await _pixel_proxy("https://mc.yandex.ru", path, request)
 
     @app.get("/_vkp/{path:path}", include_in_schema=False)
     async def vk_pixel_proxy(path: str, request: Request):
@@ -839,7 +837,7 @@ async def miniapp_page(request: Request, code: str = ""):
         return RedirectResponse(f"/pay/{tc_val}", status_code=302)
     clean_code = code.replace("go_", "") if code.startswith("go_") else code
     # Meta refresh fallback: if JS fails completely, redirect via /go/ after 6 seconds
-    meta_refresh = f'<meta http-equiv="refresh" content="6;url=/go/{clean_code}">' if clean_code else ''
+    meta_refresh = f'<meta http-equiv="refresh" content="6;url=/go/{clean_code}">' if clean_code and not code.startswith("v_") else ''
     html = """<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
@@ -1019,12 +1017,25 @@ async function doRedirect() {
       return true;
     }
 
-    const code = startParam.startsWith('go_') ? startParam.slice(3) : startParam;
+    const isVisitToken = startParam.startsWith('v_');
+    const code = startParam.startsWith('go_') ? startParam.slice(3) : (isVisitToken ? null : startParam);
+    const visitToken = isVisitToken ? startParam.slice(2) : null;
+    let signedInitData = '';
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try { signedInitData = (window.WebApp && window.WebApp.initData) || ''; } catch(e) {}
+      if (signedInitData || !isVisitToken) break;
+      await new Promise(r => setTimeout(r, 200));
+    }
 
     const resp = await fetch('/api/track/miniapp-visit', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({code: code})
+      body: JSON.stringify({
+        code: code,
+        visit_token: visitToken,
+        init_data: signedInitData,
+        page_url: window.location.href
+      })
     });
     const data = await resp.json();
     const channelUrl = data.channel_url;
@@ -1033,8 +1044,21 @@ async function doRedirect() {
       // Show clickable button
       document.querySelector('.c').innerHTML =
         '<a id="go-btn" href="' + channelUrl + '" style="display:inline-block;padding:16px 40px;background:#7B68EE;color:#fff;border-radius:12px;text-decoration:none;font-size:17px;font-weight:600;margin-top:8px">Перейти в канал</a>';
-      document.getElementById('go-btn').addEventListener('click', function(e) {
+      document.getElementById('go-btn').addEventListener('click', async function(e) {
         e.preventDefault();
+        if (data.visit_id && data.visit_token) {
+          try {
+            const m = document.cookie.match(/(?:^|;\\s*)_ym_uid=([^;]+)/);
+            await fetch('/api/track/visit/' + data.visit_id + '/await-subscription', {
+              method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({
+                visit_token: data.visit_token,
+                ym_client_id: m ? decodeURIComponent(m[1]) : null,
+                page_url: window.location.href
+              })
+            });
+          } catch(err) {}
+        }
         // openMaxLink for max.ru links (opens natively), openLink for others
         var url = this.href;
         try {
@@ -1073,6 +1097,10 @@ const fallbackTimer = setTimeout(() => {
   if (!sp) {
     const pathParts = url.pathname.split('/');
     if (pathParts.length >= 3 && pathParts[1] === 'miniapp') sp = pathParts[2];
+  }
+  if (sp.startsWith('v_')) {
+    document.querySelector('p').textContent = 'Проверяем переход...';
+    return;
   }
   const c = sp.startsWith('go_') ? sp.slice(3) : sp;
   if (c) {
@@ -2835,15 +2863,13 @@ async def redirect_tracking_link(code: str, request: Request):
     if link.get("is_paused"):
         raise HTTPException(status_code=410, detail="Link paused")
 
-    # Increment click counter & record click
-    await execute("UPDATE tracking_links SET clicks = clicks + 1 WHERE id = $1", link["id"])
-    ip = request.client.host if request.client else None
-    ua = request.headers.get("user-agent", "")
-    await execute("INSERT INTO clicks (link_id, ip_address, user_agent) VALUES ($1,$2,$3)", link["id"], ip, ua)
-
     # Lead magnet landing — redirect to /lm/ page
     link_type = link.get("link_type", "landing")
     if link_type == "lm_landing":
+        await execute("UPDATE tracking_links SET clicks = clicks + 1 WHERE id = $1", link["id"])
+        ip = request.client.host if request.client else None
+        ua = request.headers.get("user-agent", "")
+        await execute("INSERT INTO clicks (link_id, ip_address, user_agent) VALUES ($1,$2,$3)", link["id"], ip, ua)
         qs_lm = request.url.query
         return RedirectResponse(f"/lm/{code}{('?' + qs_lm) if qs_lm else ''}", status_code=302)
 
@@ -2859,6 +2885,13 @@ async def redirect_tracking_link(code: str, request: Request):
         target = f"/click/{code}{qs_suffix}"
         print(f"[track] {link_type} code={code} → SPA click landing: {target}")
         return RedirectResponse(url=target, status_code=302)
+
+    # Non-MAX routes do not create their visit on /click, so retain the
+    # legacy redirect-level click bookkeeping for them.
+    await execute("UPDATE tracking_links SET clicks = clicks + 1 WHERE id = $1", link["id"])
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent", "")
+    await execute("INSERT INTO clicks (link_id, ip_address, user_agent) VALUES ($1,$2,$3)", link["id"], ip, ua)
 
     # TG-канал landing или fallback — обычная /subscribe страница
     subscribe_url = f"{settings.APP_URL}/subscribe/{code}{qs_suffix}"
